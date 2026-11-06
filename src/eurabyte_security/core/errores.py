@@ -1,0 +1,33 @@
+"""Excepciones propias de EST.
+
+Se usan en lugar de ``sys.exit`` dentro de la capa de logica de negocio para que
+los modulos de ``core`` y ``modules`` permanezcan faciles de probar de forma
+aislada. La capa de CLI (``commands``) es responsable de capturarlas y
+mostrarlas en espanol con el formato adecuado.
+"""
+
+from __future__ import annotations
+
+
+class ErrorEST(Exception):
+    """Error base de la aplicacion."""
+
+
+class ErrorValidacion(ErrorEST):
+    """Un dato proporcionado por el usuario no es valido."""
+
+
+class ErrorProyectoNoEncontrado(ErrorEST):
+    """El proyecto solicitado no existe."""
+
+
+class ErrorProyectoDuplicado(ErrorEST):
+    """Ya existe un proyecto con ese nombre."""
+
+
+class ErrorFueraDeAlcance(ErrorEST):
+    """El objetivo indicado no esta dentro del alcance autorizado del proyecto."""
+
+
+class ErrorSinProyectoActivo(ErrorEST):
+    """No se especifico un proyecto y tampoco hay un proyecto activo."""
