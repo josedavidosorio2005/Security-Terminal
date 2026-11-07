@@ -16,6 +16,9 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 ## Distribucion de la pantalla
 
 - **Barra superior**: logo, nombre del producto, version, proyecto activo y sistema operativo.
+  El logo es un escudo azul/cian con un simbolo de terminal (`>_`) dentro, sin mascotas ni
+  robots. Mientras no exista el recurso grafico oficial, se muestra como texto ASCII (ver
+  `eurabyte_security/marca.py`), compatible con cualquier terminal de Windows o Linux.
 - **Barra lateral izquierda**: navegacion entre las 14 secciones (ver tabla abajo).
 - **Zona central**: el contenido de la seccion seleccionada.
 - **Panel derecho**: ayuda contextual del comando que estes escribiendo en la Terminal, datos
@@ -146,12 +149,26 @@ todavia.
 **Herramienta externa marcada como "No instalada"**: AST solo comprueba si el binario esta en
 el `PATH` del sistema; instalala y vuelve a pulsar "Volver a detectar".
 
+## Cancelacion de un escaneo: semantica exacta
+
+Al pulsar "Cancelar" en el panel "Redes" (o al iniciarse un escaneo nuevo mientras otro seguia
+en curso):
+
+- La semantica es **todo o nada**: un escaneo cancelado no guarda ningun resultado en la base
+  de datos, ni siquiera de los puertos que ya se habian comprobado antes de cancelar.
+- El escaneo deja de abrir conexiones nuevas en cuanto detecta la cancelacion (no se programan
+  mas tareas en el `ThreadPoolExecutor`), pero las conexiones que ya se habian iniciado pueden
+  completarse en segundo plano hasta su propio `--timeout` (limitacion de Python al cancelar
+  hilos bloqueados en E/S): simplemente no se usa su resultado.
+- Si inicias un segundo escaneo antes de que termine el primero, el primero se cancela
+  automaticamente y solo el resultado del mas reciente puede llegar a mostrarse en la tabla: la
+  interfaz nunca mezcla los resultados de dos escaneos.
+
 ## Limitaciones conocidas de la Fase 2
 
-- La cancelacion de un escaneo TCP en curso descarta el resultado en la interfaz, pero las
-  conexiones ya iniciadas en segundo plano pueden tardar hasta su `--timeout` configurado en
-  terminar realmente (limitacion de Python al cancelar hilos bloqueados en E/S).
 - `est interfaz` necesita una terminal real (no funciona con la entrada/salida completamente
   redirigida), igual que cualquier aplicacion Textual.
 - Las secciones Modulos, Reconocimiento, Analisis web, Vulnerabilidades y Aprendizaje son
   marcadores de posicion para las Fases 3 y 5: no tienen funcionalidad todavia.
+- El escudo de marca (barra superior y panel de Inicio) es una alternativa en texto ASCII
+  mientras no exista el recurso grafico oficial (ver `eurabyte_security/marca.py`).

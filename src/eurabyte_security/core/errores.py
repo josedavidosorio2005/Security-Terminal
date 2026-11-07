@@ -31,3 +31,7 @@ class ErrorFueraDeAlcance(ErrorEST):
 
 class ErrorSinProyectoActivo(ErrorEST):
     """No se especifico un proyecto y tampoco hay un proyecto activo."""
+
+
+class ErrorEscaneoCancelado(ErrorEST):
+    """El escaneo se cancelo antes de completarse; no se guardo ningun resultado."""

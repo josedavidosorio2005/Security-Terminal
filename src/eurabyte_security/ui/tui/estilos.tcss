@@ -22,7 +22,9 @@ Screen {
     padding: 0 1;
 }
 
-#encabezado .logo {
+/* Escudo de marca (azul/cian): usado en la barra superior y en el panel
+   de inicio (ver eurabyte_security/marca.py: ESCUDO_COMPACTO/ESCUDO_ASCII). */
+.logo {
     color: $ast-borde;
     text-style: bold;
 }
@@ -81,6 +83,16 @@ Screen {
     text-style: bold;
     color: $ast-borde;
     margin-bottom: 1;
+}
+
+#inicio-marca {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#inicio-escudo {
+    width: auto;
+    margin-right: 2;
 }
 
 .ast-panel {

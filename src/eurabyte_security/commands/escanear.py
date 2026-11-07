@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Callable
 
 import typer
 from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
-from eurabyte_security.core.errores import ErrorFueraDeAlcance
+from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorFueraDeAlcance
 from eurabyte_security.core.validation import (
     validar_concurrencia,
     validar_objetivo,
@@ -36,8 +37,19 @@ def escanear_tcp(
     *,
     tiempo_espera: float = 1.0,
     concurrencia: int = 50,
+    debe_cancelar: Callable[[], bool] | None = None,
 ) -> list[Resultado]:
-    """Valida objetivo/alcance/puertos y ejecuta el escaneo TCP persistiendo resultados."""
+    """Valida objetivo/alcance/puertos y ejecuta el escaneo TCP persistiendo resultados.
+
+    ``debe_cancelar``, si se indica, se consulta durante el escaneo (para dejar
+    de abrir conexiones nuevas en cuanto sea posible) y otra vez justo antes de
+    guardar nada en la base de datos. Semantica de cancelacion: todo o nada. Si
+    ``debe_cancelar()`` es verdadero en ese segundo chequeo, no se persiste
+    ningun resultado (ni siquiera los de puertos que ya se habian comprobado) y
+    se lanza :class:`ErrorEscaneoCancelado`. Las conexiones que ya se hubieran
+    iniciado en segundo plano pueden completarse igualmente, pero sus
+    resultados se descartan.
+    """
     ip_objetivo = validar_objetivo(objetivo)
     puertos = validar_puertos(puertos_especificacion)
     tiempo_espera = validar_timeout(tiempo_espera)
@@ -54,8 +66,19 @@ def escanear_tcp(
         )
 
     resultados_escaneo = escanear_puertos_tcp(
-        str(ip_objetivo), puertos, tiempo_espera=tiempo_espera, concurrencia=concurrencia
+        str(ip_objetivo),
+        puertos,
+        tiempo_espera=tiempo_espera,
+        concurrencia=concurrencia,
+        debe_cancelar=debe_cancelar,
     )
+
+    if debe_cancelar is not None and debe_cancelar():
+        raise ErrorEscaneoCancelado(
+            f"El escaneo de '{objetivo}' se cancelo antes de completarse. "
+            "Las conexiones que ya se habian iniciado pueden haber terminado "
+            "en segundo plano, pero no se guardo ningun resultado."
+        )
 
     resultados_guardados = [
         base_datos.agregar_resultado(proyecto.id, str(ip_objetivo), r.puerto, r.estado)

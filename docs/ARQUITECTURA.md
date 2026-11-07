@@ -49,8 +49,7 @@ ui/tui/
 `AuraByteApp` reutiliza exactamente la misma logica que la CLI: `motor_comandos.py` y los
 paneles importan las funciones puras de `commands/*.py` (las mismas que usa `cli/app.py`), no
 una copia. Las operaciones de red (escaneo TCP) se ejecutan en workers de Textual
-(`@work(thread=True)`) para no bloquear la interfaz, con cancelacion best-effort desde el panel
-"Redes" (ver "Limitaciones conocidas" en `docs/INTERFAZ.md`).
+(`@work(thread=True)`) para no bloquear la interfaz.
 
 ## Flujo de una operacion (ejemplo: `est escanear tcp`)
 
@@ -63,6 +62,38 @@ una copia. Las operaciones de red (escaneo TCP) se ejecutan en workers de Textua
    espera acotados, sin conocer nada sobre proyectos, CLI ni base de datos.
 4. El resultado se persiste en SQLite a traves de **`storage/database.py`** y se muestra en
    pantalla con Rich (**`ui/consola.py`**).
+
+## Cancelacion de un escaneo (panel "Redes" de la TUI)
+
+`escanear_tcp` y `escanear_puertos_tcp` aceptan un parametro opcional `debe_cancelar` (un
+callable sin argumentos que devuelve `bool`). El panel "Redes" lo conecta a
+`worker.is_cancelled` del worker de Textual que ejecuta el escaneo:
+
+1. **Durante el escaneo**, `escanear_puertos_tcp` consulta `debe_cancelar()` entre puerto y
+   puerto; si es verdadero, cancela las conexiones que todavia no se habian iniciado (no abre
+   mas sockets) y deja de esperar resultados.
+2. **Justo antes de persistir**, `escanear_tcp` vuelve a consultar `debe_cancelar()`. Si es
+   verdadero, lanza `ErrorEscaneoCancelado` (`core/errores.py`) **sin escribir nada** en la
+   base de datos: la semantica es todo-o-nada, nunca un guardado parcial.
+3. **En la interfaz**, cada escaneo que se inicia desde el panel "Redes" recibe un numero de
+   secuencia (`PanelRedes._secuencia`); solo el resultado del escaneo con el numero de secuencia
+   mas reciente puede actualizar la tabla (`_mostrar_resultados`), lo que impide que dos
+   escaneos solapados mezclen sus resultados en pantalla, incluso si el mas antiguo termina
+   despues del mas nuevo (los hilos no se pueden interrumpir de forma forzosa en Python).
+
+Quien use `escanear_tcp`/`escanear_puertos_tcp` sin pasar `debe_cancelar` (la CLI, el REPL y
+`motor_comandos.py`) conserva el comportamiento anterior sin cambios: el parametro es
+estrictamente opcional.
+
+## Texto seguro frente al marcado Rich
+
+Cualquier texto que pueda contener lo que el usuario escribio (un objetivo invalido, un tema
+desconocido, una ruta...) debe pasar por `ui/consola.py:texto_seguro` antes de mostrarse con
+Rich/Textual (`markup` habilitado), tanto en la CLI (`mostrar_error`/`mostrar_exito`/
+`mostrar_aviso`) como en la TUI (`RichLog.write`, `Static.update`, celdas de `DataTable`). Sin
+este escape, un corchete sin cerrar en la entrada del usuario puede lanzar
+`rich.errors.MarkupError` (ver `tests/test_tui_cancelacion_robustez.py`), y una secuencia de
+corchetes balanceada puede interpretarse como una etiqueta de estilo real.
 
 Este mismo patron (validar -> resolver proyecto -> ejecutar logica de modulo -> persistir ->
 mostrar) se repite en los demas comandos (`proyecto`, `alcance`, `resultados`, `reporte`).
