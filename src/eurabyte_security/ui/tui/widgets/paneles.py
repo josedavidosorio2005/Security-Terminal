@@ -15,17 +15,20 @@ from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
-from eurabyte_security.core.errores import ErrorEST
+from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
 from eurabyte_security.integrations.deteccion import detectar_herramientas
-from eurabyte_security.marca import BANNER_ASCII
+from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
+from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
 
 
 class PanelInicio(Vertical):
-    """Panel de bienvenida: banner, resumen y atajos de navegacion."""
+    """Panel de bienvenida: escudo, banner, resumen y atajos de navegacion."""
 
     def compose(self):
-        yield Static(BANNER_ASCII, classes="ast-acento")
+        with Horizontal(id="inicio-marca"):
+            yield Static(ESCUDO_ASCII, id="inicio-escudo", classes="logo")
+            yield Static(BANNER_ASCII, classes="ast-acento")
         yield Static("", id="inicio-resumen", classes="ast-caja")
         yield Static(
             "Sugerencias rapidas:\n"
@@ -77,8 +80,13 @@ class PanelProyectos(Vertical):
         msg.set_classes(clase)
 
     def refrescar(self) -> None:
-        base_datos = obtener_base_datos()
-        proyectos, activo = listar_proyectos(base_datos)
+        try:
+            base_datos = obtener_base_datos()
+            proyectos, activo = listar_proyectos(base_datos)
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self._mensaje(f"Error inesperado: {texto_seguro(exc)}", "ast-error")
+            return
+
         tabla = self.query_one("#proy-tabla", DataTable)
         tabla.clear()
         for proyecto in proyectos:
@@ -97,13 +105,16 @@ class PanelProyectos(Vertical):
         try:
             proyecto = crear_proyecto(obtener_base_datos(), campo.value)
             self._mensaje(
-                f"Proyecto '{proyecto.nombre}' creado y marcado como activo.", "ast-exito"
+                f"Proyecto '{texto_seguro(proyecto.nombre)}' creado y marcado como activo.",
+                "ast-exito",
             )
             campo.value = ""
             self.refrescar()
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
-            self._mensaje(str(exc), "ast-error")
+            self._mensaje(texto_seguro(exc), "ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self._mensaje(f"Error inesperado: {texto_seguro(exc)}", "ast-error")
 
     @on(DataTable.RowSelected, "#proy-tabla")
     def _fila_seleccionada(self, event: DataTable.RowSelected) -> None:
@@ -116,11 +127,13 @@ class PanelProyectos(Vertical):
             return
         try:
             proyecto = usar_proyecto(obtener_base_datos(), self._seleccionado)
-            self._mensaje(f"Proyecto activo: '{proyecto.nombre}'.", "ast-exito")
+            self._mensaje(f"Proyecto activo: '{texto_seguro(proyecto.nombre)}'.", "ast-exito")
             self.refrescar()
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
-            self._mensaje(str(exc), "ast-error")
+            self._mensaje(texto_seguro(exc), "ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self._mensaje(f"Error inesperado: {texto_seguro(exc)}", "ast-error")
 
 
 class PanelAlcance(Vertical):
@@ -157,7 +170,9 @@ class PanelAlcance(Vertical):
             for alcance in listar_alcance(base_datos, proyecto):
                 tabla.add_row(alcance.red, alcance.creado_en)
         except ErrorEST as exc:
-            self._mensaje(str(exc), "ast-error")
+            self._mensaje(texto_seguro(exc), "ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self._mensaje(f"Error inesperado: {texto_seguro(exc)}", "ast-error")
 
     @on(Button.Pressed, "#alc-agregar")
     def _agregar(self, _evento: Button.Pressed) -> None:
@@ -168,20 +183,34 @@ class PanelAlcance(Vertical):
             alcance = agregar_alcance(base_datos, proyecto, campo.value)
             self.refrescar()
             self._mensaje(
-                f"Alcance '{alcance.red}' autorizado para '{proyecto.nombre}'.", "ast-exito"
+                f"Alcance '{texto_seguro(alcance.red)}' autorizado para "
+                f"'{texto_seguro(proyecto.nombre)}'.",
+                "ast-exito",
             )
             campo.value = ""
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
-            self._mensaje(str(exc), "ast-error")
+            self._mensaje(texto_seguro(exc), "ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self._mensaje(f"Error inesperado: {texto_seguro(exc)}", "ast-error")
 
 
 class PanelRedes(Vertical):
-    """Comprobacion de puertos TCP (formulario) contra el alcance autorizado."""
+    """Comprobacion de puertos TCP (formulario) contra el alcance autorizado.
+
+    Cancelacion: ``escanear_tcp`` solo persiste resultados en la base de datos
+    si el escaneo llego a terminar sin que se solicitara cancelacion (ver
+    ``commands/escanear.py``); un escaneo cancelado no guarda nada, aunque
+    alguna conexion ya iniciada termine en segundo plano. Ademas, cada clic en
+    "Escanear" incrementa ``_secuencia``: solo el resultado del escaneo mas
+    reciente puede actualizar la tabla, por lo que dos escaneos solapados
+    nunca mezclan sus resultados en la interfaz.
+    """
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._worker = None
+        self._secuencia = 0
 
     def compose(self):
         yield Static("Comprobacion de puertos TCP", classes="titulo-panel")
@@ -222,19 +251,29 @@ class PanelRedes(Vertical):
             self._mensaje("Timeout y concurrencia deben ser numericos.", "ast-error")
             return
 
+        # Cada escaneo recibe un numero de secuencia propio: si llega a
+        # terminar un escaneo mas antiguo (p. ej. por una condicion de
+        # carrera de hilos), su resultado se descarta en _mostrar_resultados.
+        self._secuencia += 1
+        secuencia = self._secuencia
+
         self._mensaje("Escaneando... (puedes cancelar mientras se ejecuta)", "ast-aviso")
-        self._worker = self._escanear(objetivo, puertos, timeout, concurrencia)
+        self._worker = self._escanear(secuencia, objetivo, puertos, timeout, concurrencia)
 
     @on(Button.Pressed, "#redes-cancelar")
     def _cancelar(self, _evento: Button.Pressed) -> None:
         if self._worker is not None and self._worker.is_running:
             self._worker.cancel()
             self._mensaje(
-                "Cancelacion solicitada: se descartara el resultado de este escaneo.", "ast-aviso"
+                "Cancelacion solicitada: no se guardara ningun resultado de este escaneo "
+                "(las conexiones ya iniciadas pueden completarse en segundo plano).",
+                "ast-aviso",
             )
 
-    @work(thread=True, exclusive=True, group="redes-escaneo")
-    def _escanear(self, objetivo: str, puertos: str, timeout: float, concurrencia: int) -> None:
+    @work(thread=True, exclusive=True, group="redes-escaneo", exit_on_error=False)
+    def _escanear(
+        self, secuencia: int, objetivo: str, puertos: str, timeout: float, concurrencia: int
+    ) -> None:
         worker = get_current_worker()
         try:
             base_datos = obtener_base_datos()
@@ -246,17 +285,31 @@ class PanelRedes(Vertical):
                 puertos,
                 tiempo_espera=timeout,
                 concurrencia=concurrencia,
+                debe_cancelar=lambda: worker.is_cancelled,
             )
+        except ErrorEscaneoCancelado as exc:
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-aviso")
+            return
         except ErrorEST as exc:
-            if not worker.is_cancelled:
-                self.app.call_from_thread(self._mensaje, str(exc), "ast-error")
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
             return
 
         if worker.is_cancelled:
             return
-        self.app.call_from_thread(self._mostrar_resultados, resultados)
+        self.app.call_from_thread(self._mostrar_resultados, secuencia, resultados)
 
-    def _mostrar_resultados(self, resultados) -> None:
+    def _mostrar_resultados(self, secuencia: int, resultados: list) -> None:
+        if secuencia != self._secuencia:
+            # Un escaneo mas reciente ya se inicio: este resultado es obsoleto.
+            return
         tabla = self.query_one("#redes-tabla", DataTable)
         tabla.clear()
         for resultado in resultados:
@@ -293,10 +346,17 @@ class PanelResultados(Vertical):
                     resultado.estado,
                     resultado.creado_en,
                 )
-            msg.update("" if resultados else f"Sin resultados todavia para '{proyecto.nombre}'.")
+            msg.update(
+                ""
+                if resultados
+                else f"Sin resultados todavia para '{texto_seguro(proyecto.nombre)}'."
+            )
             msg.set_classes("ast-tenue")
         except ErrorEST as exc:
-            msg.update(str(exc))
+            msg.update(texto_seguro(exc))
+            msg.set_classes("ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            msg.update(f"Error inesperado: {texto_seguro(exc)}")
             msg.set_classes("ast-error")
 
     @on(Button.Pressed, "#res-refrescar")
@@ -327,11 +387,14 @@ class PanelReportes(Vertical):
             base_datos = obtener_base_datos()
             proyecto = resolver_proyecto(base_datos, None)
             ruta = generar_reporte(base_datos, proyecto, str(formato))
-            msg.update(f"Informe generado en: {ruta}")
+            msg.update(f"Informe generado en: {texto_seguro(ruta)}")
             msg.set_classes("ast-exito")
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
-            msg.update(str(exc))
+            msg.update(texto_seguro(exc))
+            msg.set_classes("ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            msg.update(f"Error inesperado: {texto_seguro(exc)}")
             msg.set_classes("ast-error")
 
 
@@ -359,7 +422,12 @@ class PanelHerramientas(Vertical):
         tabla.clear()
         for herramienta in detectar_herramientas():
             estado = "Instalada" if herramienta.instalada else "No instalada"
-            tabla.add_row(herramienta.nombre, herramienta.comando, estado, herramienta.ruta or "-")
+            tabla.add_row(
+                herramienta.nombre,
+                herramienta.comando,
+                estado,
+                texto_seguro(herramienta.ruta) if herramienta.ruta else "-",
+            )
 
     @on(Button.Pressed, "#herr-refrescar")
     def _refrescar_click(self, _evento: Button.Pressed) -> None:
@@ -390,12 +458,15 @@ class PanelConfiguracion(Vertical):
         msg = self.query_one("#conf-mensaje", Static)
         try:
             proyecto = usar_proyecto(obtener_base_datos(), campo.value)
-            msg.update(f"Proyecto activo: '{proyecto.nombre}'.")
+            msg.update(f"Proyecto activo: '{texto_seguro(proyecto.nombre)}'.")
             msg.set_classes("ast-exito")
             campo.value = ""
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
-            msg.update(str(exc))
+            msg.update(texto_seguro(exc))
+            msg.set_classes("ast-error")
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            msg.update(f"Error inesperado: {texto_seguro(exc)}")
             msg.set_classes("ast-error")
 
 

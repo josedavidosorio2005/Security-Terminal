@@ -16,6 +16,12 @@ nombres heredados de la Fase 1 que se mantienen por compatibilidad con instalaci
 existentes. La marca visible (AURABYTE / AST) vive en `eurabyte_security/marca.py` y se usa en
 textos, titulos y documentacion, no en nombres de paquetes, modulos ni en el comando.
 
+**Sobre el escudo de marca**: `ESCUDO_COMPACTO` y `ESCUDO_ASCII` en `marca.py` son una
+alternativa ASCII deliberada (sin mascotas ni robots) mientras no exista el recurso grafico
+oficial del escudo azul/cian con simbolo de terminal. Si el equipo de diseno entrega ese
+recurso, sustituyelo unicamente ahi (y, si aplica, en `ui/tui/estilos.tcss`, clase `.logo`): no
+crees un logo nuevo ni dupliques el glifo en otros widgets.
+
 ## Reglas que no se negocian
 
 1. **Todo texto visible para el usuario va en espanol**: mensajes, ayuda, nombres de comandos,

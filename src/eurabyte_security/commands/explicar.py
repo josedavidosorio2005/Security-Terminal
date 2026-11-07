@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 from rich.panel import Panel
 
-from eurabyte_security.ui.consola import consola
+from eurabyte_security.ui.consola import consola, texto_seguro
 
 EXPLICACIONES: dict[str, str] = {
     "proyecto": (
@@ -44,9 +44,15 @@ EXPLICACIONES: dict[str, str] = {
         "est reporte generar --formato html|json [--proyecto NOMBRE] [--salida RUTA]"
     ),
     "interactivo": (
-        "Abre la terminal interactiva de EST, con autocompletado (Tab) e\n"
-        "historial de comandos (flechas arriba/abajo).\n\n"
+        "Abre la terminal interactiva de linea de comandos, con autocompletado\n"
+        "(Tab) e historial de comandos (flechas arriba/abajo).\n\n"
         "est interactivo"
+    ),
+    "interfaz": (
+        "Abre la interfaz visual completa de AST (Textual): barra lateral de\n"
+        "secciones, terminal integrada, formularios y tablas de resultados,\n"
+        "con teclado y raton. Requiere una consola real.\n\n"
+        "est interfaz"
     ),
 }
 
@@ -64,7 +70,9 @@ def explicar_cmd(
     texto = EXPLICACIONES.get(tema.lower())
     if texto is None:
         temas = ", ".join(sorted(EXPLICACIONES))
-        consola.print(f"No hay una explicacion para '{tema}'. Temas disponibles: {temas}")
+        consola.print(
+            f"No hay una explicacion para '{texto_seguro(tema)}'. Temas disponibles: {temas}"
+        )
         return
 
-    consola.print(Panel(texto, title=f"Explicacion: {tema}", border_style="cyan"))
+    consola.print(Panel(texto, title=f"Explicacion: {texto_seguro(tema)}", border_style="cyan"))

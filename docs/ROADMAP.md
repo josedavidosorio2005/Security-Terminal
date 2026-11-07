@@ -31,8 +31,13 @@ criterios de aceptacion y tiene pruebas automatizadas que lo demuestran.
 - [x] Terminal AST integrada: autocompletado contextual (Tab), sugerencias mientras se escribe,
       historial con flechas, salida coloreada y comandos reales (no un shell del sistema).
 - [x] Navegacion y accion completas con teclado y con raton.
-- [x] Conectada a la logica real: proyectos, alcance, escaneo TCP (con cancelacion best-effort
-      en un worker en segundo plano), resultados y generacion de informes.
+- [x] Conectada a la logica real: proyectos, alcance, escaneo TCP (con cancelacion en un
+      worker en segundo plano; semantica todo-o-nada: un escaneo cancelado nunca persiste
+      resultados, y dos escaneos consecutivos nunca mezclan los suyos en la interfaz),
+      resultados y generacion de informes.
+- [x] Texto introducido por el usuario siempre se escapa (`ui/consola.py:texto_seguro`) antes
+      de mostrarse con marcado Rich, y los errores inesperados de un comando se capturan sin
+      cerrar la interfaz.
 - [x] Deteccion (sin ejecucion) de herramientas externas de la Fase 3 (Nmap, Nuclei, OWASP ZAP,
       tshark).
 - [x] Secciones todavia no implementadas (Modulos, Reconocimiento, Analisis web,
@@ -41,7 +46,8 @@ criterios de aceptacion y tiene pruebas automatizadas que lo demuestran.
       acceso a sus funcionalidades.
 - [x] Pruebas automatizadas con el framework de testing de Textual (arranque, renderizado,
       navegacion, autocompletado, formularios, rechazo fuera de alcance, estados vacios/errores,
-      adaptacion responsiva) y compatibilidad con las 52 pruebas de la Fase 1.
+      adaptacion responsiva, cancelacion/persistencia, no-mezcla de escaneos concurrentes y
+      escape de marcado Rich) manteniendo en verde las 52 pruebas de la Fase 1 (104 en total).
 - [x] Documentacion: manual de usuario (`docs/INTERFAZ.md`), capturas reales generadas con
       `App.save_screenshot`, atajos de teclado y solucion de problemas.
 

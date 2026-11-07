@@ -12,6 +12,7 @@ from textual.widgets import Input, RichLog, Static
 from eurabyte_security.commands.explicar import EXPLICACIONES
 from eurabyte_security.integrations.deteccion import HerramientaExterna
 from eurabyte_security.marca import BANNER_ASCII
+from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
 from eurabyte_security.ui.tui.motor_comandos import MotorComandos, completar
 
@@ -106,12 +107,20 @@ class PanelTerminalAST(Vertical):
         entrada.agregar_historial(texto)
         entrada.value = ""
         if texto.strip():
-            self._registro.write(f"[bold]est>[/bold] {texto}")
+            self._registro.write(f"[bold]est>[/bold] {texto_seguro(texto)}")
             self._ejecutar(texto)
 
-    @work(thread=True, exclusive=False, group="terminal-comandos")
+    @work(thread=True, exclusive=False, group="terminal-comandos", exit_on_error=False)
     def _ejecutar(self, texto: str) -> None:
-        resultado = self.motor.ejecutar(texto)
+        try:
+            resultado = self.motor.ejecutar(texto)
+        except Exception as exc:  # noqa: BLE001 - frontera de la terminal interactiva
+            self.app.call_from_thread(
+                self._registro.write,
+                f"[bold red]Error inesperado:[/bold red] {texto_seguro(exc)}",
+            )
+            return
+
         if resultado is None:
             self.app.call_from_thread(
                 self._registro.write,
@@ -119,10 +128,16 @@ class PanelTerminalAST(Vertical):
             )
             return
         if resultado.exito:
-            self.app.call_from_thread(self._registro.write, resultado.contenido)
+            contenido = (
+                texto_seguro(resultado.contenido)
+                if isinstance(resultado.contenido, str)
+                else resultado.contenido
+            )
+            self.app.call_from_thread(self._registro.write, contenido)
         else:
             self.app.call_from_thread(
-                self._registro.write, f"[bold red]Error:[/bold red] {resultado.contenido}"
+                self._registro.write,
+                f"[bold red]Error:[/bold red] {texto_seguro(resultado.contenido)}",
             )
         self.app.call_from_thread(self.app.refrescar_estado)  # type: ignore[attr-defined]
 

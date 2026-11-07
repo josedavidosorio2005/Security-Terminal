@@ -10,6 +10,7 @@ capa de comandos antes de llamar aqui).
 from __future__ import annotations
 
 import socket
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -41,11 +42,20 @@ def escanear_puertos_tcp(
     *,
     tiempo_espera: float = 1.0,
     concurrencia: int = 50,
+    debe_cancelar: Callable[[], bool] | None = None,
 ) -> list[ResultadoPuerto]:
     """Comprueba el estado de una lista de puertos TCP sobre ``objetivo``.
 
     Los resultados se devuelven ordenados por numero de puerto,
     independientemente del orden en que terminen las tareas concurrentes.
+
+    Si se proporciona ``debe_cancelar`` y empieza a devolver ``True`` mientras
+    el escaneo esta en curso, se cancelan las tareas que todavia no hayan
+    empezado a ejecutarse (no se abren conexiones nuevas) y se deja de
+    esperar por mas resultados. Las conexiones que ya se habian iniciado
+    siguen su curso en segundo plano (acotadas por ``tiempo_espera``), pero
+    sus resultados no se incluyen en el valor devuelto: quien llama a esta
+    funcion debe considerar el escaneo como cancelado, no como parcial.
     """
     trabajadores = max(1, min(concurrencia, len(puertos)))
     resultados: list[ResultadoPuerto] = []
@@ -55,5 +65,9 @@ def escanear_puertos_tcp(
             for puerto in puertos
         }
         for futuro in as_completed(futuros):
+            if debe_cancelar is not None and debe_cancelar():
+                for pendiente in futuros:
+                    pendiente.cancel()
+                return []
             resultados.append(futuro.result())
     return sorted(resultados, key=lambda r: r.puerto)
