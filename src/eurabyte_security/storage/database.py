@@ -172,6 +172,33 @@ class BaseDatos:
             ).fetchone()
             return Resultado(**fila)
 
+    def agregar_resultados(
+        self, proyecto_id: int, objetivo: str, resultados: list[tuple[int, str]]
+    ) -> list[Resultado]:
+        """Inserta varios resultados en una sola transaccion (todo o nada).
+
+        Si cualquier insercion falla (o la llamada se interrumpe a mitad de
+        camino, por ejemplo por una excepcion), ``_conectar`` nunca llega a
+        hacer ``commit`` y la conexion se cierra sin confirmar nada: SQLite
+        descarta la transaccion completa, por lo que no queda ningun
+        resultado parcial. ``resultados`` es una lista de ``(puerto, estado)``.
+        """
+        guardados: list[Resultado] = []
+        with self._conectar() as conexion:
+            for puerto, estado in resultados:
+                cursor = conexion.execute(
+                    "INSERT INTO resultados (proyecto_id, objetivo, puerto, estado, creado_en) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (proyecto_id, objetivo, puerto, estado, _ahora()),
+                )
+                fila = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, puerto, estado, creado_en "
+                    "FROM resultados WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(Resultado(**fila))
+        return guardados
+
     def listar_resultados(
         self, proyecto_id: int | None = None, limite: int = 200
     ) -> list[Resultado]:

@@ -11,12 +11,18 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
 ABIERTO = "abierto"
 CERRADO = "cerrado"
 ERROR = "error"
+
+# Intervalo de sondeo de `debe_cancelar` mientras se espera a que terminen
+# puertos ya en curso. No depende de que un puerto termine para comprobar la
+# cancelacion: si todos los puertos en curso estuvieran bloqueados (p. ej. un
+# objetivo que no responde), igual se detecta la cancelacion en este plazo.
+_INTERVALO_SONDEO_CANCELACION = 0.05
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,10 +70,15 @@ def escanear_puertos_tcp(
             pool.submit(_comprobar_puerto, objetivo, puerto, tiempo_espera): puerto
             for puerto in puertos
         }
-        for futuro in as_completed(futuros):
+        pendientes = set(futuros)
+        while pendientes:
             if debe_cancelar is not None and debe_cancelar():
-                for pendiente in futuros:
+                for pendiente in pendientes:
                     pendiente.cancel()
                 return []
-            resultados.append(futuro.result())
+            terminados, pendientes = wait(
+                pendientes, timeout=_INTERVALO_SONDEO_CANCELACION, return_when=FIRST_COMPLETED
+            )
+            for futuro in terminados:
+                resultados.append(futuro.result())
     return sorted(resultados, key=lambda r: r.puerto)
