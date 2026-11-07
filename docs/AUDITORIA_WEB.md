@@ -140,20 +140,28 @@ Ningun valor de cookie se registra ni se muestra nunca (ver arriba). Para URLs (
 auditado, el destino de una redireccion, mensajes de error), AST usa una estrategia distinta:
 la peticion real se hace siempre contra la URL completa que el usuario indico -- nunca se
 modifica para poder ejecutar la peticion autorizada --, pero `modules/web/redaccion.py:
-redactar_url()` oculta el *valor* de los parametros de consulta cuyo nombre sugiere un secreto
-(`token`, `password`, `api_key`, `session_id`, `code`, etc., insensible a mayusculas) antes de:
+redactar_url()` oculta, antes de mostrarla o guardarla:
 
-- Guardarla en `resultados_web` (columna `objetivo`).
-- Mostrarla en la salida de la CLI, la Terminal AST o la interfaz visual.
-- Incluirla en un hallazgo de redireccion (el destino de un `Location`).
-- Incluirla en un mensaje de error (objetivo fuera de alcance, tiempo agotado...).
-- Incluirla en un informe HTML/JSON exportado.
+- **Credenciales en el host** (`usuario:clave@host`): se eliminan por completo.
+- **El valor de cada parametro de la cadena de consulta** cuyo *nombre* contiene una palabra
+  que sugiere un secreto (`token`, `key`, `secret`, `password`, `auth`, `session`, `code`...,
+  insensible a mayusculas y por coincidencia de subcadena -- `auth_token` o `my_api_key`
+  tambien se detectan, no solo los nombres exactos).
+- **Lo mismo en el fragmento** (`#...`) cuando tiene forma de parametros (`a=1&b=2`, el formato
+  que usan los flujos OAuth implicitos al devolver el token en el fragmento); un fragmento sin
+  esa forma (un ancla simple como `#seccion2`) se deja intacto.
+
+...en todos los puntos donde una URL se muestra o se guarda: al persistir en `resultados_web`
+(columna `objetivo`), en la salida de la CLI/Terminal AST/interfaz visual, en un hallazgo de
+redireccion (el destino de un `Location`), en un mensaje de error (objetivo fuera de alcance,
+tiempo agotado...) y en un informe HTML/JSON exportado.
 
 Por ejemplo, `https://127.0.0.1/reset?token=abc123&usuario=ana` se muestra y se guarda como
-`https://127.0.0.1/reset?token=%3Credactado%3E&usuario=ana`. Un parametro que no esta en la
-lista de nombres sensibles conocidos (ver `redaccion.py:PARAMETROS_SENSIBLES`) se conserva tal
-cual: esta redaccion es una mitigacion adicional, no un sustituto de manejar las URLs con
-secretos con cuidado (evita, por ejemplo, pegarlas en un chat o un ticket sin redactar).
+`https://127.0.0.1/reset?token=%3Credactado%3E&usuario=ana`. Un parametro cuyo nombre no
+contiene ninguna palabra de la lista conocida (ver `redaccion.py:PALABRAS_SENSIBLES`) se
+conserva tal cual: esta redaccion es una mitigacion adicional, no un sustituto de manejar las
+URLs con secretos con cuidado (evita, por ejemplo, pegarlas en un chat o un ticket sin
+redactar).
 
 ## Limites de tiempo: por peticion vs. total de la auditoria
 
