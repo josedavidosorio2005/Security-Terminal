@@ -1,6 +1,6 @@
-# Contribuir a EST
+# Contribuir a AST
 
-Gracias por tu interes en Eurabyte Security Terminal. Este documento resume como preparar tu
+Gracias por tu interes en AURABYTE Security Terminal. Este documento resume como preparar tu
 entorno y que se espera de un pull request.
 
 ## Preparar el entorno
@@ -19,8 +19,10 @@ pip install -e ".[dev]"
    `fix/corrige-tal-cosa`).
 2. Si vas a trabajar en una nueva funcionalidad, lee primero
    [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) para ubicar donde encaja tu cambio
-   (`core`, `commands`, `modules`, `integrations`, `storage` o `ui`).
-3. Escribe o actualiza las pruebas en `tests/` para cualquier cambio de comportamiento.
+   (`core`, `commands`, `modules`, `integrations`, `storage`, `ui` o `ui/tui` para la interfaz
+   visual).
+3. Escribe o actualiza las pruebas en `tests/` para cualquier cambio de comportamiento. Las
+   pruebas de la interfaz visual usan `App.run_test()` de Textual (ver `tests/test_tui_app.py`).
 4. Ejecuta antes de abrir el PR:
    ```bash
    pytest
@@ -30,7 +32,7 @@ pip install -e ".[dev]"
 
 ## Convenciones del codigo
 
-- Todo el texto visible para la persona que usa EST (mensajes, ayuda, nombres de comandos) debe
+- Todo el texto visible para la persona que usa AST (mensajes, ayuda, nombres de comandos) debe
   estar en espanol.
 - La logica de negocio (validaciones, acceso a datos, modulos de auditoria) debe ser
   independiente de Typer/Rich/prompt_toolkit, para poder probarla sin la CLI.

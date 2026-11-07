@@ -1,6 +1,8 @@
-# Instalacion de EST
+# Instalacion de AST
 
-EST requiere **Python 3.11 o superior** y funciona igual en Windows y Linux.
+AST requiere **Python 3.11 o superior** y funciona igual en Windows y Linux. `pip install`
+instala tanto la CLI (Fase 1) como la interfaz visual Textual (Fase 2, `est interfaz`): no hay
+un paso de instalacion separado para la interfaz.
 
 ## Linux / macOS
 
@@ -60,7 +62,18 @@ est escanear tcp 127.0.0.1 --puertos 22,80
 
 `est interactivo` necesita una consola real (cmd.exe, PowerShell o una terminal Linux con TTY).
 No funciona con la entrada/salida redirigida (por ejemplo, dentro de una tuberia o un script no
-interactivo): en ese caso EST muestra un mensaje explicandolo en lugar de fallar sin informacion.
+interactivo): en ese caso AST muestra un mensaje explicandolo en lugar de fallar sin informacion.
+
+## Interfaz visual (`est interfaz`)
+
+```bash
+est interfaz
+```
+
+Tambien necesita una consola real. Para mejores resultados usa un emulador de terminal moderno
+con soporte de color verdadero (Windows Terminal, la mayoria de terminales de Linux/macOS
+actuales). Manual completo, atajos de teclado y solucion de problemas en
+[docs/INTERFAZ.md](INTERFAZ.md).
 
 ## Ejecutar las pruebas
 

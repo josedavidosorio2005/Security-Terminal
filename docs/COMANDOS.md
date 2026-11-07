@@ -1,7 +1,7 @@
-# Referencia de comandos de EST
+# Referencia de comandos de AST
 
-Esta referencia documenta unicamente los comandos realmente implementados en la Fase 1. Todos
-los comandos aceptan `--ayuda` (o `--help`/`-h`) para mostrar su ayuda.
+Esta referencia documenta los comandos realmente implementados en las Fases 1 y 2. Todos los
+comandos aceptan `--ayuda` (o `--help`/`-h`) para mostrar su ayuda.
 
 ## `est --ayuda`
 
@@ -9,16 +9,22 @@ Muestra la ayuda general y la lista de comandos disponibles.
 
 ## `est --version`
 
-Muestra la version instalada de EST.
+Muestra la version instalada de AST.
+
+## `est interfaz`
+
+Abre la interfaz visual completa de AST (Fase 2), construida con Textual: barra lateral de
+secciones, terminal integrada, formularios y tablas de resultados, con teclado y raton. Ver el
+manual completo en [docs/INTERFAZ.md](INTERFAZ.md).
 
 ## `est interactivo`
 
-Abre la terminal interactiva de EST: autocompletado con Tab, historial de comandos (flechas
-arriba/abajo, persistido entre sesiones) y acceso a todos los comandos descritos aqui sin el
-prefijo `est`. Para salir: `salir`, `exit`, `quit` o Ctrl+D.
+Abre la terminal interactiva de linea de comandos (Fase 1): autocompletado con Tab, historial de
+comandos (flechas arriba/abajo, persistido entre sesiones) y acceso a todos los comandos
+descritos aqui sin el prefijo `est`. Para salir: `salir`, `exit`, `quit` o Ctrl+D.
 
 > Requiere una consola real (cmd.exe, PowerShell o una terminal Linux interactiva). Si se
-> ejecuta con la entrada/salida redirigida, EST lo detecta y muestra un mensaje explicando como
+> ejecuta con la entrada/salida redirigida, AST lo detecta y muestra un mensaje explicando como
 > ejecutarlo correctamente en lugar de fallar con un error tecnico.
 
 ## `est proyecto`

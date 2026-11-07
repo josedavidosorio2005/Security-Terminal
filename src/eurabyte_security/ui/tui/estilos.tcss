@@ -1,0 +1,206 @@
+/* Paleta AURABYTE Security Terminal (AST) */
+$ast-fondo: #060B18;
+$ast-panel: #0D172B;
+$ast-borde: #00D9F5;
+$ast-acento: #A855F7;
+$ast-exito: #22C55E;
+$ast-error: #EF4444;
+$ast-aviso: #FACC15;
+$ast-texto: #E5E7EB;
+$ast-texto-tenue: #8B98B4;
+
+Screen {
+    background: $ast-fondo;
+    color: $ast-texto;
+}
+
+#encabezado {
+    height: 3;
+    background: $ast-panel;
+    border-bottom: solid $ast-borde;
+    color: $ast-texto;
+    padding: 0 1;
+}
+
+#encabezado .logo {
+    color: $ast-borde;
+    text-style: bold;
+}
+
+#encabezado .nombre {
+    color: $ast-texto;
+    text-style: bold;
+}
+
+#encabezado .dato {
+    color: $ast-texto-tenue;
+}
+
+#cuerpo {
+    height: 1fr;
+}
+
+#barra-lateral {
+    width: 22;
+    background: $ast-panel;
+    border-right: solid $ast-borde;
+}
+
+#barra-lateral.compacta {
+    width: 10;
+}
+
+#barra-lateral OptionList {
+    background: $ast-panel;
+    color: $ast-texto;
+}
+
+#barra-lateral OptionList > .option-list--option-highlighted {
+    background: $ast-acento 40%;
+    color: $ast-texto;
+}
+
+#switcher-central {
+    width: 1fr;
+    background: $ast-fondo;
+    padding: 1 2;
+}
+
+#panel-info {
+    width: 34;
+    background: $ast-panel;
+    border-left: solid $ast-borde;
+    padding: 1 2;
+}
+
+#panel-info.oculto {
+    display: none;
+}
+
+.titulo-panel {
+    text-style: bold;
+    color: $ast-borde;
+    margin-bottom: 1;
+}
+
+.ast-panel {
+    background: $ast-panel;
+    border: solid $ast-borde;
+    padding: 1 2;
+}
+
+.ast-caja {
+    background: $ast-panel;
+    border: round $ast-borde;
+    padding: 1 2;
+    margin-bottom: 1;
+}
+
+.ast-exito {
+    color: $ast-exito;
+    text-style: bold;
+}
+
+.ast-error {
+    color: $ast-error;
+    text-style: bold;
+}
+
+.ast-aviso {
+    color: $ast-aviso;
+    text-style: bold;
+}
+
+.ast-tenue {
+    color: $ast-texto-tenue;
+}
+
+.ast-acento {
+    color: $ast-acento;
+    text-style: bold;
+}
+
+#barra-estado {
+    height: 1;
+    background: $ast-panel;
+    color: $ast-texto-tenue;
+    border-top: solid $ast-borde;
+    padding: 0 1;
+}
+
+#barra-estado .ok {
+    color: $ast-exito;
+}
+
+#barra-estado .error {
+    color: $ast-error;
+}
+
+PanelTerminalAST {
+    height: 1fr;
+}
+
+#historial-terminal {
+    height: 1fr;
+    background: $ast-fondo;
+    border: round $ast-borde;
+    padding: 0 1;
+}
+
+#entrada-terminal {
+    dock: bottom;
+    border: round $ast-acento;
+    background: $ast-panel;
+}
+
+#banner-ast {
+    color: $ast-borde;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+DataTable {
+    background: $ast-panel;
+}
+
+DataTable > .datatable--header {
+    background: $ast-panel;
+    color: $ast-borde;
+    text-style: bold;
+}
+
+Button {
+    background: $ast-panel;
+    border: round $ast-borde;
+    color: $ast-texto;
+}
+
+Button:hover {
+    background: $ast-acento 30%;
+}
+
+Button.-primary {
+    border: round $ast-acento;
+    color: $ast-acento;
+}
+
+Input {
+    background: $ast-panel;
+    border: round $ast-borde;
+    color: $ast-texto;
+}
+
+/* Dentro de una fila horizontal, un Input debe ceder espacio a sus hermanos
+   (p. ej. un Button) en lugar de ocupar el 100% del ancho por defecto. */
+Horizontal > Input {
+    width: 1fr;
+}
+
+TabbedContent Tab {
+    color: $ast-texto-tenue;
+}
+
+TabbedContent Tab.-active {
+    color: $ast-borde;
+    text-style: bold;
+}

@@ -1,4 +1,4 @@
-"""Terminal interactiva de EST: autocompletado con Tab e historial de comandos."""
+"""Terminal interactiva de linea de comandos: autocompletado con Tab e historial."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from prompt_toolkit.completion import NestedCompleter
 from prompt_toolkit.history import FileHistory
 
 from eurabyte_security.core.config import ruta_historial
+from eurabyte_security.marca import ABREVIATURA, NOMBRE_PRODUCTO
 from eurabyte_security.ui.consola import consola, mostrar_error
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
@@ -62,8 +63,9 @@ def iniciar() -> None:
         return
 
     consola.print(
-        "[bold cyan]Eurabyte Security Terminal[/bold cyan] - modo interactivo.\n"
-        "Escribe un comando (Tab para autocompletar) o 'salir' para terminar."
+        f"[bold cyan]{NOMBRE_PRODUCTO} ({ABREVIATURA})[/bold cyan] - modo interactivo.\n"
+        "Escribe un comando (Tab para autocompletar) o 'salir' para terminar.\n"
+        "Tambien puedes usar 'est interfaz' para la interfaz visual completa."
     )
 
     while True:
