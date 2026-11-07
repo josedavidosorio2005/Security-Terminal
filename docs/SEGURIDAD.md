@@ -35,8 +35,18 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
    binario externo, siempre con `subprocess.Popen(..., shell=False)` y una lista de argumentos
    ya validados -- nunca una cadena construida por interpolacion. Cada ejecucion tiene limite de
    tiempo y puede cancelarse de verdad (`Popen.kill()`), y el alcance autorizado se comprueba
-   **antes** de invocar la herramienta, igual que con `escanear tcp`.
-8. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
+   **antes** de invocar la herramienta, igual que con `escanear tcp`. La ruta del binario se
+   resuelve una sola vez (ruta absoluta) y es esa misma ruta la que se ejecuta, para no dejar una
+   segunda busqueda de PATH en manos del sistema operativo al lanzar el proceso; en Windows,
+   ademas, se desactiva explicitamente que esa busqueda incluya el directorio de trabajo actual
+   (mitiga "binary planting": que alguien coloque un ejecutable con el mismo nombre en esa
+   carpeta para que se ejecute en vez del binario real).
+8. **Cualquier texto que pueda venir del objetivo auditado (no solo del usuario) se escapa
+   antes de mostrarse.** Los campos que una integracion externa obtiene del sistema escaneado
+   (p. ej. el nombre de servicio o la version que Nmap identifica en el objetivo) pasan por
+   `ui/consola.py:texto_seguro` antes de mostrarse con marcado Rich, igual que el texto que
+   escribe el propio usuario: un objetivo auditado no deja de ser una fuente no confiable.
+9. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
    deteccion de servicios/version de Nmap (`-sV`) requiere activarla explicitamente
    (`--deteccion-version`); el motor esta preparado para que las futuras integraciones
    (Nuclei, OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos

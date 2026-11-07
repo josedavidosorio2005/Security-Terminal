@@ -79,6 +79,42 @@ async def test_panel_reconocimiento_ejecuta_y_muestra_resultados(monkeypatch):
         assert "completo" in mensaje.lower()
 
 
+async def test_panel_reconocimiento_servicio_con_marcado_rich_no_crashea(monkeypatch):
+    """servicio/version del objetivo escaneado se escapan antes de llegar a la tabla."""
+    resultado_falso = types.SimpleNamespace(
+        objetivo="127.0.0.1",
+        puertos=[_puerto_falso(80, servicio="[/]", version="[bold red]x")],
+    )
+
+    def ejecutar_nmap_falso(base_datos, proyecto, objetivo, puertos, *, deteccion_version=False,
+                             tiempo_limite=120.0, guardar_evidencia=True, debe_cancelar=None):
+        return resultado_falso, [], None
+
+    monkeypatch.setattr(modulo_paneles, "ejecutar_nmap", ejecutar_nmap_falso)
+
+    app = AuraByteApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        await _crear_proyecto(pilot, "nmap-marcado")
+
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
+        await pilot.pause()
+        app.query_one("#nmap-objetivo", Input).focus()
+        await _escribir(pilot, "127.0.0.1")
+        app.query_one("#nmap-puertos", Input).focus()
+        await _escribir(pilot, "80")
+
+        await _clic_centro(pilot, "#nmap-ejecutar")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # No debe haber reventado: la tabla tiene su fila y la app sigue viva.
+        assert app.query_one("#nmap-tabla", DataTable).row_count == 1
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-proyectos"
+        await pilot.pause()
+        assert app.query_one("#switcher-central", ContentSwitcher).current == "panel-proyectos"
+
+
 async def test_panel_reconocimiento_checkbox_activa_deteccion_version(monkeypatch):
     recibido = {}
 

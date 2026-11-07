@@ -426,10 +426,15 @@ class PanelReconocimiento(Vertical):
             return
         tabla = self.query_one("#nmap-tabla", DataTable)
         tabla.clear()
+        # protocolo/estado/servicio/version vienen de la respuesta del objetivo
+        # escaneado: se escapan siempre antes de mostrarlos (ver ui/consola.py).
         for puerto in resultado.puertos:
             tabla.add_row(
-                str(puerto.puerto), puerto.protocolo, puerto.estado,
-                puerto.servicio or "-", puerto.version or "-",
+                str(puerto.puerto),
+                texto_seguro(puerto.protocolo),
+                texto_seguro(puerto.estado),
+                texto_seguro(puerto.servicio) if puerto.servicio else "-",
+                texto_seguro(puerto.version) if puerto.version else "-",
             )
         mensaje = f"Analisis completo: {len(resultado.puertos)} puertos comprobados."
         if ruta_xml is not None:
