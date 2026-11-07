@@ -67,15 +67,22 @@ def redactar_url(url: str) -> str:
        (``a=1&b=2``, el formato que usan los flujos OAuth implicitos); un fragmento sin
        esa forma (p. ej. un ancla simple ``#seccion2``) se deja intacto.
 
-    Conserva el esquema, host, puerto y ruta tal cual. Si ``url`` no se puede interpretar,
-    se devuelve sin cambios en vez de fallar: esta funcion es solo para presentacion, no
-    para validacion (eso vive en ``core/validation.py``).
+    Conserva el esquema, host, puerto y ruta tal cual. Si ``url`` no se puede interpretar en
+    absoluto, se devuelve ``VALOR_REDACTADO`` (nunca la cadena original sin tocar): esta
+    funcion falla CERRADA, no abierta -- un dato que no se pudo analizar con seguridad no se
+    muestra "por si acaso" tal cual, aunque eso signifique perder algo de informacion de
+    presentacion en un caso raro. Un puerto invalido (no numerico) se trata por separado: no
+    impide redactar el resto de la URL (credenciales, consulta, fragmento), simplemente se omite.
     """
     try:
         partes = urlsplit(url)
+    except ValueError:
+        return VALOR_REDACTADO
+
+    try:
         puerto = partes.port
     except ValueError:
-        return url
+        puerto = None
 
     netloc = partes.hostname or ""
     if puerto is not None:

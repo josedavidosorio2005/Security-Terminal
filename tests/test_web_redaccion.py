@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eurabyte_security.modules.web.redaccion import redactar_url
+from eurabyte_security.modules.web.redaccion import VALOR_REDACTADO, redactar_url
 
 
 def test_redacta_parametros_sensibles_conocidos():
@@ -43,14 +43,29 @@ def test_insensible_a_mayusculas_en_el_nombre_del_parametro():
     assert "otrosecreto" not in resultado
 
 
-def test_url_malformada_se_devuelve_sin_cambios_en_vez_de_fallar():
+def test_url_sin_estructura_se_devuelve_sin_cambios_al_no_tener_nada_que_redactar():
+    # No tiene esquema/netloc/query/fragmento: la reconstruccion es un no-op, no porque
+    # se haya fallado "abierto", sino porque no habia nada sensible que ocultar.
     url = "no es una url valida"
     assert redactar_url(url) == url
 
 
-def test_url_con_puerto_invalido_se_devuelve_sin_cambios_en_vez_de_fallar():
-    url = "http://127.0.0.1:no-es-un-puerto/"
-    assert redactar_url(url) == url
+def test_puerto_invalido_no_impide_redactar_el_resto_de_la_url():
+    """Un puerto no numerico no debe hacer que la funcion falle abierta (ver host/query)."""
+    url = "http://admin:supersecreta@127.0.0.1:no-es-un-puerto/?token=otro-secreto"
+    resultado = redactar_url(url)
+    assert "admin" not in resultado
+    assert "supersecreta" not in resultado
+    assert "otro-secreto" not in resultado
+    assert "no-es-un-puerto" not in resultado
+
+
+def test_url_que_urlsplit_no_puede_interpretar_falla_cerrado():
+    """Si ni siquiera se puede dividir la URL, se devuelve un marcador, nunca la cadena cruda."""
+    url_invalida = "http://[::1/puerto-sin-cerrar"  # IPv6 con bracket sin cerrar: ValueError
+    resultado = redactar_url(url_invalida)
+    assert resultado == VALOR_REDACTADO
+    assert resultado != url_invalida
 
 
 def test_elimina_credenciales_del_host():
