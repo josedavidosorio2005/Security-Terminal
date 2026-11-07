@@ -25,6 +25,7 @@ dependencies = [
     "rich>=13.7.0",
     "prompt_toolkit>=3.0.43",
     "textual>=1.0.0",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]

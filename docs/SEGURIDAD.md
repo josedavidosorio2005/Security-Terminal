@@ -30,6 +30,17 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
    interna que la CLI; no hay invocacion de `subprocess`/`os.system` sobre lo que el usuario
    escribe. Las mismas comprobaciones de alcance y los mismos limites de la Fase 1 se aplican
    sin cambios.
+7. **Las integraciones externas (Nmap y las que sigan) tampoco usan un shell.**
+   `integrations/proceso.py:ejecutar_proceso()` es el unico punto de la aplicacion que invoca un
+   binario externo, siempre con `subprocess.Popen(..., shell=False)` y una lista de argumentos
+   ya validados -- nunca una cadena construida por interpolacion. Cada ejecucion tiene limite de
+   tiempo y puede cancelarse de verdad (`Popen.kill()`), y el alcance autorizado se comprueba
+   **antes** de invocar la herramienta, igual que con `escanear tcp`.
+8. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
+   deteccion de servicios/version de Nmap (`-sV`) requiere activarla explicitamente
+   (`--deteccion-version`); el motor esta preparado para que las futuras integraciones
+   (Nuclei, OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos
+   por defecto.
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 
@@ -42,5 +53,7 @@ Ver [SECURITY.md](../SECURITY.md).
 - Registra el alcance exacto que te autorizaron, ni mas ni menos.
 - Guarda las evidencias (resultados, informes) en un lugar seguro y bórralas cuando ya no las
   necesites; AST no las cifra por defecto.
-- No ejecutes integraciones externas (Nmap, Nuclei, OWASP ZAP, previstas para la Fase 3) contra
-  objetivos fuera del alcance acordado con el cliente o la organizacion.
+- No ejecutes integraciones externas (Nmap y las que sigan: Nuclei, OWASP ZAP) contra objetivos
+  fuera del alcance acordado con el cliente o la organizacion.
+- Al usar `--deteccion-version` con Nmap, confirma primero que esa comprobacion en concreto
+  esta autorizada; no es el comportamiento por defecto.

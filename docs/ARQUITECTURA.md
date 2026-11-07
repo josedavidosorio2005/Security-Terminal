@@ -21,9 +21,12 @@ src/eurabyte_security/
 │   ├── web/        Auditoria web (Fase 3: cabeceras HTTP, TLS...). Vacio en la Fase 1.
 │   ├── vulnerability/  Analisis de vulnerabilidades (Fase 3: Nuclei...). Vacio en la Fase 1.
 │   └── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
-├── integrations/
-│   ├── base.py     Interfaz base para adaptadores externos (Nmap, Nuclei, ZAP...). Fase 3.
-│   └── deteccion.py  Comprueba si esas herramientas estan instaladas (nunca las ejecuta).
+├── integrations/   Motor de integraciones (Fase 3). Detalle en docs/INTEGRACIONES.md.
+│   ├── base.py     AdaptadorExterno: contrato comun (deteccion, version, validacion...).
+│   ├── proceso.py  Unico punto de ejecucion real de un binario externo (sin shell, con
+│   │               limite de tiempo y cancelacion mediante Popen.kill()).
+│   ├── deteccion.py  Deteccion/version de las herramientas (nunca las ejecuta de verdad).
+│   └── nmap.py     Primer adaptador concreto: descubrimiento de puertos y servicios.
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
 ├── storage/        Repositorio SQLite (proyectos, alcances, resultados).
 └── ui/
@@ -69,21 +72,54 @@ una copia. Las operaciones de red (escaneo TCP) se ejecutan en workers de Textua
 callable sin argumentos que devuelve `bool`). El panel "Redes" lo conecta a
 `worker.is_cancelled` del worker de Textual que ejecuta el escaneo:
 
-1. **Durante el escaneo**, `escanear_puertos_tcp` consulta `debe_cancelar()` entre puerto y
-   puerto; si es verdadero, cancela las conexiones que todavia no se habian iniciado (no abre
-   mas sockets) y deja de esperar resultados.
+1. **Durante el escaneo**, `escanear_puertos_tcp` sondea `debe_cancelar()` cada 50ms
+   (`concurrent.futures.wait(..., timeout=0.05)`), **no solo cuando un puerto termina**: si
+   todos los puertos en curso estuvieran bloqueados (un objetivo que no responde, por ejemplo),
+   la cancelacion se detecta igual, en ese plazo. Al detectarla, cancela las conexiones que
+   todavia no se habian iniciado (no abre mas sockets, nunca mas de lo que el limite de
+   concurrencia ya habia permitido empezar) y deja de esperar resultados.
 2. **Justo antes de persistir**, `escanear_tcp` vuelve a consultar `debe_cancelar()`. Si es
    verdadero, lanza `ErrorEscaneoCancelado` (`core/errores.py`) **sin escribir nada** en la
    base de datos: la semantica es todo-o-nada, nunca un guardado parcial.
-3. **En la interfaz**, cada escaneo que se inicia desde el panel "Redes" recibe un numero de
-   secuencia (`PanelRedes._secuencia`); solo el resultado del escaneo con el numero de secuencia
-   mas reciente puede actualizar la tabla (`_mostrar_resultados`), lo que impide que dos
-   escaneos solapados mezclen sus resultados en pantalla, incluso si el mas antiguo termina
-   despues del mas nuevo (los hilos no se pueden interrumpir de forma forzosa en Python).
+3. **En la interfaz**, cada escaneo que se inicia desde el panel "Redes" (o desde
+   "Reconocimiento", para Nmap) recibe un numero de secuencia propio (`_secuencia`); solo el
+   resultado del escaneo con el numero de secuencia mas reciente puede actualizar la tabla
+   (`_mostrar_resultados`), lo que impide que dos escaneos solapados mezclen sus resultados en
+   pantalla, incluso si el mas antiguo termina despues del mas nuevo (los hilos no se pueden
+   interrumpir de forma forzosa en Python).
 
 Quien use `escanear_tcp`/`escanear_puertos_tcp` sin pasar `debe_cancelar` (la CLI, el REPL y
 `motor_comandos.py`) conserva el comportamiento anterior sin cambios: el parametro es
 estrictamente opcional.
+
+## Persistencia atomica
+
+`storage/database.py:BaseDatos.agregar_resultados()` (y su equivalente
+`agregar_resultados_nmap()`) escriben **todos** los resultados de un escaneo en una sola
+transaccion: una unica conexion SQLite, un unico `commit()` al final. Si algo falla a mitad de
+camino (una excepcion, una cancelacion detectada tarde...), la conexion se cierra sin llegar a
+ese `commit()` y SQLite descarta toda la transaccion -- no queda ningun resultado parcial. Ver
+`tests/test_fase3_robustez.py` para la prueba que fuerza un fallo a mitad de la escritura y
+comprueba que no queda nada guardado.
+
+## Integraciones externas: flujo (ejemplo: `est nmap descubrir`)
+
+1. **`cli/app.py`** registra `nmap` (`commands/nmap.py`) junto a los demas comandos.
+2. **`commands/nmap.py:ejecutar_nmap()`** valida el objetivo y comprueba el alcance autorizado
+   **antes** de tocar nada (igual que `escanear_tcp`): ningun objetivo fuera de alcance llega a
+   invocar Nmap.
+3. **`integrations/nmap.py:AdaptadorNmap`** construye los argumentos (`-sT -Pn -p ... -oX ...`,
+   mas `-sV` si se autorizo explicitamente) y delega la ejecucion real a
+   **`integrations/proceso.py:ejecutar_proceso()`** (el unico punto de la app que invoca un
+   proceso externo, sin shell, con limite de tiempo y cancelacion real via `Popen.kill()`).
+4. El adaptador lee el XML resultante con `defusedxml` y lo convierte en `PuertoNmap`
+   (dataclasses propias de AST, no la salida cruda de Nmap).
+5. `commands/nmap.py` persiste los resultados (atomicamente, ver arriba) y guarda el XML
+   original como evidencia en `core/config.py:ruta_evidencias("nmap")`.
+
+Cualquier integracion futura (Nuclei, OWASP ZAP...) sigue el mismo patron: adaptador en
+`integrations/`, comando/orquestacion en `commands/` (donde vive la verificacion de alcance),
+nunca al reves.
 
 ## Texto seguro frente al marcado Rich
 

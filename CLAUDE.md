@@ -7,8 +7,9 @@ Este archivo persiste contexto para futuras sesiones de desarrollo con Claude Co
 
 AST es una terminal de pentesting en espanol, multiplataforma (Windows/Linux), con dos
 interfaces: una CLI/REPL (Typer + Rich + prompt_toolkit, Fase 1) y una interfaz visual completa
-(Textual, Fase 2), ambas sobre la misma logica y persistencia en SQLite. El roadmap completo
-esta en [docs/ROADMAP.md](docs/ROADMAP.md); las Fases 1 y 2 ya estan implementadas.
+(Textual, Fase 2), ambas sobre la misma logica y persistencia en SQLite. La Fase 3 (motor de
+integraciones con herramientas reales de pentesting) esta en curso, un modulo por PR; Nmap es
+el primero. El roadmap completo esta en [docs/ROADMAP.md](docs/ROADMAP.md).
 
 **Importante sobre nombres**: el paquete Python sigue llamandose `eurabyte_security`, la
 distribucion `eurabyte-security` y el comando de consola `est` -- no los renombres. Son
@@ -44,6 +45,13 @@ crees un logo nuevo ni dupliques el glifo en otros widgets.
    `widgets/paneles.py:PanelProximamente` y no le agregues datos de relleno falsos.
 8. **Las operaciones de red en la TUI corren en un worker (`@work(thread=True)`), nunca en el
    hilo principal de Textual.** Bloquear ese hilo congela toda la interfaz.
+9. **Ninguna integracion externa usa `shell=True` ni interpolacion de argumentos.**
+   `integrations/proceso.py:ejecutar_proceso()` es el unico punto que invoca un binario
+   externo; siempre recibe una lista de argumentos ya validados, nunca una cadena. No lo
+   rodees con un `subprocess.run(..., shell=True)` en ningun adaptador nuevo.
+10. **Un escaneo o analisis cancelado nunca persiste nada, ni parcial.** La persistencia de un
+    lote de resultados va en una sola transaccion (`BaseDatos.agregar_resultados*`); la
+    cancelacion se comprueba antes de esa transaccion, no despues.
 
 ## Arquitectura (resumen; detalle en docs/ARQUITECTURA.md)
 
@@ -57,9 +65,13 @@ crees un logo nuevo ni dupliques el glifo en otros widgets.
 - `modules/network/tcp_scanner.py`: logica pura del escaneo TCP, sin dependencias de Typer/Rich.
 - `modules/reporting/generador.py`: construccion de informes HTML/JSON.
 - `storage/database.py`: unico punto de acceso a SQLite (`BaseDatos`).
-- `integrations/base.py` y `assistant/base.py`: contratos para las Fases 3 y 4. No implementar
-  integraciones reales ahi sin revisar primero `docs/ROADMAP.md`. `integrations/deteccion.py`
-  solo detecta binarios instalados (`shutil.which`); nunca los ejecuta.
+- `integrations/`: motor de integraciones de la Fase 3 (detalle en docs/INTEGRACIONES.md).
+  `base.py` define el contrato comun (`AdaptadorExterno`); `proceso.py` es el unico punto que
+  ejecuta un binario externo de verdad; `nmap.py` es el primer adaptador concreto;
+  `deteccion.py` solo comprueba presencia/version (nunca ejecuta un analisis). Una integracion
+  nueva (Nuclei, ZAP...) deberia encajar en este mismo patron sin tocar `proceso.py`.
+- `assistant/base.py`: contrato para la Fase 4 (todavia sin implementar). No implementes nada
+  real ahi sin revisar primero `docs/ROADMAP.md`.
 - `ui/tui/`: interfaz visual Textual (ver docs/ARQUITECTURA.md y docs/INTERFAZ.md). Al agregar
   un widget nuevo que use `Input` dentro de un `Horizontal` junto a otro control, recuerda que
   `Input` tiene `width: 100%` por defecto (ver regla `Horizontal > Input` en `estilos.tcss`) o

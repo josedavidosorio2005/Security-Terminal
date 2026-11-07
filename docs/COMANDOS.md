@@ -70,10 +70,30 @@ est escanear tcp OBJETIVO --puertos 22,80,443 [--proyecto NOMBRE] [--timeout 1.0
 El comando rechaza el escaneo si el objetivo no esta dentro de una red registrada con
 `est alcance agregar`. Los resultados (`abierto`, `cerrado` o `error`) se guardan automaticamente.
 
+## `est nmap`
+
+Integracion con Nmap (Fase 3): descubrimiento de puertos y, si se autoriza explicitamente,
+identificacion de servicios/version. Detalle completo (parametros, resultados, evidencia,
+limitaciones) en [docs/INTEGRACIONES.md](INTEGRACIONES.md).
+
+```bash
+est nmap version
+est nmap descubrir OBJETIVO --puertos 22,80,443 [--proyecto NOMBRE] \
+    [--deteccion-version] [--tiempo-limite 120]
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est nmap version` | Muestra si Nmap esta instalado y su version. |
+| `est nmap descubrir OBJETIVO --puertos ...` | Ejecuta Nmap dentro del alcance autorizado. |
+
+Al igual que `escanear tcp`, rechaza cualquier objetivo que no este en el alcance autorizado del
+proyecto. Requiere tener Nmap instalado.
+
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,
-`alcance`, `tcp`, `escanear`, `resultados`, `reporte`, `interactivo`.
+`alcance`, `tcp`, `escanear`, `nmap`, `resultados`, `reporte`, `interactivo`, `interfaz`.
 
 ```bash
 est explicar tcp

@@ -46,14 +46,24 @@ ejecuta comandos a traves de un shell del sistema.
   sugerencias, paneles dedicados para Proyectos, Alcance, Redes (escaneo TCP con cancelacion),
   Resultados, Reportes, Herramientas (deteccion de Nmap/Nuclei/ZAP/tshark sin ejecutarlos) y
   Configuracion.
-- Las secciones todavia no implementadas (Modulos, Reconocimiento, Analisis web,
-  Vulnerabilidades, Aprendizaje) se muestran explicitamente como "Proximamente": nunca simulan
-  datos falsos.
+- Las secciones todavia no implementadas (Modulos, Analisis web, Vulnerabilidades,
+  Aprendizaje) se muestran explicitamente como "Proximamente": nunca simulan datos falsos.
 - Interfaz adaptable: en terminales estrechas oculta el panel de informacion y compacta la
   barra lateral, sin perder acceso a ninguna funcionalidad (sigue disponible desde la Terminal).
 
 Manual de usuario completo (atajos, paneles, solucion de problemas) en
 [docs/INTERFAZ.md](docs/INTERFAZ.md).
+
+### Fase 3 (integraciones de pentesting, en curso)
+
+- Motor de integraciones (`integrations/`): deteccion de herramientas, validacion de
+  parametros, ejecucion sin shell con limite de tiempo y cancelacion real, captura de E/S,
+  normalizacion de resultados y registro de evidencias.
+- **Nmap** (`est nmap descubrir`, panel "Reconocimiento"): descubrimiento de puertos y, si se
+  autoriza explicitamente, identificacion de servicios/version. Cada analisis guarda su XML
+  original como evidencia. Detalle en [docs/INTEGRACIONES.md](docs/INTEGRACIONES.md).
+- Nuclei, OWASP ZAP y la auditoria web no intrusiva llegaran en PRs independientes siguiendo el
+  mismo motor.
 
 ## Instalacion
 
@@ -82,6 +92,7 @@ est proyecto crear laboratorio
 est proyecto listar
 est alcance agregar 127.0.0.1/32
 est escanear tcp 127.0.0.1 --puertos 22,80,443
+est nmap descubrir 127.0.0.1 --puertos 22,80,443   # Fase 3, requiere tener Nmap instalado
 est explicar tcp
 est resultados
 est reporte generar --formato html

@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS resultados (
     estado TEXT NOT NULL,
     creado_en TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS resultados_nmap (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    objetivo TEXT NOT NULL,
+    puerto INTEGER NOT NULL,
+    protocolo TEXT NOT NULL,
+    estado TEXT NOT NULL,
+    servicio TEXT,
+    version TEXT,
+    creado_en TEXT NOT NULL
+);
 """
 
 
@@ -64,6 +76,19 @@ class Resultado:
     objetivo: str
     puerto: int
     estado: str
+    creado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoNmap:
+    id: int
+    proyecto_id: int
+    objetivo: str
+    puerto: int
+    protocolo: str
+    estado: str
+    servicio: str | None
+    version: str | None
     creado_en: str
 
 
@@ -216,3 +241,51 @@ class BaseDatos:
                     (proyecto_id, limite),
                 ).fetchall()
         return [Resultado(**fila) for fila in filas]
+
+    # -- Resultados de Nmap ---------------------------------------------
+    def agregar_resultados_nmap(
+        self,
+        proyecto_id: int,
+        objetivo: str,
+        resultados: list[tuple[int, str, str, str | None, str | None]],
+    ) -> list[ResultadoNmap]:
+        """Inserta resultados de Nmap en una sola transaccion (todo o nada).
+
+        ``resultados`` es una lista de ``(puerto, protocolo, estado, servicio, version)``.
+        Misma semantica de atomicidad que :meth:`agregar_resultados`.
+        """
+        guardados: list[ResultadoNmap] = []
+        with self._conectar() as conexion:
+            for puerto, protocolo, estado, servicio, version in resultados:
+                cursor = conexion.execute(
+                    "INSERT INTO resultados_nmap "
+                    "(proyecto_id, objetivo, puerto, protocolo, estado, servicio, version, "
+                    "creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (proyecto_id, objetivo, puerto, protocolo, estado, servicio, version, _ahora()),
+                )
+                fila = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, puerto, protocolo, estado, servicio, "
+                    "version, creado_en FROM resultados_nmap WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(ResultadoNmap(**fila))
+        return guardados
+
+    def listar_resultados_nmap(
+        self, proyecto_id: int | None = None, limite: int = 200
+    ) -> list[ResultadoNmap]:
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, puerto, protocolo, estado, servicio, "
+                    "version, creado_en FROM resultados_nmap ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, puerto, protocolo, estado, servicio, "
+                    "version, creado_en FROM resultados_nmap WHERE proyecto_id = ? "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [ResultadoNmap(**fila) for fila in filas]

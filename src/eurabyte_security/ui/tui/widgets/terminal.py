@@ -170,9 +170,13 @@ class PanelInfoComando(Vertical):
         )
 
     def actualizar_herramientas(self, herramientas: list[HerramientaExterna]) -> None:
-        lineas = [
-            f"- {h.nombre}: {'instalada' if h.instalada else 'no instalada'}" for h in herramientas
-        ]
+        lineas = []
+        for h in herramientas:
+            if h.instalada:
+                detalle = f"instalada ({texto_seguro(h.version)})" if h.version else "instalada"
+            else:
+                detalle = "no instalada"
+            lineas.append(f"- {h.nombre}: {detalle}")
         self.query_one("#info-herramientas", Static).update(
             "Herramientas externas (Fase 3):\n" + "\n".join(lineas)
         )
