@@ -75,6 +75,17 @@ con soporte de color verdadero (Windows Terminal, la mayoria de terminales de Li
 actuales). Manual completo, atajos de teclado y solucion de problemas en
 [docs/INTERFAZ.md](INTERFAZ.md).
 
+## Integraciones externas (Fase 3)
+
+`pip install` instala el motor de integraciones, pero cada herramienta externa se instala por
+separado (AST nunca las instala por ti; `est nmap version` indica si la detecta):
+
+- **Nmap**: Windows, [nmap.org/download.html](https://nmap.org/download.html); Debian/Ubuntu,
+  `sudo apt install nmap`; Fedora/RHEL, `sudo dnf install nmap`; macOS, `brew install nmap`.
+
+Detalle de parametros, resultados y limitaciones de cada integracion en
+[docs/INTEGRACIONES.md](INTEGRACIONES.md).
+
 ## Ejecutar las pruebas
 
 ```bash

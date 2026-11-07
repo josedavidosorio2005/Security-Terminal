@@ -35,3 +35,15 @@ class ErrorSinProyectoActivo(ErrorEST):
 
 class ErrorEscaneoCancelado(ErrorEST):
     """El escaneo se cancelo antes de completarse; no se guardo ningun resultado."""
+
+
+class ErrorHerramientaNoDisponible(ErrorEST):
+    """La herramienta externa no esta instalada o no se encuentra en el PATH."""
+
+
+class ErrorParametrosIntegracion(ErrorEST):
+    """Los parametros indicados para una integracion externa no son validos."""
+
+
+class ErrorIntegracion(ErrorEST):
+    """Fallo al ejecutar una integracion externa (tiempo agotado, salida invalida...)."""

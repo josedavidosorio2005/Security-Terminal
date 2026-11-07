@@ -54,6 +54,20 @@ EXPLICACIONES: dict[str, str] = {
         "con teclado y raton. Requiere una consola real.\n\n"
         "est interfaz"
     ),
+    "nmap": (
+        "Integracion con Nmap (Fase 3): descubrimiento de puertos y, si se\n"
+        "autoriza explicitamente, identificacion de servicios/version. Solo\n"
+        "funciona contra objetivos ya autorizados en el alcance del proyecto,\n"
+        "igual que 'escanear tcp'. Requiere tener Nmap instalado.\n\n"
+        "est nmap descubrir OBJETIVO --puertos 22,80,443 [--proyecto NOMBRE]\n"
+        "    [--deteccion-version] [--tiempo-limite 120]\n"
+        "est nmap version\n\n"
+        "- --deteccion-version: activa '-sV' (identificacion de servicios).\n"
+        "  Usalo solo si esa comprobacion esta explicitamente autorizada.\n"
+        "- --tiempo-limite: segundos maximos de espera para Nmap (5 a 600).\n"
+        "- Cada analisis guarda su salida XML original como evidencia en el\n"
+        "  directorio de datos de AST (carpeta 'evidencias/nmap')."
+    ),
 }
 
 def explicar_cmd(

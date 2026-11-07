@@ -80,11 +80,9 @@ def escanear_tcp(
             "en segundo plano, pero no se guardo ningun resultado."
         )
 
-    resultados_guardados = [
-        base_datos.agregar_resultado(proyecto.id, str(ip_objetivo), r.puerto, r.estado)
-        for r in resultados_escaneo
-    ]
-    return resultados_guardados
+    return base_datos.agregar_resultados(
+        proyecto.id, str(ip_objetivo), [(r.puerto, r.estado) for r in resultados_escaneo]
+    )
 
 
 @escanear_app.command("tcp")

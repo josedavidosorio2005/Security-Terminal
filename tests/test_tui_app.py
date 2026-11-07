@@ -58,10 +58,10 @@ async def test_secciones_no_implementadas_muestran_proximamente():
         await pilot.pause()
         opciones = app.query_one("#barra-lateral", OptionList)
         opciones.focus()
-        opciones.highlighted = opciones.get_option_index("panel-reconocimiento")
+        opciones.highlighted = opciones.get_option_index("panel-web")
         await pilot.press("enter")
         await pilot.pause()
-        panel = app.query_one("#panel-reconocimiento")
+        panel = app.query_one("#panel-web")
         textos = " ".join(str(estatico.render()) for estatico in panel.query("Static"))
         assert "Proximamente" in textos
 

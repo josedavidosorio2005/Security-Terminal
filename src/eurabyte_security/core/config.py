@@ -43,6 +43,13 @@ def ruta_reportes() -> Path:
     return directorio
 
 
+def ruta_evidencias(herramienta: str) -> Path:
+    """Directorio donde cada integracion (Nmap, Nuclei...) guarda su salida cruda."""
+    directorio = directorio_datos() / "evidencias" / herramienta
+    directorio.mkdir(parents=True, exist_ok=True)
+    return directorio
+
+
 def _leer_configuracion() -> dict[str, Any]:
     ruta = ruta_configuracion()
     if not ruta.exists():

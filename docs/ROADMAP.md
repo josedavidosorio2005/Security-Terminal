@@ -58,15 +58,57 @@ Pendiente explicito para fases futuras (no entra en el alcance de la Fase 2):
 - Historial de auditorias persistente entre sesiones de la interfaz visual (hoy se apoya en los
   resultados guardados en SQLite, pero no hay una vista de "sesiones" separada).
 
-## Fase 3 - Herramientas de ciberseguridad
+## Fase 3 - Herramientas de ciberseguridad (en curso, por pasos/PR)
 
-- Adaptadores para Nmap, Nuclei, OWASP ZAP y tshark sobre la interfaz definida en
-  `integrations/base.py`.
-- Analisis de cabeceras HTTP y revision de certificados TLS.
-- Auditoria de configuraciones e inspeccion de servicios de red.
-- Cada integracion: documentacion en espanol, validacion de argumentos, comprobacion de
-  instalacion (con mensajes claros si la herramienta no esta disponible) y verificacion de
-  alcance autorizado antes de ejecutar nada.
+La Fase 3 se entrega de forma incremental, un modulo por pull request. Este PR cubre el Paso 0
+(robustez) y los Pasos 1-2 (motor de integraciones + Nmap).
+
+### Paso 0 - Robustez de los escaneos existentes (completado en este PR)
+
+- [x] `BaseDatos.agregar_resultados()`/`agregar_resultados_nmap()`: persistencia atomica (una
+      sola transaccion SQLite por escaneo; un fallo a mitad de camino no deja nada guardado).
+- [x] `escanear_puertos_tcp()` sondea la cancelacion cada 50ms (no solo cuando un puerto
+      termina), para que nunca se programen conexiones nuevas mas alla del limite de
+      concurrencia tras detectar una cancelacion.
+- [x] Pruebas deterministas (`tests/test_fase3_robustez.py`): rollback atomico, limite de
+      concurrencia respetado tras cancelar, y escrituras concurrentes de dos escaneos distintos
+      sin perdida ni mezcla de datos.
+- [x] Las 110 pruebas anteriores (Fases 1 y 2) siguen en verde.
+
+### Pasos 1-2 - Motor de integraciones y Nmap (completado en este PR)
+
+- [x] `integrations/base.py`: contrato comun (deteccion, version, validacion de parametros,
+      ejecucion sin shell).
+- [x] `integrations/proceso.py`: unico punto de ejecucion de un binario externo -- sin
+      `shell=True` ni interpolacion, con limite de tiempo y cancelacion real
+      (`Popen.kill()`, no solo esperar a que termine).
+- [x] `integrations/nmap.py` + `commands/nmap.py`: descubrimiento de puertos (`est nmap
+      descubrir`), deteccion de servicios/version opcional (`--deteccion-version`), lectura de
+      XML con `defusedxml`, persistencia atomica, evidencia guardada sin modificar.
+- [x] Gestionable desde la CLI (`est nmap ...`) y desde la interfaz visual (seccion
+      "Reconocimiento", que deja de ser un marcador "Proximamente").
+- [x] Explicacion en espanol (`est explicar nmap`).
+- [x] Pruebas con mocks, sin ejecutar Nmap real ni tocar sistemas de terceros
+      (`tests/test_integraciones_nmap.py`, `tests/test_integraciones_proceso.py`,
+      `tests/test_tui_nmap.py`): deteccion, validacion, analisis de XML, tiempo agotado,
+      cancelacion real, verificacion de alcance, persistencia + evidencia, y los mismos
+      paneles-UI (ejecutar, cancelar, dos analisis consecutivos sin mezclar, error inesperado
+      sin cerrar la interfaz).
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas** (ver tambien [docs/INTEGRACIONES.md](INTEGRACIONES.md)): los
+resultados de Nmap tienen su propia tabla (`resultados_nmap`) y todavia no aparecen en
+`est resultados` ni en `est reporte generar` (solo los de `escanear tcp`); eso queda para una
+iteracion posterior.
+
+### Pasos 3-5 - Pendientes (PRs independientes futuras)
+
+- Auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones).
+- Adaptador opcional para Nuclei (plantillas de bajo impacto, nunca intrusivas por defecto).
+- Integracion opcional con OWASP ZAP (solo analisis pasivo por defecto).
+- Cada integracion seguira el mismo motor (`integrations/base.py` + `integrations/proceso.py`)
+  descrito arriba: documentacion en espanol, validacion de argumentos, comprobacion de
+  instalacion y verificacion de alcance autorizado antes de ejecutar nada.
 
 ## Fase 4 - Asistente inteligente
 

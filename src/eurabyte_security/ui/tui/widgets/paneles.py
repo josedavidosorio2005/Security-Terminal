@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from textual import on, work
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, DataTable, Input, Select, Static
+from textual.widgets import Button, Checkbox, DataTable, Input, Select, Static
 from textual.worker import get_current_worker
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.commands.alcance import agregar_alcance, listar_alcance
 from eurabyte_security.commands.escanear import escanear_tcp
 from eurabyte_security.commands.explicar import EXPLICACIONES
+from eurabyte_security.commands.nmap import ejecutar_nmap
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados
@@ -318,6 +319,125 @@ class PanelRedes(Vertical):
         self.app.refrescar_estado()  # type: ignore[attr-defined]
 
 
+class PanelReconocimiento(Vertical):
+    """Descubrimiento de puertos y servicios con Nmap, dentro del alcance autorizado.
+
+    Misma politica de cancelacion que PanelRedes: numero de secuencia propio
+    por analisis (solo el mas reciente puede actualizar la tabla) y
+    cancelacion real del proceso de Nmap via ``debe_cancelar`` (ver
+    integrations/proceso.py). Un analisis cancelado nunca persiste ningun
+    resultado (``commands/nmap.py`` -> ``ErrorEscaneoCancelado``).
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._worker = None
+        self._secuencia = 0
+
+    def compose(self):
+        yield Static("Reconocimiento (Nmap)", classes="titulo-panel")
+        yield Static(
+            "Actua sobre el proyecto activo. El objetivo debe estar autorizado en "
+            "'Alcance'. Requiere tener Nmap instalado (ver panel 'Herramientas').",
+            classes="ast-tenue",
+        )
+        with Horizontal():
+            yield Input(placeholder="Objetivo (IPv4)", id="nmap-objetivo")
+            yield Input(placeholder="Puertos, ej: 22,80,443", id="nmap-puertos")
+        yield Checkbox(
+            "Deteccion de servicios/version (-sV) - solo si esta autorizado",
+            id="nmap-deteccion-version",
+        )
+        with Horizontal():
+            yield Button("Ejecutar Nmap", id="nmap-ejecutar", variant="primary")
+            yield Button("Cancelar", id="nmap-cancelar")
+        yield Static("", id="nmap-mensaje", classes="ast-tenue")
+        yield DataTable(id="nmap-tabla")
+
+    def on_mount(self) -> None:
+        self.query_one("#nmap-tabla", DataTable).add_columns(
+            "Puerto", "Protocolo", "Estado", "Servicio", "Version"
+        )
+
+    def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#nmap-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    @on(Button.Pressed, "#nmap-ejecutar")
+    def _iniciar(self, _evento: Button.Pressed) -> None:
+        objetivo = self.query_one("#nmap-objetivo", Input).value.strip()
+        puertos = self.query_one("#nmap-puertos", Input).value.strip()
+        deteccion_version = self.query_one("#nmap-deteccion-version", Checkbox).value
+
+        self._secuencia += 1
+        secuencia = self._secuencia
+
+        self._mensaje("Ejecutando Nmap... (puedes cancelar mientras se ejecuta)", "ast-aviso")
+        self._worker = self._ejecutar(secuencia, objetivo, puertos, deteccion_version)
+
+    @on(Button.Pressed, "#nmap-cancelar")
+    def _cancelar(self, _evento: Button.Pressed) -> None:
+        if self._worker is not None and self._worker.is_running:
+            self._worker.cancel()
+            self._mensaje(
+                "Cancelacion solicitada: no se guardara ningun resultado de este "
+                "analisis (el proceso de Nmap se detiene).",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="nmap-analisis", exit_on_error=False)
+    def _ejecutar(
+        self, secuencia: int, objetivo: str, puertos: str, deteccion_version: bool
+    ) -> None:
+        worker = get_current_worker()
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            resultado, _guardados, ruta_xml = ejecutar_nmap(
+                base_datos,
+                proyecto,
+                objetivo,
+                puertos,
+                deteccion_version=deteccion_version,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEscaneoCancelado as exc:
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-aviso")
+            return
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultados, secuencia, resultado, ruta_xml)
+
+    def _mostrar_resultados(self, secuencia: int, resultado, ruta_xml) -> None:
+        if secuencia != self._secuencia:
+            return
+        tabla = self.query_one("#nmap-tabla", DataTable)
+        tabla.clear()
+        for puerto in resultado.puertos:
+            tabla.add_row(
+                str(puerto.puerto), puerto.protocolo, puerto.estado,
+                puerto.servicio or "-", puerto.version or "-",
+            )
+        mensaje = f"Analisis completo: {len(resultado.puertos)} puertos comprobados."
+        if ruta_xml is not None:
+            mensaje += f" Evidencia: {texto_seguro(ruta_xml)}"
+        self._mensaje(mensaje, "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+
 class PanelResultados(Vertical):
     """Resultados guardados del proyecto activo."""
 
@@ -413,7 +533,7 @@ class PanelHerramientas(Vertical):
 
     def on_mount(self) -> None:
         self.query_one("#herr-tabla", DataTable).add_columns(
-            "Herramienta", "Comando", "Estado", "Ruta"
+            "Herramienta", "Comando", "Estado", "Version", "Ruta"
         )
         self.refrescar()
 
@@ -426,6 +546,7 @@ class PanelHerramientas(Vertical):
                 herramienta.nombre,
                 herramienta.comando,
                 estado,
+                texto_seguro(herramienta.version) if herramienta.version else "-",
                 texto_seguro(herramienta.ruta) if herramienta.ruta else "-",
             )
 
