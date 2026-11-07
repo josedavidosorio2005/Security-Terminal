@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from eurabyte_security.commands.nmap import ejecutar_nmap
+from eurabyte_security.commands.nmap import _tabla_resultado_nmap, ejecutar_nmap
 from eurabyte_security.commands.proyecto import crear_proyecto
 from eurabyte_security.core.errores import (
     ErrorEscaneoCancelado,
@@ -62,7 +62,9 @@ def _instalar_nmap_falso(monkeypatch, salida_xml: str | None = XML_EJEMPLO) -> N
 
 
 def test_nmap_no_instalado_lanza_error_claro(monkeypatch):
-    monkeypatch.setattr(AdaptadorNmap, "esta_instalado", lambda self: False)
+    # ruta_binario() es la fuente de verdad real (esta_instalado() delega en
+    # ella); se simula "no instalado" como lo haria shutil.which de verdad.
+    monkeypatch.setattr(AdaptadorNmap, "ruta_binario", lambda self: None)
     with pytest.raises(ErrorHerramientaNoDisponible):
         AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="80")
 
@@ -159,6 +161,67 @@ def test_nmap_info_cuando_no_esta_instalado(monkeypatch):
     info = AdaptadorNmap().info()
     assert info.instalada is False
     assert info.version is None
+
+
+# ---------------------------------------------------------------------------
+# Correcciones de seguridad: escape de datos del objetivo escaneado y
+# resolucion de la ruta absoluta del binario antes de ejecutarlo.
+# ---------------------------------------------------------------------------
+
+
+def test_servicio_con_marcado_rich_no_rompe_la_tabla_de_resultados(monkeypatch):
+    """servicio/version/protocolo/estado vienen del objetivo escaneado: no son de fiar."""
+    xml_malicioso = """<?xml version="1.0"?>
+<nmaprun>
+<host>
+<ports>
+<port protocol="tcp" portid="80">
+  <state state="open"/>
+  <service name="[/]" product="[bold red]x" version="1]"/>
+</port>
+</ports>
+</host>
+</nmaprun>
+"""
+    _instalar_nmap_falso(monkeypatch, salida_xml=xml_malicioso)
+    resultado = AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="80")
+
+    # Ni construir la tabla ni imprimirla con un Console real debe lanzar
+    # rich.errors.MarkupError (ver ui/consola.py:texto_seguro).
+    from rich.console import Console
+
+    tabla = _tabla_resultado_nmap(resultado)
+    Console().print(tabla)
+
+
+def test_ejecutar_binario_usa_la_ruta_absoluta_resuelta_no_el_nombre_pelado(monkeypatch):
+    """Evita una segunda resolucion de PATH (y el riesgo de 'binary planting')."""
+    capturado: dict[str, list[str]] = {}
+
+    def ruta_falsa(self) -> str:
+        return "/opt/herramientas/nmap"
+
+    def ejecutar_proceso_falso(comando, *, tiempo_limite, entrada=None, debe_cancelar=None):
+        capturado["comando"] = comando
+        return ResultadoProceso(codigo_salida=0, stdout="", stderr="", agotado_por_tiempo=False)
+
+    monkeypatch.setattr(AdaptadorNmap, "ruta_binario", ruta_falsa)
+    monkeypatch.setattr(
+        "eurabyte_security.integrations.base.ejecutar_proceso", ejecutar_proceso_falso
+    )
+
+    AdaptadorNmap()._ejecutar_binario(["-sT"], tiempo_limite=5.0)
+
+    assert capturado["comando"][0] == "/opt/herramientas/nmap"
+    assert capturado["comando"][0] != AdaptadorNmap.comando
+
+
+def test_base_desactiva_la_busqueda_en_el_directorio_de_trabajo_en_windows():
+    import os
+
+    # Se define al importar integrations/base.py (ver ese modulo). No tiene
+    # efecto fuera de Windows, pero debe estar presente igual.
+    assert os.environ.get("NoDefaultCurrentDirectoryInExePath") is not None
 
 
 # ---------------------------------------------------------------------------
