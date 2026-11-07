@@ -47,3 +47,9 @@ class ErrorParametrosIntegracion(ErrorEST):
 
 class ErrorIntegracion(ErrorEST):
     """Fallo al ejecutar una integracion externa (tiempo agotado, salida invalida...)."""
+
+
+class ErrorAuditoriaWeb(ErrorEST):
+    """Fallo de red al auditar un objetivo web (tiempo agotado, conexion rechazada,
+    respuesta demasiado grande, redireccion fuera de alcance...).
+    """

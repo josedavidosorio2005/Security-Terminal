@@ -14,6 +14,7 @@ from eurabyte_security.commands.nmap import nmap_app
 from eurabyte_security.commands.proyecto import proyecto_app
 from eurabyte_security.commands.reporte import reporte_app
 from eurabyte_security.commands.resultados import resultados_cmd
+from eurabyte_security.commands.web import web_app
 from eurabyte_security.core.errores import ErrorEST
 from eurabyte_security.marca import ABREVIATURA, NOMBRE_PRODUCTO, encabezado_version
 from eurabyte_security.ui.consola import consola, mostrar_error
@@ -30,6 +31,7 @@ app.add_typer(alcance_app, name="alcance")
 app.add_typer(escanear_app, name="escanear")
 app.add_typer(reporte_app, name="reporte")
 app.add_typer(nmap_app, name="nmap")
+app.add_typer(web_app, name="web")
 app.command("explicar")(explicar_cmd)
 app.command("resultados")(resultados_cmd)
 

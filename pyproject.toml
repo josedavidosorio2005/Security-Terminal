@@ -26,6 +26,7 @@ dependencies = [
     "prompt_toolkit>=3.0.43",
     "textual>=1.0.0",
     "defusedxml>=0.7.1",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]

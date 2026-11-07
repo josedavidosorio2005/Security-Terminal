@@ -119,6 +119,10 @@ no persiste ningun resultado ni guarda evidencia.
 
 ## Proximas integraciones (fuera del alcance de este PR)
 
-Nuclei, OWASP ZAP y la auditoria web no intrusiva estan en el roadmap (ver
-[ROADMAP.md](ROADMAP.md)) y se entregaran en PRs independientes, siguiendo el mismo motor de
-integraciones descrito aqui.
+Nuclei y OWASP ZAP estan en el roadmap (ver [ROADMAP.md](ROADMAP.md)) y se entregaran en PRs
+independientes, siguiendo el mismo motor de integraciones descrito aqui.
+
+La auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones) ya esta
+implementada, pero **no pasa por este motor de integraciones** (no invoca ningun binario
+externo: es trafico HTTP(S) hecho por la propia aplicacion). Ver
+[AUDITORIA_WEB.md](AUDITORIA_WEB.md).

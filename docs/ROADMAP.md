@@ -101,14 +101,46 @@ resultados de Nmap tienen su propia tabla (`resultados_nmap`) y todavia no apare
 `est resultados` ni en `est reporte generar` (solo los de `escanear tcp`); eso queda para una
 iteracion posterior.
 
-### Pasos 3-5 - Pendientes (PRs independientes futuras)
+### Paso 3 - Auditoria web no intrusiva (completado en PR independiente)
 
-- Auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones).
+- [x] Cabeceras HTTP de seguridad (`Content-Security-Policy`, `Strict-Transport-Security`,
+      `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`,
+      `Cache-Control` condicional, divulgacion de version del servidor, CORS permisivo), cada
+      una con severidad evaluada en contexto (nunca "toda cabecera ausente = critica").
+- [x] Auditoria HTTPS/TLS (`modules/web/tls.py`): version negociada, suite de cifrado,
+      confianza del certificado, vencimiento y coincidencia de nombre de host -- sin desactivar
+      nunca la validacion TLS para fingir un resultado exitoso; si el certificado no es
+      confiable, se reporta el hecho y se distinguen los metadatos confirmados de los leidos
+      sin verificar.
+- [x] Auditoria de cookies (`modules/web/cookies.py`): `Secure`, `HttpOnly`, `SameSite`,
+      expiracion; el valor real de la cookie nunca se registra ni se muestra.
+- [x] Redirecciones y SSRF (`modules/web/redirecciones.py`): ninguna redireccion se sigue
+      automaticamente; solo se sigue con `--seguir-redirecciones` y unicamente si el destino es
+      una IP IPv4 literal autorizada en el alcance (maximo 5 saltos).
+- [x] `est web cabeceras|tls|cookies|auditar|reporte`, seccion "Analisis web" de la interfaz
+      visual (formulario completo con cancelacion) y Terminal AST (`web cabeceras|tls|cookies|
+      auditar`), con autocompletado.
+- [x] Persistencia atomica en `resultados_web` y exportacion a HTML/JSON reutilizando el mismo
+      esqueleto de informe que `est reporte generar`.
+- [x] Pruebas con un servidor HTTP(S) local y certificados generados por la propia suite
+      (nunca contra servidores publicos): cabeceras presentes/ausentes, certificados vencidos y
+      no confiables, validacion TLS, cookies, redirecciones fuera de alcance, prevencion de
+      SSRF, limites de tiempo/respuesta, cancelacion, persistencia, reportes, CLI y Textual.
+- [x] Las 199 pruebas anteriores siguen en verde.
+
+**Limitaciones conocidas**: solo se admiten objetivos con IP IPv4 literal (no nombres de
+dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap` (ver
+[docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
+
+### Pasos 4-5 - Pendientes (PRs independientes futuras)
+
 - Adaptador opcional para Nuclei (plantillas de bajo impacto, nunca intrusivas por defecto).
 - Integracion opcional con OWASP ZAP (solo analisis pasivo por defecto).
 - Cada integracion seguira el mismo motor (`integrations/base.py` + `integrations/proceso.py`)
   descrito arriba: documentacion en espanol, validacion de argumentos, comprobacion de
   instalacion y verificacion de alcance autorizado antes de ejecutar nada.
+- Unificar los resultados de `escanear tcp`, `nmap` y `web` en un unico listado/informe
+  general (hoy cada uno tiene su propia tabla e informe).
 
 ## Fase 4 - Asistente inteligente
 

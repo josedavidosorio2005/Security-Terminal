@@ -15,10 +15,13 @@ from eurabyte_security.commands.nmap import ejecutar_nmap
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados
+from eurabyte_security.commands.web import TIPOS_VALIDOS as TIPOS_WEB_VALIDOS
+from eurabyte_security.commands.web import auditar_web
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
 from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
+from eurabyte_security.modules.web.modelos import Hallazgo
 from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
 
@@ -436,6 +439,205 @@ class PanelReconocimiento(Vertical):
             mensaje += f" Evidencia: {texto_seguro(ruta_xml)}"
         self._mensaje(mensaje, "ast-exito")
         self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+
+class PanelAuditoriaWeb(Vertical):
+    """Auditoria web no intrusiva: cabeceras, TLS, cookies y redirecciones.
+
+    Misma politica de cancelacion y de secuencia que ``PanelRedes``/
+    ``PanelReconocimiento``: cada clic en "Analizar" tiene su propio numero de
+    secuencia (solo el analisis mas reciente puede actualizar la tabla) y la
+    cancelacion detiene la peticion en curso sin persistir ningun hallazgo
+    parcial (ver ``commands/web.py`` -> ``auditar_web``). La URL solo se
+    acepta si su host esta autorizado en el alcance del proyecto elegido.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._worker = None
+        self._secuencia = 0
+        self._hallazgos: list[Hallazgo] = []
+
+    def compose(self):
+        yield Static("Analisis web", classes="titulo-panel")
+        yield Static(
+            "Auditoria no intrusiva de cabeceras, TLS, cookies y redirecciones. La URL "
+            "debe usar una IP autorizada en el alcance del proyecto elegido (sin nombres "
+            "de dominio por ahora).",
+            classes="ast-tenue",
+        )
+        with Horizontal():
+            yield Select([], allow_blank=True, prompt="Proyecto (activo)", id="web-proyecto")
+            yield Select(
+                [
+                    ("Cabeceras HTTP", "cabeceras"),
+                    ("TLS/certificado", "tls"),
+                    ("Cookies", "cookies"),
+                    ("Auditoria completa", "auditar"),
+                ],
+                value="auditar",
+                allow_blank=False,
+                id="web-tipo",
+            )
+        yield Input(placeholder="URL, ej: https://127.0.0.1:8443/panel", id="web-url")
+        with Horizontal():
+            yield Input(placeholder="Tiempo limite en segundos (10)", id="web-tiempo-limite")
+            yield Checkbox("Seguir redirecciones autorizadas", id="web-seguir-redirecciones")
+        with Horizontal():
+            yield Button("Analizar", id="web-analizar", variant="primary")
+            yield Button("Cancelar", id="web-cancelar")
+        yield Static("", id="web-mensaje", classes="ast-tenue")
+        yield DataTable(id="web-tabla", cursor_type="row")
+        yield Static("", id="web-detalle", classes="ast-caja")
+
+    def on_mount(self) -> None:
+        self.query_one("#web-tabla", DataTable).add_columns(
+            "Categoria", "Hallazgo", "Estado", "Severidad"
+        )
+        self._cargar_proyectos()
+
+    def _cargar_proyectos(self) -> None:
+        """Recarga las opciones de proyecto, preservando la seleccion actual si sigue valida."""
+        try:
+            base_datos = obtener_base_datos()
+            proyectos, activo = listar_proyectos(base_datos)
+        except Exception:  # noqa: BLE001 - frontera de la interfaz visual
+            return
+        nombres = [p.nombre for p in proyectos]
+        selector = self.query_one("#web-proyecto", Select)
+        seleccion_previa = selector.value
+        selector.set_options((nombre, nombre) for nombre in nombres)
+        if seleccion_previa in nombres:
+            selector.value = seleccion_previa
+        elif activo in nombres:
+            selector.value = activo
+
+    def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#web-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    @on(Button.Pressed, "#web-analizar")
+    def _iniciar(self, _evento: Button.Pressed) -> None:
+        # Se recarga la lista justo antes de leerla: un proyecto creado despues de
+        # que este panel se monto (p. ej. el primer proyecto de la sesion) debe
+        # poder elegirse sin tener que revisitar esta seccion.
+        self._cargar_proyectos()
+        proyecto_nombre = self.query_one("#web-proyecto", Select).value
+        tipo = str(self.query_one("#web-tipo", Select).value or "auditar")
+        url = self.query_one("#web-url", Input).value.strip()
+        tiempo_limite_txt = self.query_one("#web-tiempo-limite", Input).value.strip()
+        seguir_redirecciones = self.query_one(
+            "#web-seguir-redirecciones", Checkbox
+        ).value
+
+        try:
+            tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 10.0
+        except ValueError:
+            self._mensaje("El tiempo limite debe ser numerico.", "ast-error")
+            return
+
+        proyecto_nombre_str = None if proyecto_nombre == Select.BLANK else str(proyecto_nombre)
+        tipos = TIPOS_WEB_VALIDOS if tipo == "auditar" else frozenset({tipo})
+
+        self._secuencia += 1
+        secuencia = self._secuencia
+        self.query_one("#web-detalle", Static).update("")
+
+        self._mensaje("Auditando... (puedes cancelar mientras se ejecuta)", "ast-aviso")
+        self._worker = self._analizar(
+            secuencia, proyecto_nombre_str, url, tipo, tipos, tiempo_limite, seguir_redirecciones
+        )
+
+    @on(Button.Pressed, "#web-cancelar")
+    def _cancelar(self, _evento: Button.Pressed) -> None:
+        if self._worker is not None and self._worker.is_running:
+            self._worker.cancel()
+            self._mensaje(
+                "Cancelacion solicitada: no se guardara ningun hallazgo de este analisis.",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="web-auditoria", exit_on_error=False)
+    def _analizar(
+        self,
+        secuencia: int,
+        proyecto_nombre: str | None,
+        url: str,
+        tipo: str,
+        tipos: frozenset[str],
+        tiempo_limite: float,
+        seguir_redirecciones: bool,
+    ) -> None:
+        worker = get_current_worker()
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+            resultado, _guardados = auditar_web(
+                base_datos,
+                proyecto,
+                url,
+                tipo,
+                tipos=tipos,
+                tiempo_limite=tiempo_limite,
+                seguir_redirecciones=seguir_redirecciones,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultados, secuencia, resultado)
+
+    def _mostrar_resultados(self, secuencia: int, resultado) -> None:
+        if secuencia != self._secuencia:
+            return
+        self._hallazgos = resultado.hallazgos
+        tabla = self.query_one("#web-tabla", DataTable)
+        tabla.clear()
+        for indice, hallazgo in enumerate(resultado.hallazgos):
+            tabla.add_row(
+                texto_seguro(hallazgo.categoria),
+                texto_seguro(hallazgo.nombre),
+                texto_seguro(hallazgo.estado),
+                texto_seguro(hallazgo.severidad),
+                key=str(indice),
+            )
+        mensaje = (
+            f"Analisis completo: codigo {resultado.codigo_estado}, "
+            f"{len(resultado.hallazgos)} hallazgos."
+        )
+        if resultado.saltos_seguidos:
+            mensaje += f" Redirecciones seguidas: {len(resultado.saltos_seguidos)}."
+        self._mensaje(mensaje, "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    @on(DataTable.RowSelected, "#web-tabla")
+    def _fila_seleccionada(self, event: DataTable.RowSelected) -> None:
+        if event.row_key.value is None:
+            return
+        try:
+            hallazgo = self._hallazgos[int(event.row_key.value)]
+        except (ValueError, IndexError):
+            return
+        self.query_one("#web-detalle", Static).update(
+            f"[bold]{texto_seguro(hallazgo.nombre)}[/bold]\n"
+            f"Significado: {texto_seguro(hallazgo.significado)}\n"
+            f"Proposito: {texto_seguro(hallazgo.proposito)}\n"
+            f"Valor detectado: {texto_seguro(hallazgo.valor_detectado or '-')}\n"
+            f"Riesgo: {texto_seguro(hallazgo.riesgo)}\n"
+            f"Recomendacion: {texto_seguro(hallazgo.recomendacion)}\n"
+            f"Referencia: {texto_seguro(hallazgo.referencia)}"
+        )
 
 
 class PanelResultados(Vertical):
