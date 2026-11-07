@@ -17,6 +17,7 @@ from eurabyte_security.core.errores import ErrorValidacion as _ErrorValidacion
 from eurabyte_security.core.validation import ComponentesURL, validar_url_web
 from eurabyte_security.modules.web.cliente import RespuestaWeb
 from eurabyte_security.modules.web.modelos import Hallazgo
+from eurabyte_security.modules.web.redaccion import redactar_url
 
 _REFERENCIA = "https://developer.mozilla.org/docs/Web/HTTP/Redirections"
 
@@ -39,16 +40,16 @@ def resolver_siguiente_salto(
         componentes_destino = validar_url_web(destino_absoluto)
     except _ErrorValidacion as exc:
         raise ErrorAuditoriaWeb(
-            f"La redireccion apunta a '{destino_absoluto}', que no se puede seguir de "
-            f"forma segura: {exc}"
+            f"La redireccion apunta a '{redactar_url(destino_absoluto)}', que no se "
+            f"puede seguir de forma segura: {exc}"
         ) from exc
 
     objetivo_ip = componentes_destino.host
     if not any(objetivo_ip in red for red in redes_autorizadas):
         raise ErrorFueraDeAlcance(
-            f"La redireccion de '{respuesta.componentes.url_original}' apunta a "
-            f"'{destino_absoluto}', que no esta dentro del alcance autorizado del "
-            "proyecto. AST no la sigue."
+            f"La redireccion de '{redactar_url(respuesta.componentes.url_original)}' "
+            f"apunta a '{redactar_url(destino_absoluto)}', que no esta dentro del "
+            "alcance autorizado del proyecto. AST no la sigue."
         )
 
     return componentes_destino
@@ -122,7 +123,7 @@ def evaluar_redireccion(
                 "Verificar que ninguna redireccion saque la auditoria fuera del "
                 "alcance autorizado."
             ),
-            valor_detectado=destino_absoluto,
+            valor_detectado=redactar_url(destino_absoluto),
             severidad=severidad,  # type: ignore[arg-type]
             estado=estado,
             riesgo=riesgo,

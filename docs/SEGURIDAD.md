@@ -60,6 +60,13 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
 11. **Los valores de las cookies nunca se registran.** `modules/web/cookies.py` solo guarda y
     muestra el nombre de cada cookie y sus atributos (`Secure`, `HttpOnly`, `SameSite`...); el
     valor real jamas aparece en un hallazgo, en un log ni en un informe exportado.
+12. **Los parametros de URL que suelen llevar un secreto (token, contrasena, API key...) se
+    ocultan antes de mostrarse o guardarse.** `modules/web/redaccion.py:redactar_url()` oculta
+    el valor de esos parametros en la URL del objetivo, en el destino de una redireccion y en
+    los mensajes de error, tanto en la CLI/TUI como en lo que se persiste en `resultados_web` y
+    en los informes exportados. La peticion real contra el objetivo siempre usa la URL completa
+    sin modificar (la redaccion es solo para lo que se muestra/guarda, nunca para lo que se
+    envia por la red).
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 

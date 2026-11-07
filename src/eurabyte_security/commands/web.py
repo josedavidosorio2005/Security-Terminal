@@ -12,8 +12,12 @@ from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.core.config import ruta_reportes
-from eurabyte_security.core.errores import ErrorFueraDeAlcance, ErrorValidacion
-from eurabyte_security.core.validation import ComponentesURL, validar_url_web
+from eurabyte_security.core.errores import ErrorAuditoriaWeb, ErrorFueraDeAlcance, ErrorValidacion
+from eurabyte_security.core.validation import (
+    ComponentesURL,
+    validar_tiempo_limite_web,
+    validar_url_web,
+)
 from eurabyte_security.modules.reporting.generador import (
     construir_datos_informe_web,
     generar_html_web,
@@ -25,6 +29,7 @@ from eurabyte_security.modules.web.auditor import (
     ejecutar_auditoria_web,
 )
 from eurabyte_security.modules.web.modelos import ORDEN_SEVERIDAD, Hallazgo
+from eurabyte_security.modules.web.redaccion import redactar_url
 from eurabyte_security.storage.database import BaseDatos, Proyecto
 from eurabyte_security.storage.database import ResultadoWeb as ResultadoWebGuardado
 from eurabyte_security.ui.consola import consola, texto_seguro
@@ -52,9 +57,9 @@ def _verificar_alcance(
     redes = [ipaddress.IPv4Network(a.red) for a in base_datos.listar_alcance(proyecto.id)]
     if not any(componentes.host in red for red in redes):
         raise ErrorFueraDeAlcance(
-            f"El objetivo '{componentes.url_original}' no esta dentro del alcance "
-            f"autorizado del proyecto '{proyecto.nombre}'. Registralo primero con "
-            "'est alcance agregar'."
+            f"El objetivo '{redactar_url(componentes.url_original)}' no esta dentro "
+            f"del alcance autorizado del proyecto '{proyecto.nombre}'. Registralo "
+            "primero con 'est alcance agregar'."
         )
 
 
@@ -75,9 +80,18 @@ def auditar_web(
     ``tipo_analisis`` identifica el comando que origino la auditoria ('cabeceras',
     'tls', 'cookies' o 'auditar') y se guarda junto con cada hallazgo para distinguir
     de donde vino. La verificacion de alcance ocurre ANTES de cualquier peticion de red,
-    igual que en ``commands/escanear.py`` y ``commands/nmap.py``.
+    igual que en ``commands/escanear.py`` y ``commands/nmap.py``. ``tiempo_limite`` se
+    valida contra el rango de UNA peticion (1-30s, ver ``core/validation.py``); el
+    tiempo total de toda la auditoria al seguir redirecciones tiene su propio limite
+    independiente (ver ``modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO``).
+
+    ``debe_cancelar`` se consulta durante la auditoria (dentro de cada peticion de red)
+    y otra vez justo antes de persistir, igual que ``escanear_tcp``: si se cancela en
+    ese segundo chequeo, no se guarda ningun hallazgo (ni siquiera los de un salto de
+    redireccion que ya se hubiera completado), y se lanza ``ErrorAuditoriaWeb``.
     """
     componentes = validar_url_web(url)
+    tiempo_limite = validar_tiempo_limite_web(tiempo_limite)
     _verificar_alcance(base_datos, proyecto, componentes)
     redes_autorizadas = [
         ipaddress.IPv4Network(a.red) for a in base_datos.listar_alcance(proyecto.id)
@@ -95,6 +109,12 @@ def auditar_web(
     if not guardar:
         return resultado, []
 
+    if debe_cancelar is not None and debe_cancelar():
+        raise ErrorAuditoriaWeb(
+            f"La auditoria de '{redactar_url(componentes.url_original)}' se cancelo "
+            "antes de completarse. No se guardo ningun hallazgo."
+        )
+
     filas = [
         (
             h.categoria,
@@ -109,7 +129,7 @@ def auditar_web(
         for h in resultado.hallazgos
     ]
     guardados = base_datos.agregar_resultados_web(
-        proyecto.id, componentes.url_original, tipo_analisis, filas
+        proyecto.id, redactar_url(componentes.url_original), tipo_analisis, filas
     )
     return resultado, guardados
 
@@ -184,20 +204,26 @@ def _ejecutar_y_mostrar(
     base_datos = obtener_base_datos()
     proyecto_obj = resolver_proyecto(base_datos, proyecto)
 
-    with consola.status(f"Auditando {texto_seguro(url)}..."):
+    url_mostrada = redactar_url(url)
+    with consola.status(f"Auditando {texto_seguro(url_mostrada)}..."):
         resultado, _guardados = auditar_web(
             base_datos, proyecto_obj, url, tipo_analisis,
             tipos=tipos, tiempo_limite=tiempo_limite, seguir_redirecciones=seguir_redirecciones,
         )
 
+    codigo_estado_texto = (
+        str(resultado.codigo_estado)
+        if resultado.codigo_estado is not None
+        else "N/A (peticion HTTP no completada, ver hallazgo de TLS)"
+    )
     consola.print(
-        f"Codigo de estado final: {resultado.codigo_estado} "
-        f"({texto_seguro(resultado.componentes_final.url_original)})"
+        f"Codigo de estado final: {codigo_estado_texto} "
+        f"({texto_seguro(redactar_url(resultado.componentes_final.url_original))})"
     )
     if resultado.saltos_seguidos:
-        saltos_texto = ", ".join(texto_seguro(s) for s in resultado.saltos_seguidos)
+        saltos_texto = ", ".join(texto_seguro(redactar_url(s)) for s in resultado.saltos_seguidos)
         consola.print(f"Redirecciones seguidas: {saltos_texto}")
-    consola.print(_tabla_hallazgos(resultado.hallazgos, f"Auditoria web - {url}"))
+    consola.print(_tabla_hallazgos(resultado.hallazgos, f"Auditoria web - {url_mostrada}"))
     if detallado:
         _mostrar_explicaciones(resultado.hallazgos)
 

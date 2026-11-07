@@ -28,6 +28,7 @@ from eurabyte_security.commands.resultados import obtener_resultados as _obtener
 from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
+from eurabyte_security.modules.web.redaccion import redactar_url as _redactar_url
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
 
@@ -321,8 +322,9 @@ class MotorComandos:
             base_datos, proyecto, args[0], subcomando,
             tipos=tipos, tiempo_limite=tiempo_limite, seguir_redirecciones=seguir_redirecciones,
         )
+        url_mostrada = _redactar_url(args[0])
         return ResultadoComando(
-            True, _tabla_hallazgos_web(resultado.hallazgos, f"Auditoria web - {args[0]}")
+            True, _tabla_hallazgos_web(resultado.hallazgos, f"Auditoria web - {url_mostrada}")
         )
 
     # -- explicar ----------------------------------------------------

@@ -5,20 +5,28 @@ precisamente porque no sigue redirecciones automaticamente y no lee las variable
 entorno ``HTTP_PROXY``/``HTTPS_PROXY``/``NO_PROXY``: la unica conexion que se abre es la
 que ``core.validation.validar_url_web`` ya valido como IPv4 literal. Quien decide si se
 sigue una redireccion (y a donde) es ``modules/web/redirecciones.py``, nunca este modulo.
+
+Certificados no confiables (autofirmados, vencidos, con el nombre equivocado): la
+conexion HTTPS real (``HTTPSConnection``) sigue usando siempre validacion TLS completa
+-- nunca se desactiva en silencio para poder leer el cuerpo de la respuesta. Si esa
+conexion falla por confianza, ``realizar_peticion`` no se limita a lanzar un error: la
+informacion que ``modules/web/tls.py:obtener_info_tls`` ya diagnostico (version,
+cifrado, metadatos del certificado) se conserva y se devuelve igualmente, marcando
+explicitamente que la parte HTTP de la peticion no se pudo completar.
 """
 
 from __future__ import annotations
 
 import http.client
+import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from eurabyte_security.core.errores import ErrorAuditoriaWeb
 from eurabyte_security.core.validation import ComponentesURL
+from eurabyte_security.modules.web.redaccion import redactar_url
 from eurabyte_security.modules.web.tls import InfoTLS, obtener_info_tls
 
-TIEMPO_LIMITE_MINIMO = 1.0
-TIEMPO_LIMITE_MAXIMO = 30.0
 TIEMPO_LIMITE_POR_DEFECTO = 10.0
 
 # Limite de bytes de cuerpo leidos de la respuesta: una auditoria de cabeceras/cookies no
@@ -29,12 +37,16 @@ TAMANO_MAXIMO_CUERPO = 2 * 1024 * 1024  # 2 MiB
 @dataclass(frozen=True, slots=True)
 class RespuestaWeb:
     componentes: ComponentesURL
-    codigo_estado: int
+    codigo_estado: int | None
     cabeceras: tuple[tuple[str, str], ...]
     cuerpo: bytes
     cuerpo_truncado: bool
     ubicacion_redireccion: str | None
     tls: InfoTLS | None
+    # Si no es None, la peticion HTTP no se completo (p. ej. porque la conexion TLS no
+    # era confiable y AST no la fuerza igualmente): codigo_estado, cabeceras, cuerpo y
+    # ubicacion_redireccion quedan vacios/None, pero tls conserva lo que se diagnostico.
+    error_http: str | None = None
 
 
 def _es_redireccion(codigo_estado: int) -> bool:
@@ -60,26 +72,54 @@ def realizar_peticion(
         raise ErrorAuditoriaWeb("La auditoria se cancelo antes de iniciar la peticion.")
 
     host_texto = str(componentes.host)
-    try:
-        if componentes.esquema == "https":
-            tls_info = obtener_info_tls(
-                componentes.host, componentes.puerto, tiempo_limite=tiempo_limite
-            )
-            conexion: http.client.HTTPConnection = http.client.HTTPSConnection(
-                host_texto, componentes.puerto, timeout=tiempo_limite
-            )
-        else:
-            tls_info = None
-            conexion = http.client.HTTPConnection(
-                host_texto, componentes.puerto, timeout=tiempo_limite
-            )
-    except TimeoutError as exc:
-        raise ErrorAuditoriaWeb(
-            f"Tiempo agotado al conectar con {host_texto}:{componentes.puerto}."
-        ) from exc
+    if componentes.esquema == "https":
+        # obtener_info_tls() nunca deja escapar un TimeoutError/OSError crudo: los
+        # convierte siempre a ErrorAuditoriaWeb (ver modules/web/tls.py), asi que no
+        # hace falta envolver esta llamada en un try/except adicional aqui.
+        tls_info = obtener_info_tls(
+            componentes.host, componentes.puerto, tiempo_limite=tiempo_limite
+        )
+        conexion: http.client.HTTPConnection = http.client.HTTPSConnection(
+            host_texto, componentes.puerto, timeout=tiempo_limite
+        )
+    else:
+        tls_info = None
+        conexion = http.client.HTTPConnection(host_texto, componentes.puerto, timeout=tiempo_limite)
 
     try:
         conexion.connect()
+    except ssl.SSLError as exc:
+        # La conexion TLS no es confiable (certificado autofirmado, vencido, nombre de
+        # host equivocado...). Nunca se continua con la peticion HTTP ignorando esa
+        # validacion: se devuelve lo que obtener_info_tls ya diagnostico (version,
+        # cifrado, metadatos del certificado) marcando explicitamente que la parte
+        # HTTP de la peticion no se pudo completar, en vez de perder esa informacion.
+        conexion.close()
+        return RespuestaWeb(
+            componentes=componentes,
+            codigo_estado=None,
+            cabeceras=(),
+            cuerpo=b"",
+            cuerpo_truncado=False,
+            ubicacion_redireccion=None,
+            tls=tls_info,
+            error_http=(
+                "No se pudo completar la peticion HTTP: la conexion TLS no es "
+                f"confiable ({exc})."
+            ),
+        )
+    except TimeoutError as exc:
+        conexion.close()
+        raise ErrorAuditoriaWeb(
+            f"Tiempo agotado al conectar con {host_texto}:{componentes.puerto}."
+        ) from exc
+    except OSError as exc:
+        conexion.close()
+        raise ErrorAuditoriaWeb(
+            f"No se pudo conectar con {host_texto}:{componentes.puerto}: {exc}"
+        ) from exc
+
+    try:
         if debe_cancelar is not None and debe_cancelar():
             raise ErrorAuditoriaWeb("La auditoria se cancelo antes de completarse.")
 
@@ -120,7 +160,7 @@ def realizar_peticion(
         )
     except TimeoutError as exc:
         raise ErrorAuditoriaWeb(
-            f"Tiempo agotado al auditar {componentes.url_original}."
+            f"Tiempo agotado al auditar {redactar_url(componentes.url_original)}."
         ) from exc
     except ConnectionError as exc:
         raise ErrorAuditoriaWeb(
@@ -128,7 +168,7 @@ def realizar_peticion(
         ) from exc
     except OSError as exc:
         raise ErrorAuditoriaWeb(
-            f"Fallo de red auditando {componentes.url_original}: {exc}"
+            f"Fallo de red auditando {redactar_url(componentes.url_original)}: {exc}"
         ) from exc
     finally:
         conexion.close()

@@ -612,8 +612,13 @@ class PanelAuditoriaWeb(Vertical):
                 texto_seguro(hallazgo.severidad),
                 key=str(indice),
             )
+        codigo_estado_texto = (
+            str(resultado.codigo_estado)
+            if resultado.codigo_estado is not None
+            else "N/A (peticion HTTP no completada)"
+        )
         mensaje = (
-            f"Analisis completo: codigo {resultado.codigo_estado}, "
+            f"Analisis completo: codigo {codigo_estado_texto}, "
             f"{len(resultado.hallazgos)} hallazgos."
         )
         if resultado.saltos_seguidos:

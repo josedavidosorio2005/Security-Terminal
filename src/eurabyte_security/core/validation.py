@@ -29,6 +29,12 @@ TIMEOUT_MAXIMO = 10.0
 CONCURRENCIA_MINIMA = 1
 CONCURRENCIA_MAXIMA = 200
 
+# Tiempo limite por peticion de auditoria web (una sola peticion HTTP(S)); distinto del
+# tiempo limite total de toda la auditoria (ver modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO),
+# que acota la suma de todas las peticiones cuando se siguen redirecciones.
+TIEMPO_LIMITE_WEB_MINIMO = 1.0
+TIEMPO_LIMITE_WEB_MAXIMO = 30.0
+
 
 def validar_nombre_proyecto(nombre: str) -> str:
     nombre = nombre.strip()
@@ -111,6 +117,16 @@ def validar_timeout(valor: float) -> float:
         raise ErrorValidacion(
             f"El tiempo de espera debe estar entre {TIMEOUT_MINIMO} y "
             f"{TIMEOUT_MAXIMO} segundos."
+        )
+    return valor
+
+
+def validar_tiempo_limite_web(valor: float) -> float:
+    """Valida el tiempo limite de UNA peticion de auditoria web (no el total de la auditoria)."""
+    if not (TIEMPO_LIMITE_WEB_MINIMO <= valor <= TIEMPO_LIMITE_WEB_MAXIMO):
+        raise ErrorValidacion(
+            f"El tiempo limite de la peticion debe estar entre {TIEMPO_LIMITE_WEB_MINIMO:g} y "
+            f"{TIEMPO_LIMITE_WEB_MAXIMO:g} segundos."
         )
     return valor
 

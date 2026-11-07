@@ -11,6 +11,7 @@ import http.server
 import ipaddress
 import ssl
 import threading
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -63,6 +64,8 @@ class RespuestaConfigurada:
     codigo_estado: int = 200
     cabeceras: list[tuple[str, str]] = field(default_factory=list)
     cuerpo: bytes = b"ok"
+    # Segundos a esperar antes de responder (solo para pruebas de limites de tiempo).
+    demora: float = 0.0
 
 
 class _Manejador(http.server.BaseHTTPRequestHandler):
@@ -71,6 +74,8 @@ class _Manejador(http.server.BaseHTTPRequestHandler):
 
     def _responder(self) -> None:
         config = self.respuestas.get(self.path) or RespuestaConfigurada()
+        if config.demora:
+            time.sleep(config.demora)
         self.send_response(config.codigo_estado)
         for nombre, valor in config.cabeceras:
             self.send_header(nombre, valor)

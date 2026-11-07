@@ -128,9 +128,36 @@ iteracion posterior.
       SSRF, limites de tiempo/respuesta, cancelacion, persistencia, reportes, CLI y Textual.
 - [x] Las 199 pruebas anteriores siguen en verde.
 
+**Correcciones de una revision posterior de la misma PR**:
+
+- [x] `est web tls` contra un certificado no confiable (autofirmado/vencido/nombre equivocado)
+      ya no termina en un error generico sin hallazgos: la peticion HTTP real sigue validando
+      TLS por completo (nunca se desactiva en silencio), pero si falla por confianza, los
+      hallazgos de TLS ya diagnosticados se devuelven igual, junto con un hallazgo informativo
+      que explica que la parte HTTP no se completo.
+- [x] El estado "seguida"/"no seguida" de una redireccion ahora refleja lo que realmente
+      ocurrio (antes quedaba siempre en "no seguida" aunque AST si la siguiera).
+- [x] `debe_cancelar` se vuelve a comprobar justo antes de la transaccion SQLite (no solo
+      durante la peticion de red): una cancelacion detectada en ese momento tampoco persiste
+      nada.
+- [x] Los parametros de URL que suelen llevar un secreto (token, contrasena, API key...) se
+      ocultan (`modules/web/redaccion.py`) antes de guardarse o mostrarse -- en la URL del
+      objetivo, en el destino de una redireccion, en mensajes de error y en los informes --
+      sin modificar la URL real usada para la peticion autorizada.
+- [x] `--tiempo-limite` ahora se valida realmente contra el rango 1-30s
+      (`core/validation.py:validar_tiempo_limite_web`); el tiempo total de una auditoria
+      completa (al seguir redirecciones) tiene su propio limite independiente de 60s
+      (`modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`).
+- [x] 38 pruebas nuevas (237 en total): `est web tls` de extremo a extremo contra certificados
+      no confiables/vencidos, estado real de cada tipo de redireccion (seguida/no seguida/fuera
+      de alcance/limite de saltos/limite de tiempo total), cancelacion justo antes de persistir,
+      redaccion de parametros sensibles (persistencia, CLI, informes, mensajes de error) y
+      validacion de `--tiempo-limite`.
+
 **Limitaciones conocidas**: solo se admiten objetivos con IP IPv4 literal (no nombres de
-dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap` (ver
-[docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
+dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap`; cuando el
+certificado TLS no es confiable no hay hallazgos de cabeceras/cookies/redirecciones (solo de
+TLS), por diseno (ver [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
 
 ### Pasos 4-5 - Pendientes (PRs independientes futuras)
 
