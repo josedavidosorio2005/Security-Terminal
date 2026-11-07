@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eurabyte_security.modules.web.redaccion import VALOR_REDACTADO, redactar_url
+from eurabyte_security.core.redaccion import VALOR_REDACTADO, redactar_url
 
 
 def test_redacta_parametros_sensibles_conocidos():

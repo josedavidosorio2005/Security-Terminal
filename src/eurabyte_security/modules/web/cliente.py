@@ -23,8 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from eurabyte_security.core.errores import ErrorAuditoriaWeb
+from eurabyte_security.core.redaccion import redactar_url
 from eurabyte_security.core.validation import ComponentesURL
-from eurabyte_security.modules.web.redaccion import redactar_url
 from eurabyte_security.modules.web.tls import InfoTLS, obtener_info_tls
 
 TIEMPO_LIMITE_POR_DEFECTO = 10.0

@@ -14,10 +14,10 @@ from urllib.parse import urljoin
 
 from eurabyte_security.core.errores import ErrorAuditoriaWeb, ErrorFueraDeAlcance
 from eurabyte_security.core.errores import ErrorValidacion as _ErrorValidacion
+from eurabyte_security.core.redaccion import redactar_url
 from eurabyte_security.core.validation import ComponentesURL, validar_url_web
 from eurabyte_security.modules.web.cliente import RespuestaWeb
 from eurabyte_security.modules.web.modelos import Hallazgo
-from eurabyte_security.modules.web.redaccion import redactar_url
 
 _REFERENCIA = "https://developer.mozilla.org/docs/Web/HTTP/Redirections"
 

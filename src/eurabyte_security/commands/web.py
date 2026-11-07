@@ -13,6 +13,7 @@ from rich.table import Table
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.core.config import ruta_reportes
 from eurabyte_security.core.errores import ErrorAuditoriaWeb, ErrorFueraDeAlcance, ErrorValidacion
+from eurabyte_security.core.redaccion import redactar_url
 from eurabyte_security.core.validation import (
     ComponentesURL,
     validar_tiempo_limite_web,
@@ -29,7 +30,6 @@ from eurabyte_security.modules.web.auditor import (
     ejecutar_auditoria_web,
 )
 from eurabyte_security.modules.web.modelos import ORDEN_SEVERIDAD, Hallazgo
-from eurabyte_security.modules.web.redaccion import redactar_url
 from eurabyte_security.storage.database import BaseDatos, Proyecto
 from eurabyte_security.storage.database import ResultadoWeb as ResultadoWebGuardado
 from eurabyte_security.ui.consola import consola, texto_seguro

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from eurabyte_security.core.errores import ErrorValidacion
+from eurabyte_security.core.redaccion import redactar_url
 
 NOMBRE_PROYECTO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
@@ -170,27 +171,32 @@ def validar_url_web(url: str) -> ComponentesURL:
     if not url:
         raise ErrorValidacion("La URL no puede estar vacia.")
 
+    # Todos los mensajes de error de aqui en adelante interpolan la URL (o partes de
+    # ella) tal como la escribio el usuario; siempre a traves de redactar_url(), nunca
+    # el valor crudo, para que un token/contrasena/API key en la cadena de consulta (o
+    # las propias credenciales que la segunda comprobacion rechaza) no queden en claro
+    # en una excepcion visible, en la CLI/Textual o en un registro.
     try:
         partes = urlsplit(url)
     except ValueError as exc:
-        raise ErrorValidacion(f"'{url}' no es una URL valida: {exc}") from exc
+        raise ErrorValidacion(f"'{redactar_url(url)}' no es una URL valida: {exc}") from exc
 
     esquema = partes.scheme.lower()
     if esquema not in ESQUEMAS_WEB_VALIDOS:
         raise ErrorValidacion(
-            f"'{url}' usa el esquema '{esquema or '(ninguno)'}', pero solo se admiten "
-            f"{' y '.join(ESQUEMAS_WEB_VALIDOS)}."
+            f"'{redactar_url(url)}' usa el esquema '{esquema or '(ninguno)'}', pero solo "
+            f"se admiten {' y '.join(ESQUEMAS_WEB_VALIDOS)}."
         )
 
     if partes.username or partes.password:
         raise ErrorValidacion(
-            f"'{url}' incluye credenciales en la URL (usuario/contrasena); no estan "
-            "permitidas en un objetivo de auditoria."
+            f"'{redactar_url(url)}' incluye credenciales en la URL (usuario/contrasena); "
+            "no estan permitidas en un objetivo de auditoria."
         )
 
     nombre_host = partes.hostname
     if not nombre_host:
-        raise ErrorValidacion(f"'{url}' no indica un host valido.")
+        raise ErrorValidacion(f"'{redactar_url(url)}' no indica un host valido.")
 
     try:
         host = ipaddress.IPv4Address(nombre_host)
@@ -203,7 +209,7 @@ def validar_url_web(url: str) -> ComponentesURL:
     try:
         puerto = partes.port if partes.port is not None else PUERTOS_POR_DEFECTO_WEB[esquema]
     except ValueError as exc:
-        raise ErrorValidacion(f"'{url}' tiene un puerto invalido.") from exc
+        raise ErrorValidacion(f"'{redactar_url(url)}' tiene un puerto invalido.") from exc
     if not (PUERTO_MINIMO <= puerto <= PUERTO_MAXIMO):
         raise ErrorValidacion(
             f"El puerto {puerto} esta fuera del rango valido ({PUERTO_MINIMO}-{PUERTO_MAXIMO})."

@@ -43,3 +43,37 @@ def test_url_https_sin_puerto_usa_443():
 def test_entradas_malformadas_o_no_soportadas_se_rechazan(url: str):
     with pytest.raises(ErrorValidacion):
         validar_url_web(url)
+
+
+# ---------------------------------------------------------------------------
+# Ningun mensaje de error de validar_url_web() debe filtrar un secreto en claro.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "secreto"),
+    [
+        # Esquema invalido: el mensaje interpola la URL completa.
+        ("ftp://127.0.0.1/?token=secreto-esquema-123", "secreto-esquema-123"),
+        # Credenciales en la URL: justo lo que el mensaje rechaza, no debe repetirlo.
+        ("https://admin:supersecreta-456@127.0.0.1/", "supersecreta-456"),
+        # Puerto invalido: la URL completa (con su query) se mostraba cruda.
+        ("https://127.0.0.1:no-es-un-puerto/?password=secreto-puerto-789", "secreto-puerto-789"),
+        # Host vacio: idem.
+        ("https:///?token=secreto-sin-host-321", "secreto-sin-host-321"),
+        # URL que ni siquiera se puede dividir (IPv6 mal formado) con un secreto detras.
+        ("http://[::1/roto?token=secreto-url-rota-654", "secreto-url-rota-654"),
+    ],
+)
+def test_mensajes_de_error_no_filtran_secretos_en_claro(url: str, secreto: str):
+    with pytest.raises(ErrorValidacion) as info:
+        validar_url_web(url)
+    assert secreto not in str(info.value)
+
+
+def test_credenciales_se_eliminan_del_mensaje_no_solo_el_secreto():
+    with pytest.raises(ErrorValidacion) as info:
+        validar_url_web("https://admin:supersecreta@127.0.0.1/")
+    mensaje = str(info.value)
+    assert "admin" not in mensaje
+    assert "supersecreta" not in mensaje

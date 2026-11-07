@@ -139,7 +139,7 @@ certificado -- sin relajar ninguna de las comprobaciones actuales.
 Ningun valor de cookie se registra ni se muestra nunca (ver arriba). Para URLs (el objetivo
 auditado, el destino de una redireccion, mensajes de error), AST usa una estrategia distinta:
 la peticion real se hace siempre contra la URL completa que el usuario indico -- nunca se
-modifica para poder ejecutar la peticion autorizada --, pero `modules/web/redaccion.py:
+modifica para poder ejecutar la peticion autorizada --, pero `core/redaccion.py:
 redactar_url()` oculta, antes de mostrarla o guardarla:
 
 - **Credenciales en el host** (`usuario:clave@host`): se eliminan por completo.
@@ -153,32 +153,44 @@ redactar_url()` oculta, antes de mostrarla o guardarla:
 
 ...en todos los puntos donde una URL se muestra o se guarda: al persistir en `resultados_web`
 (columna `objetivo`), en la salida de la CLI/Terminal AST/interfaz visual, en un hallazgo de
-redireccion (el destino de un `Location`), en un mensaje de error (objetivo fuera de alcance,
-tiempo agotado...) y en un informe HTML/JSON exportado.
+redireccion (el destino de un `Location`), en un informe HTML/JSON exportado y en **cualquier**
+mensaje de error que la interpole -- incluidos los que lanza la propia validacion de la URL
+(`core/validation.py:validar_url_web`: esquema no admitido, credenciales en la URL, puerto
+invalido, host vacio, URL que no se pudo interpretar). `redactar_url()` vive en `core/` (no en
+`modules/web/`) precisamente para que `core/validation.py` pueda reutilizarla sin invertir la
+direccion de dependencias del proyecto (`core/` nunca depende de `modules/`).
 
 Por ejemplo, `https://127.0.0.1/reset?token=abc123&usuario=ana` se muestra y se guarda como
 `https://127.0.0.1/reset?token=%3Credactado%3E&usuario=ana`. Un parametro cuyo nombre no
-contiene ninguna palabra de la lista conocida (ver `redaccion.py:PALABRAS_SENSIBLES`) se
+contiene ninguna palabra de la lista conocida (ver `core/redaccion.py:PALABRAS_SENSIBLES`) se
 conserva tal cual: esta redaccion es una mitigacion adicional, no un sustituto de manejar las
 URLs con secretos con cuidado (evita, por ejemplo, pegarlas en un chat o un ticket sin
 redactar).
 
-## Limites de tiempo: por peticion vs. total de la auditoria
+## Limites de tiempo: estricto por peticion vs. presupuesto cooperativo total
 
 - **`--tiempo-limite`** (1 a 30 segundos, validado en `core/validation.py:
-  validar_tiempo_limite_web`) acota **una sola peticion** HTTP(S).
-- **El tiempo total de toda la auditoria** (la suma de todas las peticiones, cuando se siguen
-  redirecciones con `--seguir-redirecciones`) tiene su propio limite independiente, fijo en 60
-  segundos (`modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`), para que encadenar varias
-  redirecciones con el tiempo limite por peticion mas alto permitido no pueda alargar una sola
-  auditoria varios minutos. Si se agota, AST deja de seguir redirecciones nuevas (lo reporta
-  como hallazgo informativo) pero conserva todo lo ya auditado hasta ese punto.
+  validar_tiempo_limite_web`) acota **una sola peticion** HTTP(S). Este si es un limite
+  estricto en el sentido en que lo impone directamente el `timeout` del socket.
+- **El presupuesto de tiempo total de toda la auditoria** (la suma de todas las peticiones,
+  cuando se siguen redirecciones con `--seguir-redirecciones`) es distinto: un **presupuesto
+  cooperativo** de 60 segundos (`modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`), no una
+  garantia estricta de que la auditoria completa nunca superara ese tiempo. Antes de cada
+  peticion (incluida la primera) AST calcula cuanto queda de ese presupuesto y lo usa como
+  tope del `--tiempo-limite` de **esa** peticion especifica -- nunca mas de lo que el usuario
+  pidio, pero tampoco mas de lo que queda del total. Eso evita que una sola peticion lenta
+  consuma el presupuesto entero por si misma, pero no puede prevenir una demora adicional
+  fuera del control de AST (resolucion de la conexion, negociacion TLS, el planificador del
+  propio sistema operativo). Si el presupuesto ya se agoto antes de intentar el siguiente
+  salto, ese salto queda registrado como "no seguida" (nunca como "seguida" sin haberlo
+  intentado) y AST deja de seguir redirecciones nuevas, conservando todo lo ya auditado.
 - **Cancelacion durante una peticion bloqueante**: `debe_cancelar` se sondea antes de conectar,
   justo despues de conectar y entre cada fragmento de 8 KiB leido del cuerpo de la respuesta.
   Una conexion que nunca llega a enviar nada (o un chunk de hasta 8 KiB que tarda en llegar)
-  permanece bloqueada en esa espera hasta su propio `--tiempo-limite`: es la misma limitacion
-  de E/S bloqueante que ya existe en `escanear tcp` (los hilos de Python no se pueden
-  interrumpir de forma forzosa mientras esperan en una llamada de red).
+  permanece bloqueada en esa espera hasta su propio `--tiempo-limite` efectivo (el recortado
+  por el presupuesto, si aplica): es la misma limitacion de E/S bloqueante que ya existe en
+  `escanear tcp` (los hilos de Python no se pueden interrumpir de forma forzosa mientras
+  esperan en una llamada de red).
 
 ## Comandos
 
@@ -226,8 +238,9 @@ en vez de duplicar la generacion de informes.
   cancelarse de verdad (misma limitacion de E/S bloqueante que `escanear tcp`).
 - El cuerpo de la respuesta se limita a 2 MiB; una respuesta mayor se trunca (no afecta a las
   cabeceras, TLS ni cookies, que se leen antes del cuerpo).
-- Solo se siguen hasta 5 saltos de redireccion por auditoria, y el tiempo total de todos esos
-  saltos combinados esta acotado a 60 segundos (independiente de `--tiempo-limite`, ver arriba).
+- Solo se siguen hasta 5 saltos de redireccion por auditoria, y el presupuesto cooperativo de
+  60 segundos para todos esos saltos combinados (ver arriba) no es una garantia estricta de
+  pared, solo un tope del `--tiempo-limite` de cada peticion siguiente.
 - La redaccion de parametros sensibles en URLs (ver arriba) cubre una lista conocida de nombres
   de parametro (`token`, `password`, `api_key`...); un secreto transportado en un parametro con
   un nombre no reconocido no se redacta automaticamente.

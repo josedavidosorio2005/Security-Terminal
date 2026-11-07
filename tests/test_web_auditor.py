@@ -126,6 +126,64 @@ def test_limite_de_tiempo_total_distinto_del_limite_por_peticion(monkeypatch):
     assert any(h.id_ == "redireccion-tiempo-total-agotado" for h in resultado.hallazgos)
 
 
+def test_presupuesto_agotado_entre_dos_saltos_no_se_marca_como_seguida(monkeypatch):
+    """El salto cuyo presupuesto se agoto justo antes de intentarlo debe quedar como
+    'no seguida' (con el hallazgo de presupuesto agotado), nunca como 'seguida' seguido
+    de un hallazgo contradictorio: no hay una peticion real detras de esa etiqueta.
+    """
+    monkeypatch.setattr(modulo_auditor, "TIEMPO_LIMITE_TOTAL_MAXIMO", 0.05)
+
+    respuestas_host = {
+        "/paso0": RespuestaConfigurada(302, [("Location", "/paso1")], b"", demora=0.08),
+        "/paso1": RespuestaConfigurada(200, [], b"fin"),
+    }
+    with servidor_prueba(respuestas_host) as (host, puerto):
+        componentes = validar_url_web(f"http://{host}:{puerto}/paso0")
+        resultado = ejecutar_auditoria_web(
+            componentes, redes_autorizadas=_RED_127, seguir_redirecciones=True,
+            tiempo_limite=5.0,
+        )
+
+    hallazgo = next(h for h in resultado.hallazgos if h.id_ == "redireccion")
+    assert hallazgo.estado != "Dentro de alcance -- seguida"
+    assert "no seguida" in hallazgo.estado.lower()
+    assert resultado.saltos_seguidos == ()
+    assert any(h.id_ == "redireccion-tiempo-total-agotado" for h in resultado.hallazgos)
+
+
+def test_presupuesto_restante_limita_el_tiempo_limite_de_la_siguiente_peticion(monkeypatch):
+    """El presupuesto cooperativo reduce el tiempo_limite EFECTIVO de la peticion
+    siguiente (no solo decide si se hace o no): se verifica interceptando con que
+    tiempo_limite se llama a realizar_peticion(), sin depender de temporizacion real.
+    """
+    llamadas: list[float] = []
+    original = modulo_auditor.realizar_peticion
+
+    def realizar_peticion_que_registra(componentes, *, tiempo_limite, debe_cancelar=None):
+        llamadas.append(tiempo_limite)
+        return original(componentes, tiempo_limite=tiempo_limite, debe_cancelar=debe_cancelar)
+
+    monkeypatch.setattr(modulo_auditor, "realizar_peticion", realizar_peticion_que_registra)
+    monkeypatch.setattr(modulo_auditor, "TIEMPO_LIMITE_TOTAL_MAXIMO", 0.2)
+
+    respuestas_host = {
+        "/paso0": RespuestaConfigurada(302, [("Location", "/paso1")], b"", demora=0.15),
+        "/paso1": RespuestaConfigurada(200, [], b"fin"),
+    }
+    with servidor_prueba(respuestas_host) as (host, puerto):
+        componentes = validar_url_web(f"http://{host}:{puerto}/paso0")
+        ejecutar_auditoria_web(
+            componentes, redes_autorizadas=_RED_127, seguir_redirecciones=True, tiempo_limite=5.0,
+        )
+
+    assert len(llamadas) == 2
+    assert llamadas[0] == 5.0  # la primera peticion usa el limite pedido tal cual
+    # La segunda (tras los ~0.15s de demora de la primera, con un presupuesto total de
+    # 0.2s) recibe un tiempo limite recortado: mucho menor que los 5.0s pedidos.
+    assert 0 < llamadas[1] < 5.0
+    assert llamadas[1] <= 0.2
+
+
 def test_certificado_no_confiable_devuelve_hallazgos_tls_sin_excepcion():
     """Reproduce el bug reportado: un TLS no confiable no debe dejar la auditoria sin hallazgos."""
     cert_pem, key_pem = generar_certificado_autofirmado("127.0.0.1")

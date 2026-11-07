@@ -141,12 +141,13 @@ iteracion posterior.
       durante la peticion de red): una cancelacion detectada en ese momento tampoco persiste
       nada.
 - [x] Los parametros de URL que suelen llevar un secreto (token, contrasena, API key...) se
-      ocultan (`modules/web/redaccion.py`) antes de guardarse o mostrarse -- en la URL del
-      objetivo, en el destino de una redireccion, en mensajes de error y en los informes --
-      sin modificar la URL real usada para la peticion autorizada.
+      ocultan (`core/redaccion.py`, movido desde `modules/web/` para que `core/validation.py`
+      tambien pueda reutilizarlo) antes de guardarse o mostrarse -- en la URL del objetivo, en
+      el destino de una redireccion, en mensajes de error y en los informes -- sin modificar la
+      URL real usada para la peticion autorizada.
 - [x] `--tiempo-limite` ahora se valida realmente contra el rango 1-30s
       (`core/validation.py:validar_tiempo_limite_web`); el tiempo total de una auditoria
-      completa (al seguir redirecciones) tiene su propio limite independiente de 60s
+      completa (al seguir redirecciones) tiene su propio presupuesto cooperativo de 60s
       (`modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`).
 - [x] 38 pruebas nuevas (237 en total): `est web tls` de extremo a extremo contra certificados
       no confiables/vencidos, estado real de cada tipo de redireccion (seguida/no seguida/fuera
@@ -154,8 +155,34 @@ iteracion posterior.
       redaccion de parametros sensibles (persistencia, CLI, informes, mensajes de error) y
       validacion de `--tiempo-limite`.
 
+**Segunda revision de la misma PR**:
+
+- [x] Ningun mensaje de error de `validar_url_web()` (esquema no admitido, credenciales en la
+      URL, puerto invalido, host vacio, URL no interpretable) interpola ya la URL cruda: todos
+      pasan por `redactar_url()`, movida a `core/redaccion.py` precisamente para que
+      `core/validation.py` pudiera reutilizarla sin invertir la direccion de dependencias del
+      proyecto (`core/` nunca depende de `modules/`).
+- [x] El presupuesto de tiempo total de la auditoria ahora se mide con reloj monotonico ANTES
+      de cada peticion (incluida la primera) y se usa para recortar el `--tiempo-limite`
+      efectivo de esa peticion especifica, no solo para decidir si abortar antes de empezarla:
+      una peticion en curso ya no puede hacer que la auditoria completa supere el presupuesto
+      por mas de lo que le quedaba disponible. Documentado explicitamente como presupuesto
+      cooperativo, no como garantia estricta de pared.
+- [x] El estado "seguida" de una redireccion ya no puede registrarse un instante antes de que
+      el presupuesto de tiempo se agote y la peticion siguiente nunca llegue a intentarse: la
+      decision de seguir el salto y el tiempo limite de la peticion que lo sigue se calculan a
+      partir de la misma medicion del presupuesto restante, sin otra comprobacion de tiempo
+      entre medias que pueda contradecirla.
+- [x] 8 pruebas nuevas (252 en total): mensajes de error de `validar_url_web()` sin secretos en
+      claro (esquema invalido, credenciales, puerto invalido, host vacio, URL no interpretable),
+      un salto cuyo presupuesto se agota justo antes de intentarlo queda como "no seguida" (no
+      como "seguida" contradicha despues), y el tiempo limite efectivo de la peticion siguiente
+      se recorta segun el presupuesto restante (verificado interceptando la llamada real, sin
+      esperas largas).
+
 **Limitaciones conocidas**: solo se admiten objetivos con IP IPv4 literal (no nombres de
-dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap`; cuando el
+dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap`; el
+presupuesto de tiempo total de la auditoria es cooperativo, no una garantia estricta; cuando el
 certificado TLS no es confiable no hay hallazgos de cabeceras/cookies/redirecciones (solo de
 TLS), por diseno (ver [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
 

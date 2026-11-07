@@ -62,13 +62,25 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     valor real jamas aparece en un hallazgo, en un log ni en un informe exportado.
 12. **Las URLs que suelen llevar un secreto (credenciales en el host, token/contrasena/API key
     en la cadena de consulta o en el fragmento) se ocultan antes de mostrarse o guardarse.**
-    `modules/web/redaccion.py:redactar_url()` elimina las credenciales del host y oculta el
-    valor de los parametros sensibles (por coincidencia de subcadena del nombre, no solo una
-    lista exacta) tanto en la cadena de consulta como en el fragmento, en la URL del objetivo,
-    en el destino de una redireccion y en los mensajes de error -- en la CLI/TUI, en lo que se
-    persiste en `resultados_web` y en los informes exportados. La peticion real contra el
-    objetivo siempre usa la URL completa sin modificar (la redaccion es solo para lo que se
-    muestra/guarda, nunca para lo que se envia por la red).
+    `core/redaccion.py:redactar_url()` elimina las credenciales del host y oculta el valor de
+    los parametros sensibles (por coincidencia de subcadena del nombre, no solo una lista
+    exacta) tanto en la cadena de consulta como en el fragmento, en la URL del objetivo, en el
+    destino de una redireccion y en **cualquier** mensaje de error que la interpole --
+    incluidos los que lanza la propia validacion de entrada
+    (`core/validation.py:validar_url_web`: esquema no admitido, credenciales en la URL, puerto
+    invalido, host vacio, URL no interpretable) -- en la CLI/TUI, en lo que se persiste en
+    `resultados_web` y en los informes exportados. La peticion real contra el objetivo siempre
+    usa la URL completa sin modificar (la redaccion es solo para lo que se muestra/guarda,
+    nunca para lo que se envia por la red). `redactar_url()` vive en `core/` (no en
+    `modules/web/`) para que `core/validation.py` -- el punto de control de seguridad comun a
+    toda la aplicacion -- pueda reutilizarla sin que `core/` termine dependiendo de `modules/`.
+13. **Los limites se documentan segun lo que realmente garantizan.** El tiempo limite de una
+    peticion de auditoria web (`--tiempo-limite`) es estricto (lo impone el `timeout` del
+    socket); el presupuesto de tiempo total de toda una auditoria (al seguir redirecciones,
+    `modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`) es deliberadamente un presupuesto
+    cooperativo, documentado como tal: reduce el limite de la siguiente peticion a lo que
+    queda del presupuesto, pero no puede evitar una pequena demora adicional fuera del control
+    de AST (resolucion de la conexion, negociacion TLS, el planificador del sistema operativo).
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 

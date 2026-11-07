@@ -28,7 +28,7 @@ from eurabyte_security.commands.resultados import obtener_resultados as _obtener
 from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
-from eurabyte_security.modules.web.redaccion import redactar_url as _redactar_url
+from eurabyte_security.core.redaccion import redactar_url as _redactar_url
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
 

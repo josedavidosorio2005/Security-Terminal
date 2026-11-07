@@ -15,7 +15,8 @@ src/eurabyte_security/
 ├── marca.py        Identidad de marca (nombre, logo, banner ASCII).
 ├── cli/            Ensamblaje de la aplicacion Typer (comando `est`).
 ├── commands/       Logica de cada comando + su exposicion como subcomando Typer.
-├── core/           Configuracion (rutas, proyecto activo), validaciones y errores comunes.
+├── core/           Configuracion (rutas, proyecto activo), validaciones, errores comunes y
+│                   redaccion.py (oculta secretos en URLs mostradas/guardadas/en errores).
 ├── modules/
 │   ├── network/    Comprobaciones de red (Fase 1: escaneo TCP basico).
 │   ├── web/        Auditoria web (Fase 3, Paso 3): cabeceras HTTP, TLS, cookies,
