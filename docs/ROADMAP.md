@@ -1,9 +1,9 @@
-# Roadmap de EST
+# Roadmap de AST
 
-EST se desarrolla en fases incrementales. Cada fase solo se considera completa cuando cumple sus
+AST se desarrolla en fases incrementales. Cada fase solo se considera completa cuando cumple sus
 criterios de aceptacion y tiene pruebas automatizadas que lo demuestran.
 
-## Fase 1 - MVP funcional (en desarrollo / implementada en este PR)
+## Fase 1 - MVP funcional (completada, fusionada en `main`)
 
 **Criterios de aceptacion:**
 
@@ -18,16 +18,39 @@ criterios de aceptacion y tiene pruebas automatizadas que lo demuestran.
 - [x] Explicaciones interactivas (`est explicar TEMA`).
 - [x] Pruebas automatizadas (`pytest`) y analisis estatico (`ruff`).
 - [x] Documentacion de instalacion para Windows y Linux.
-- [ ] CI verificado en GitHub Actions sobre `windows-latest` y `ubuntu-latest` (workflow creado
-      en este PR; pendiente de verse ejecutar en GitHub tras el push).
+- [x] CI verificado en GitHub Actions sobre `windows-latest` y `ubuntu-latest`.
 
-## Fase 2 - Interfaz profesional
+## Fase 2 - Interfaz profesional (implementada en este PR)
 
-- Interfaz TUI con Textual.
-- Navegacion por teclado, panel lateral de modulos, paneles de resultados.
-- Autocompletado contextual y documentacion integrada en la TUI.
-- Tema oscuro profesional, historial de auditorias, indicadores de progreso.
-- Sistema de configuracion de usuario.
+**Criterios de aceptacion:**
+
+- [x] Comando `est interfaz` que abre una aplicacion Textual real (no una maqueta estatica).
+- [x] `est interactivo` (Fase 1) sigue funcionando sin cambios.
+- [x] Barra superior (logo, version, proyecto activo, sistema operativo), barra lateral con las
+      14 secciones acordadas, panel de informacion contextual y barra de estado inferior.
+- [x] Terminal AST integrada: autocompletado contextual (Tab), sugerencias mientras se escribe,
+      historial con flechas, salida coloreada y comandos reales (no un shell del sistema).
+- [x] Navegacion y accion completas con teclado y con raton.
+- [x] Conectada a la logica real: proyectos, alcance, escaneo TCP (con cancelacion best-effort
+      en un worker en segundo plano), resultados y generacion de informes.
+- [x] Deteccion (sin ejecucion) de herramientas externas de la Fase 3 (Nmap, Nuclei, OWASP ZAP,
+      tshark).
+- [x] Secciones todavia no implementadas (Modulos, Reconocimiento, Analisis web,
+      Vulnerabilidades, Aprendizaje) marcadas explicitamente como "Proximamente".
+- [x] Interfaz adaptable: oculta/compacta paneles secundarios en terminales pequenas sin perder
+      acceso a sus funcionalidades.
+- [x] Pruebas automatizadas con el framework de testing de Textual (arranque, renderizado,
+      navegacion, autocompletado, formularios, rechazo fuera de alcance, estados vacios/errores,
+      adaptacion responsiva) y compatibilidad con las 52 pruebas de la Fase 1.
+- [x] Documentacion: manual de usuario (`docs/INTERFAZ.md`), capturas reales generadas con
+      `App.save_screenshot`, atajos de teclado y solucion de problemas.
+
+Pendiente explicito para fases futuras (no entra en el alcance de la Fase 2):
+
+- Tema claro/oscuro configurable por el usuario (por ahora el tema es fijo).
+- Indicadores de progreso detallados durante un escaneo largo (hoy se muestra "Escaneando...").
+- Historial de auditorias persistente entre sesiones de la interfaz visual (hoy se apoya en los
+  resultados guardados en SQLite, pero no hay una vista de "sesiones" separada).
 
 ## Fase 3 - Herramientas de ciberseguridad
 

@@ -25,14 +25,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Instalar EST en modo desarrollo
+      - name: Instalar AST en modo desarrollo (incluye Textual para la interfaz visual)
         run: python -m pip install -e ".[dev]"
 
       - name: Analisis estatico (ruff)
         run: ruff check .
 
-      - name: Ejecutar pruebas (pytest)
+      - name: Ejecutar pruebas (pytest, incluye la CLI y la interfaz Textual)
         run: pytest -v
 
       - name: Comprobar que el comando 'est' funciona
         run: est --ayuda
+
+      - name: Comprobar que 'est interfaz' esta registrado (sin abrir la TUI)
+        run: |
+          python -c "from typer.main import get_command; from eurabyte_security.cli.app import app; assert 'interfaz' in get_command(app).commands"

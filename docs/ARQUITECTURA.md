@@ -1,13 +1,18 @@
-# Arquitectura de EST
+# Arquitectura de AST
 
-Este documento describe la organizacion del codigo de Eurabyte Security Terminal (EST) y la
+Este documento describe la organizacion del codigo de AURABYTE Security Terminal (AST) y la
 responsabilidad de cada paquete. El objetivo es mantener una separacion clara entre interfaz,
 logica de negocio e integraciones externas, para que el proyecto siga siendo facil de ampliar.
+
+> El paquete Python sigue llamandose `eurabyte_security` por compatibilidad con instalaciones
+> de la Fase 1 (ver CLAUDE.md). La identidad de marca (AURABYTE / AST) vive en
+> `eurabyte_security/marca.py`.
 
 ## Estructura de paquetes
 
 ```text
 src/eurabyte_security/
+├── marca.py        Identidad de marca (nombre, logo, banner ASCII).
 ├── cli/            Ensamblaje de la aplicacion Typer (comando `est`).
 ├── commands/       Logica de cada comando + su exposicion como subcomando Typer.
 ├── core/           Configuracion (rutas, proyecto activo), validaciones y errores comunes.
@@ -16,11 +21,36 @@ src/eurabyte_security/
 │   ├── web/        Auditoria web (Fase 3: cabeceras HTTP, TLS...). Vacio en la Fase 1.
 │   ├── vulnerability/  Analisis de vulnerabilidades (Fase 3: Nuclei...). Vacio en la Fase 1.
 │   └── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
-├── integrations/   Interfaz base para adaptadores externos (Nmap, Nuclei, ZAP...). Fase 3.
+├── integrations/
+│   ├── base.py     Interfaz base para adaptadores externos (Nmap, Nuclei, ZAP...). Fase 3.
+│   └── deteccion.py  Comprueba si esas herramientas estan instaladas (nunca las ejecuta).
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
 ├── storage/        Repositorio SQLite (proyectos, alcances, resultados).
-└── ui/             Consola enriquecida (Rich) y terminal interactiva (prompt_toolkit).
+└── ui/
+    ├── consola.py  Consola enriquecida (Rich) compartida por la CLI.
+    ├── repl.py     Terminal interactiva de linea de comandos (`est interactivo`).
+    └── tui/        Interfaz visual Textual (`est interfaz`, Fase 2). Ver mas abajo.
 ```
+
+## La interfaz visual (`ui/tui/`, Fase 2)
+
+```text
+ui/tui/
+├── app.py              AuraByteApp: layout, navegacion y eventos globales.
+├── estilos.tcss        Paleta y estilos (Textual CSS).
+├── estado.py           Snapshot de estado (proyecto activo, conteos) para la UI.
+├── motor_comandos.py   Interprete de la Terminal AST: despacha texto a commands/*.
+└── widgets/
+    ├── navegacion.py   Encabezado, barra lateral y barra de estado.
+    ├── terminal.py     Entrada con historial/autocompletado y panel de ayuda contextual.
+    └── paneles.py      Un panel por seccion (Proyectos, Alcance, Redes, Resultados...).
+```
+
+`AuraByteApp` reutiliza exactamente la misma logica que la CLI: `motor_comandos.py` y los
+paneles importan las funciones puras de `commands/*.py` (las mismas que usa `cli/app.py`), no
+una copia. Las operaciones de red (escaneo TCP) se ejecutan en workers de Textual
+(`@work(thread=True)`) para no bloquear la interfaz, con cancelacion best-effort desde el panel
+"Redes" (ver "Limitaciones conocidas" en `docs/INTERFAZ.md`).
 
 ## Flujo de una operacion (ejemplo: `est escanear tcp`)
 

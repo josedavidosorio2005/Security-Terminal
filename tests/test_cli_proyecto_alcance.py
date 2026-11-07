@@ -6,7 +6,7 @@ from eurabyte_security.cli.app import app
 def test_ayuda_en_espanol(runner):
     resultado = runner.invoke(app, ["--ayuda"])
     assert resultado.exit_code == 0
-    assert "Eurabyte" in resultado.stdout
+    assert "AURABYTE" in resultado.stdout
 
 
 def test_crear_y_listar_proyecto(runner):

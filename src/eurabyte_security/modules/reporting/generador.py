@@ -75,11 +75,11 @@ def generar_html(datos: DatosInforme) -> str:
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Informe EST - {escape(datos.proyecto)}</title>
+<title>Informe AST - {escape(datos.proyecto)}</title>
 <style>{_ESTILOS}</style>
 </head>
 <body>
-<h1>Eurabyte Security Terminal - Informe de auditoria</h1>
+<h1>AURABYTE Security Terminal - Informe de auditoria</h1>
 <p class="resumen">Proyecto: <strong>{escape(datos.proyecto)}</strong> &middot;
 Generado: {escape(datos.generado_en)} &middot;
 Total de resultados: {len(datos.resultados)}</p>

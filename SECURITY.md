@@ -2,7 +2,7 @@
 
 ## Reportar una vulnerabilidad
 
-Si encuentras una vulnerabilidad de seguridad en Eurabyte Security Terminal, por favor **no
+Si encuentras una vulnerabilidad de seguridad en AURABYTE Security Terminal, por favor **no
 abras un issue publico**. En su lugar, reportala de forma privada mediante
 [GitHub Security Advisories](https://github.com/josedavidosorio2005/Security-Terminal/security/advisories/new)
 en este repositorio.

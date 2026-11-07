@@ -1,4 +1,4 @@
-"""Aplicacion CLI principal de Eurabyte Security Terminal (comando ``est``)."""
+"""Aplicacion CLI principal de AURABYTE Security Terminal (comando ``est``)."""
 
 from __future__ import annotations
 
@@ -14,11 +14,12 @@ from eurabyte_security.commands.proyecto import proyecto_app
 from eurabyte_security.commands.reporte import reporte_app
 from eurabyte_security.commands.resultados import resultados_cmd
 from eurabyte_security.core.errores import ErrorEST
+from eurabyte_security.marca import ABREVIATURA, NOMBRE_PRODUCTO, encabezado_version
 from eurabyte_security.ui.consola import consola, mostrar_error
 
 app = typer.Typer(
     name="est",
-    help="Eurabyte Security Terminal (EST): plataforma de pentesting en espanol.",
+    help=f"{NOMBRE_PRODUCTO} ({ABREVIATURA}): plataforma de pentesting en espanol.",
     no_args_is_help=True,
     context_settings={"help_option_names": ["--ayuda", "--help", "-h"]},
 )
@@ -33,15 +34,23 @@ app.command("resultados")(resultados_cmd)
 
 @app.command("interactivo")
 def interactivo_cmd() -> None:
-    """Abre la terminal interactiva de EST (autocompletado e historial)."""
+    """Abre la terminal interactiva de linea de comandos (autocompletado e historial)."""
     from eurabyte_security.ui.repl import iniciar
 
     iniciar()
 
 
+@app.command("interfaz")
+def interfaz_cmd() -> None:
+    """Abre la interfaz visual de AST (panel completo con teclado y raton)."""
+    from eurabyte_security.ui.tui.app import AuraByteApp
+
+    AuraByteApp().run()
+
+
 def _version_callback(valor: bool) -> None:
     if valor:
-        consola.print(f"Eurabyte Security Terminal (EST) version {__version__}")
+        consola.print(encabezado_version(__version__))
         raise typer.Exit()
 
 
@@ -52,10 +61,10 @@ def _raiz(
         "--version",
         callback=_version_callback,
         is_eager=True,
-        help="Muestra la version de EST y termina.",
+        help="Muestra la version de AST y termina.",
     ),
 ) -> None:
-    """Eurabyte Security Terminal (EST)."""
+    """AURABYTE Security Terminal (AST)."""
 
 
 def main() -> None:
