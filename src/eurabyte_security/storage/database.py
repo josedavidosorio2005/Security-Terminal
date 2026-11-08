@@ -48,6 +48,22 @@ CREATE TABLE IF NOT EXISTS resultados_nmap (
     creado_en TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS resultados_web (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    objetivo TEXT NOT NULL,
+    tipo_analisis TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    nombre_hallazgo TEXT NOT NULL,
+    severidad TEXT NOT NULL,
+    estado TEXT NOT NULL,
+    valor_detectado TEXT,
+    riesgo TEXT NOT NULL,
+    recomendacion TEXT NOT NULL,
+    referencia TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS resultados_nuclei (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
@@ -103,6 +119,23 @@ class ResultadoNmap:
     estado: str
     servicio: str | None
     version: str | None
+    creado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoWeb:
+    id: int
+    proyecto_id: int
+    objetivo: str
+    tipo_analisis: str
+    categoria: str
+    nombre_hallazgo: str
+    severidad: str
+    estado: str
+    valor_detectado: str | None
+    riesgo: str
+    recomendacion: str
+    referencia: str
     creado_en: str
 
 
@@ -318,6 +351,83 @@ class BaseDatos:
                     (proyecto_id, limite),
                 ).fetchall()
         return [ResultadoNmap(**fila) for fila in filas]
+
+    # -- Resultados de auditoria web ------------------------------------
+    def agregar_resultados_web(
+        self,
+        proyecto_id: int,
+        objetivo: str,
+        tipo_analisis: str,
+        hallazgos: list[tuple[str, str, str, str, str | None, str, str, str]],
+    ) -> list[ResultadoWeb]:
+        """Inserta hallazgos de auditoria web en una sola transaccion (todo o nada).
+
+        ``hallazgos`` es una lista de tuplas ``(categoria, nombre_hallazgo, severidad,
+        estado, valor_detectado, riesgo, recomendacion, referencia)``. Misma semantica de
+        atomicidad que :meth:`agregar_resultados`: si la auditoria se cancela antes de
+        llegar aqui, esta funcion no llega a invocarse y no se guarda nada.
+        """
+        guardados: list[ResultadoWeb] = []
+        with self._conectar() as conexion:
+            for (
+                categoria,
+                nombre_hallazgo,
+                severidad,
+                estado,
+                valor_detectado,
+                riesgo,
+                recomendacion,
+                referencia,
+            ) in hallazgos:
+                cursor = conexion.execute(
+                    "INSERT INTO resultados_web (proyecto_id, objetivo, tipo_analisis, "
+                    "categoria, nombre_hallazgo, severidad, estado, valor_detectado, "
+                    "riesgo, recomendacion, referencia, creado_en) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        proyecto_id,
+                        objetivo,
+                        tipo_analisis,
+                        categoria,
+                        nombre_hallazgo,
+                        severidad,
+                        estado,
+                        valor_detectado,
+                        riesgo,
+                        recomendacion,
+                        referencia,
+                        _ahora(),
+                    ),
+                )
+                fila = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, tipo_analisis, categoria, "
+                    "nombre_hallazgo, severidad, estado, valor_detectado, riesgo, "
+                    "recomendacion, referencia, creado_en FROM resultados_web WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(ResultadoWeb(**fila))
+        return guardados
+
+    def listar_resultados_web(
+        self, proyecto_id: int | None = None, limite: int = 200
+    ) -> list[ResultadoWeb]:
+        columnas = (
+            "id, proyecto_id, objetivo, tipo_analisis, categoria, nombre_hallazgo, "
+            "severidad, estado, valor_detectado, riesgo, recomendacion, referencia, creado_en"
+        )
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_web ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_web WHERE proyecto_id = ? "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [ResultadoWeb(**fila) for fila in filas]
 
     # -- Resultados de Nuclei --------------------------------------------
     def agregar_resultados_nuclei(

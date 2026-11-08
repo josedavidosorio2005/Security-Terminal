@@ -52,16 +52,17 @@ async def test_navegacion_entre_secciones_cambia_el_panel_activo():
         assert app.query_one("#switcher-central", ContentSwitcher).current == "panel-proyectos"
 
 
-async def test_secciones_no_implementadas_muestran_proximamente():
+@pytest.mark.parametrize("id_panel", ["panel-modulos", "panel-aprendizaje"])
+async def test_secciones_no_implementadas_muestran_proximamente(id_panel: str):
     app = AuraByteApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         opciones = app.query_one("#barra-lateral", OptionList)
         opciones.focus()
-        opciones.highlighted = opciones.get_option_index("panel-web")
+        opciones.highlighted = opciones.get_option_index(id_panel)
         await pilot.press("enter")
         await pilot.pause()
-        panel = app.query_one("#panel-web")
+        panel = app.query_one(f"#{id_panel}")
         textos = " ".join(str(estatico.render()) for estatico in panel.query("Static"))
         assert "Proximamente" in textos
 

@@ -15,10 +15,12 @@ src/eurabyte_security/
 ├── marca.py        Identidad de marca (nombre, logo, banner ASCII).
 ├── cli/            Ensamblaje de la aplicacion Typer (comando `est`).
 ├── commands/       Logica de cada comando + su exposicion como subcomando Typer.
-├── core/           Configuracion (rutas, proyecto activo), validaciones y errores comunes.
+├── core/           Configuracion (rutas, proyecto activo), validaciones, errores comunes y
+│                   redaccion.py (oculta secretos en URLs mostradas/guardadas/en errores).
 ├── modules/
 │   ├── network/    Comprobaciones de red (Fase 1: escaneo TCP basico).
-│   ├── web/        Auditoria web (Fase 3: cabeceras HTTP, TLS...). Vacio por ahora.
+│   ├── web/        Auditoria web (Fase 3, Paso 3): cabeceras HTTP, TLS, cookies,
+│   │               redirecciones. Detalle en docs/AUDITORIA_WEB.md.
 │   ├── vulnerability/  Reservado para analisis de vulnerabilidades en Python puro
 │   │               (sin binario externo). Nuclei vive en integrations/, no aqui
 │   │               (sigue el mismo patron que Nmap: es un adaptador externo).
@@ -125,6 +127,29 @@ Cualquier integracion futura (OWASP ZAP...) sigue el mismo patron: adaptador en
 `integrations/`, comando/orquestacion en `commands/` (donde vive la verificacion de alcance),
 nunca al reves.
 
+## Auditoria web: flujo (ejemplo: `est web auditar`)
+
+La auditoria web (`modules/web/`) no invoca ningun binario externo -- es trafico HTTP(S) hecho
+por la propia aplicacion con `http.client` -- por lo que no pasa por `integrations/`, pero
+sigue la misma separacion: la verificacion de alcance vive en `commands/web.py`, nunca en
+`modules/web/`.
+
+1. **`commands/web.py:auditar_web()`** valida la URL (`core/validation.py:validar_url_web` --
+   solo IPv4 literal, esquemas `http`/`https`) y comprueba el alcance autorizado **antes** de
+   cualquier peticion.
+2. **`modules/web/auditor.py:ejecutar_auditoria_web()`** hace una unica peticion
+   (`modules/web/cliente.py:realizar_peticion()`, sin seguir redirecciones ni leer proxies del
+   entorno) y, a partir de esa misma respuesta, evalua cabeceras (`cabeceras.py`), TLS
+   (`tls.py`) y cookies (`cookies.py`). Si hay una redireccion y se pidio seguirla
+   explicitamente, `redirecciones.py` valida que el destino sea una IP autorizada antes de
+   hacer una segunda peticion (maximo 5 saltos); si no lo es, se detiene y lo reporta como
+   hallazgo en vez de seguirla (proteccion contra SSRF).
+3. `commands/web.py` persiste los hallazgos atomicamente en `resultados_web` (ver
+   `storage/database.py`), igual que el resto de comandos.
+
+Detalle completo (que evalua cada categoria, por que la severidad nunca es automatica, como se
+protege contra SSRF) en [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
+
 ## Nuclei: una capa extra de validacion sobre el mismo patron
 
 `integrations/nuclei.py:AdaptadorNuclei` sigue el mismo flujo que Nmap, con una diferencia
@@ -170,4 +195,4 @@ mostrar) se repite en los demas comandos (`proyecto`, `alcance`, `resultados`, `
 Toda la informacion vive en SQLite, en un unico archivo bajo el directorio de datos del usuario
 (`~/.eurabyte_security/est.db` por defecto, o `$EST_HOME/est.db` si se define esa variable de
 entorno). El esquema tiene las tablas `proyectos`, `alcances`, `resultados` (escaneo TCP),
-`resultados_nmap` y `resultados_nuclei` (ver `storage/database.py`).
+`resultados_nmap`, `resultados_web` y `resultados_nuclei` (ver `storage/database.py`).

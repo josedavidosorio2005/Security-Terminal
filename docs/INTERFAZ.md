@@ -36,7 +36,7 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Alcance | Implementada | Registrar y consultar el alcance autorizado (IP/CIDR). |
 | Modulos | Proximamente (Fase 3) | Punto de entrada futuro a los modulos de auditoria. |
 | Reconocimiento | Implementada | Descubrimiento de puertos/servicios con Nmap, con boton de cancelar. |
-| Analisis web | Proximamente (Fase 3) | Reservado para cabeceras HTTP, TLS, etc. |
+| Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/OWASP ZAP/tshark estan instalados, y la version de Nmap/Nuclei (no los ejecuta). |
@@ -110,6 +110,17 @@ nada si se cancela. Cada analisis completado guarda su XML original como evidenc
 muestra junto al mensaje de "Analisis completo". Detalle de parametros y limitaciones en
 [docs/INTEGRACIONES.md](INTEGRACIONES.md).
 
+### Analisis web
+
+Formulario con selector de proyecto (por defecto, el activo), selector de tipo de analisis
+(cabeceras, TLS, cookies o auditoria completa), URL del objetivo, tiempo limite y una casilla
+"Seguir redirecciones autorizadas". El boton "Analizar" corre la auditoria en segundo plano;
+"Cancelar" detiene la peticion en curso sin guardar ningun hallazgo parcial. La URL debe usar
+una direccion IPv4 autorizada en el alcance del proyecto elegido (no se admiten nombres de
+dominio en esta entrega). Selecciona una fila de la tabla de hallazgos para ver su explicacion
+completa (significado, proposito, riesgo, recomendacion y referencia) debajo. Detalle completo
+en [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
+
 ### Vulnerabilidades (Nuclei)
 
 Muestra si Nuclei esta instalado (y su version), el proyecto activo y el catalogo de
@@ -177,8 +188,8 @@ el `PATH` del sistema; instalala y vuelve a pulsar "Volver a detectar".
 
 ## Cancelacion de un escaneo o analisis: semantica exacta
 
-Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento" o "Vulnerabilidades" (o al
-iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
+Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web" o "Vulnerabilidades"
+(o al iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
 
 - La semantica es **todo o nada**: un escaneo o analisis cancelado no guarda ningun resultado
   en la base de datos, ni siquiera de los puertos/hallazgos que ya se habian comprobado antes
@@ -189,6 +200,8 @@ iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
   cancelar hilos bloqueados en E/S): simplemente no se usa su resultado.
 - **Reconocimiento (Nmap)** y **Vulnerabilidades (Nuclei)**: al cancelar, AST mata el proceso
   externo de verdad (`Popen.kill()`), no se limita a dejar de esperarlo.
+- **Analisis web**: deja de leer el cuerpo de la respuesta en cuanto detecta la cancelacion;
+  igual que las demas, no persiste ningun hallazgo del analisis cancelado.
 - Si inicias un segundo escaneo/analisis antes de que termine el primero, el primero se
   cancela automaticamente y solo el resultado del mas reciente puede llegar a mostrarse en la
   tabla: la interfaz nunca mezcla los resultados de dos ejecuciones.
@@ -197,8 +210,8 @@ iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
 
 - `est interfaz` necesita una terminal real (no funciona con la entrada/salida completamente
   redirigida), igual que cualquier aplicacion Textual.
-- Las secciones Modulos, Analisis web y Aprendizaje son marcadores de posicion para las
-  Fases 3 y 5: no tienen funcionalidad todavia.
+- Las secciones Modulos y Aprendizaje son marcadores de posicion para las Fases 3 y 5: no
+  tienen funcionalidad todavia (Analisis web y Vulnerabilidades ya estan implementadas).
 - El escudo de marca (barra superior y panel de Inicio) es una alternativa en texto ASCII
   mientras no exista el recurso grafico oficial (ver `eurabyte_security/marca.py`).
 - Los resultados de Nmap y de Nuclei todavia no aparecen en `est resultados` ni en

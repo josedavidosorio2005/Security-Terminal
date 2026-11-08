@@ -90,6 +90,31 @@ est nmap descubrir OBJETIVO --puertos 22,80,443 [--proyecto NOMBRE] \
 Al igual que `escanear tcp`, rechaza cualquier objetivo que no este en el alcance autorizado del
 proyecto. Requiere tener Nmap instalado.
 
+## `est web`
+
+Auditoria web no intrusiva (Fase 3): cabeceras HTTP de seguridad, certificado/TLS, cookies y
+redirecciones. Detalle completo (que evalua cada comprobacion, severidad, SSRF) en
+[docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
+
+```bash
+est web cabeceras URL [--proyecto NOMBRE] [--tiempo-limite 10] [--seguir-redirecciones] [--detallado]
+est web tls URL [...]
+est web cookies URL [...]
+est web auditar URL [...]
+est web reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est web cabeceras URL` | Audita solo las cabeceras HTTP de seguridad. |
+| `est web tls URL` | Audita solo el certificado y la configuracion TLS. |
+| `est web cookies URL` | Audita solo los atributos de las cookies (`Set-Cookie`). |
+| `est web auditar URL` | Ejecuta las cuatro categorias (cabeceras, TLS, cookies, redirecciones). |
+| `est web reporte` | Exporta a HTML/JSON los hallazgos guardados de auditoria web. |
+
+`URL` debe usar una direccion IPv4 literal ya autorizada en el alcance del proyecto (no se
+admiten nombres de dominio en esta entrega, igual que `escanear tcp`/`nmap`).
+
 ## `est nuclei`
 
 Integracion con Nuclei (Fase 3): solo plantillas HTTP de bajo impacto, de un catalogo aprobado
@@ -120,7 +145,8 @@ autorizado del proyecto. Requiere tener Nuclei instalado.
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,
-`alcance`, `tcp`, `escanear`, `nmap`, `nuclei`, `resultados`, `reporte`, `interactivo`, `interfaz`.
+`alcance`, `tcp`, `escanear`, `nmap`, `web`, `nuclei`, `resultados`, `reporte`, `interactivo`,
+`interfaz`.
 
 ```bash
 est explicar tcp

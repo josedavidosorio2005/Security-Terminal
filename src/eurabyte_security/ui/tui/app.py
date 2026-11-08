@@ -15,6 +15,7 @@ from eurabyte_security.ui.tui.estado import construir_estado
 from eurabyte_security.ui.tui.widgets.navegacion import BarraEstado, BarraLateral, Encabezado
 from eurabyte_security.ui.tui.widgets.paneles import (
     PanelAlcance,
+    PanelAuditoriaWeb,
     PanelAyuda,
     PanelConfiguracion,
     PanelHerramientas,
@@ -63,7 +64,7 @@ class AuraByteApp(App[None]):
                 yield PanelAlcance(id="panel-alcance")
                 yield PanelProximamente("Modulos", "Fase 3", id="panel-modulos")
                 yield PanelReconocimiento(id="panel-reconocimiento")
-                yield PanelProximamente("Analisis web", "Fase 3", id="panel-web")
+                yield PanelAuditoriaWeb(id="panel-web")
                 yield PanelVulnerabilidades(id="panel-vulnerabilidades")
                 yield PanelRedes(id="panel-redes")
                 yield PanelHerramientas(id="panel-herramientas")

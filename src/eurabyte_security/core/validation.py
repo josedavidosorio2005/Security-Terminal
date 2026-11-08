@@ -13,8 +13,12 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from eurabyte_security.core.errores import ErrorValidacion
+from eurabyte_security.core.redaccion import redactar_url
 
 NOMBRE_PROYECTO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+ESQUEMAS_WEB_VALIDOS = ("http", "https")
+PUERTOS_POR_DEFECTO_WEB = {"http": 80, "https": 443}
 
 PUERTO_MINIMO = 1
 PUERTO_MAXIMO = 65535
@@ -28,6 +32,12 @@ TIMEOUT_MAXIMO = 10.0
 
 CONCURRENCIA_MINIMA = 1
 CONCURRENCIA_MAXIMA = 200
+
+# Tiempo limite por peticion de auditoria web (una sola peticion HTTP(S)); distinto del
+# tiempo limite total de toda la auditoria (ver modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO),
+# que acota la suma de todas las peticiones cuando se siguen redirecciones.
+TIEMPO_LIMITE_WEB_MINIMO = 1.0
+TIEMPO_LIMITE_WEB_MAXIMO = 30.0
 
 
 def validar_nombre_proyecto(nombre: str) -> str:
@@ -115,6 +125,16 @@ def validar_timeout(valor: float) -> float:
     return valor
 
 
+def validar_tiempo_limite_web(valor: float) -> float:
+    """Valida el tiempo limite de UNA peticion de auditoria web (no el total de la auditoria)."""
+    if not (TIEMPO_LIMITE_WEB_MINIMO <= valor <= TIEMPO_LIMITE_WEB_MAXIMO):
+        raise ErrorValidacion(
+            f"El tiempo limite de la peticion debe estar entre {TIEMPO_LIMITE_WEB_MINIMO:g} y "
+            f"{TIEMPO_LIMITE_WEB_MAXIMO:g} segundos."
+        )
+    return valor
+
+
 def validar_concurrencia(valor: int) -> int:
     if not (CONCURRENCIA_MINIMA <= valor <= CONCURRENCIA_MAXIMA):
         raise ErrorValidacion(
@@ -128,6 +148,81 @@ def objetivo_en_alcance(
     objetivo: ipaddress.IPv4Address, redes: list[ipaddress.IPv4Network]
 ) -> bool:
     return any(objetivo in red for red in redes)
+
+
+@dataclass(frozen=True, slots=True)
+class ComponentesURL:
+    """URL de auditoria web ya validada: esquema, host IPv4 literal, puerto y ruta."""
+
+    url_original: str
+    esquema: str
+    host: ipaddress.IPv4Address
+    puerto: int
+    ruta: str
+
+
+def validar_url_web(url: str) -> ComponentesURL:
+    """Valida una URL objetivo de auditoria web.
+
+    Igual que ``validar_objetivo``, por ahora solo se aceptan direcciones IPv4
+    literales como host: resolver nombres de dominio implicaria trafico de red
+    (una consulta DNS) fuera del control explicito del usuario y abre la puerta
+    a SSRF mediante respuestas DNS manipuladas. Solo se aceptan los esquemas
+    ``http`` y ``https``.
+    """
+    url = url.strip()
+    if not url:
+        raise ErrorValidacion("La URL no puede estar vacia.")
+
+    # Todos los mensajes de error de aqui en adelante interpolan la URL (o partes de
+    # ella) tal como la escribio el usuario; siempre a traves de redactar_url(), nunca
+    # el valor crudo, para que un token/contrasena/API key en la cadena de consulta (o
+    # las propias credenciales que la segunda comprobacion rechaza) no queden en claro
+    # en una excepcion visible, en la CLI/Textual o en un registro.
+    try:
+        partes = urlsplit(url)
+    except ValueError as exc:
+        raise ErrorValidacion(f"'{redactar_url(url)}' no es una URL valida: {exc}") from exc
+
+    esquema = partes.scheme.lower()
+    if esquema not in ESQUEMAS_WEB_VALIDOS:
+        raise ErrorValidacion(
+            f"'{redactar_url(url)}' usa el esquema '{esquema or '(ninguno)'}', pero solo "
+            f"se admiten {' y '.join(ESQUEMAS_WEB_VALIDOS)}."
+        )
+
+    if partes.username or partes.password:
+        raise ErrorValidacion(
+            f"'{redactar_url(url)}' incluye credenciales en la URL (usuario/contrasena); "
+            "no estan permitidas en un objetivo de auditoria."
+        )
+
+    nombre_host = partes.hostname
+    if not nombre_host:
+        raise ErrorValidacion(f"'{redactar_url(url)}' no indica un host valido.")
+
+    try:
+        host = ipaddress.IPv4Address(nombre_host)
+    except ValueError as exc:
+        raise ErrorValidacion(
+            f"'{nombre_host}' no es una direccion IPv4 valida. Esta version de AST no "
+            "admite nombres de dominio como objetivo de auditoria web, solo direcciones IP."
+        ) from exc
+
+    try:
+        puerto = partes.port if partes.port is not None else PUERTOS_POR_DEFECTO_WEB[esquema]
+    except ValueError as exc:
+        raise ErrorValidacion(f"'{redactar_url(url)}' tiene un puerto invalido.") from exc
+    if not (PUERTO_MINIMO <= puerto <= PUERTO_MAXIMO):
+        raise ErrorValidacion(
+            f"El puerto {puerto} esta fuera del rango valido ({PUERTO_MINIMO}-{PUERTO_MAXIMO})."
+        )
+
+    ruta = partes.path or "/"
+    if partes.query:
+        ruta = f"{ruta}?{partes.query}"
+
+    return ComponentesURL(url_original=url, esquema=esquema, host=host, puerto=puerto, ruta=ruta)
 
 
 @dataclass(frozen=True, slots=True)

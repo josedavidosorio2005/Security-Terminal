@@ -26,7 +26,10 @@ from eurabyte_security.commands.proyecto import listar_proyectos as _listar_proy
 from eurabyte_security.commands.proyecto import usar_proyecto as _usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte as _generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados as _obtener_resultados
+from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
+from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
+from eurabyte_security.core.redaccion import redactar_url as _redactar_url
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS as _PLANTILLAS_NUCLEI
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
@@ -35,6 +38,7 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
     "proyecto": {"crear": None, "listar": None, "usar": None},
     "alcance": {"agregar": None, "listar": None},
     "escanear": {"tcp": None},
+    "web": {"cabeceras": None, "tls": None, "cookies": None, "auditar": None},
     "nuclei": {"plantillas": None, "analizar": None, "resultados": None},
     "explicar": dict.fromkeys(EXPLICACIONES),
     "resultados": None,
@@ -44,6 +48,7 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
 }
 
 _ESTILOS_ESTADO = {"abierto": "bold green", "cerrado": "grey70", "error": "bold red"}
+_ESTILOS_SEVERIDAD = {"info": "grey70", "baja": "cyan", "media": "yellow", "alta": "bold red"}
 _ESTILOS_SEVERIDAD_NUCLEI = {
     "info": "grey70", "low": "cyan", "medium": "yellow", "high": "bold red",
     "critical": "bold red", "unknown": "grey70",
@@ -107,6 +112,27 @@ def _extraer_opcion(argumentos: list[str], nombre: str) -> tuple[str | None, lis
         restantes.append(token)
         i += 1
     return valor, restantes
+
+
+def _extraer_bandera(argumentos: list[str], nombre: str) -> tuple[bool, list[str]]:
+    """Extrae una bandera booleana '--nombre' (sin valor). Devuelve (presente, resto)."""
+    presente = nombre in argumentos
+    return presente, [t for t in argumentos if t != nombre]
+
+
+def _tabla_hallazgos_web(hallazgos: list, titulo: str) -> Table:
+    tabla = Table(title=titulo)
+    tabla.add_column("Categoria")
+    tabla.add_column("Hallazgo")
+    tabla.add_column("Estado")
+    tabla.add_column("Severidad")
+    for hallazgo in hallazgos:
+        estilo = _ESTILOS_SEVERIDAD.get(hallazgo.severidad, "")
+        severidad_texto = (
+            f"[{estilo}]{hallazgo.severidad}[/{estilo}]" if estilo else hallazgo.severidad
+        )
+        tabla.add_row(hallazgo.categoria, hallazgo.nombre, hallazgo.estado, severidad_texto)
+    return tabla
 
 
 def completar(texto: str) -> str | None:
@@ -173,6 +199,7 @@ class MotorComandos:
             "proyecto": self._proyecto,
             "alcance": self._alcance,
             "escanear": self._escanear,
+            "web": self._web,
             "nuclei": self._nuclei,
             "explicar": self._explicar,
             "resultados": self._resultados,
@@ -275,6 +302,37 @@ class MotorComandos:
         )
         return ResultadoComando(
             True, _tabla_resultados(resultados, f"Resultado del escaneo TCP - {args[0]}")
+        )
+
+    # -- web -----------------------------------------------------------
+    def _web(self, resto: list[str]) -> ResultadoComando:
+        if not resto or resto[0] not in ("cabeceras", "tls", "cookies", "auditar"):
+            return ResultadoComando(
+                False, "Uso: web cabeceras|tls|cookies|auditar URL [--proyecto NOMBRE]"
+            )
+        subcomando, *args = resto
+        proyecto_nombre, args = _extraer_opcion(args, "--proyecto")
+        tiempo_limite_txt, args = _extraer_opcion(args, "--tiempo-limite")
+        seguir_redirecciones, args = _extraer_bandera(args, "--seguir-redirecciones")
+
+        if not args:
+            return ResultadoComando(False, f"Falta la URL. Uso: web {subcomando} URL")
+
+        try:
+            tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 10.0
+        except ValueError:
+            return ResultadoComando(False, "--tiempo-limite debe ser numerico.")
+
+        tipos = _TIPOS_WEB_VALIDOS if subcomando == "auditar" else frozenset({subcomando})
+        base_datos = obtener_base_datos()
+        proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+        resultado, _guardados = _auditar_web(
+            base_datos, proyecto, args[0], subcomando,
+            tipos=tipos, tiempo_limite=tiempo_limite, seguir_redirecciones=seguir_redirecciones,
+        )
+        url_mostrada = _redactar_url(args[0])
+        return ResultadoComando(
+            True, _tabla_hallazgos_web(resultado.hallazgos, f"Auditoria web - {url_mostrada}")
         )
 
     # -- nuclei --------------------------------------------------------

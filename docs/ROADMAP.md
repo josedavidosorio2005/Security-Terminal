@@ -101,6 +101,91 @@ resultados de Nmap tienen su propia tabla (`resultados_nmap`) y todavia no apare
 `est resultados` ni en `est reporte generar` (solo los de `escanear tcp`); eso queda para una
 iteracion posterior.
 
+### Paso 3 - Auditoria web no intrusiva (completado en PR independiente)
+
+- [x] Cabeceras HTTP de seguridad (`Content-Security-Policy`, `Strict-Transport-Security`,
+      `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`,
+      `Cache-Control` condicional, divulgacion de version del servidor, CORS permisivo), cada
+      una con severidad evaluada en contexto (nunca "toda cabecera ausente = critica").
+- [x] Auditoria HTTPS/TLS (`modules/web/tls.py`): version negociada, suite de cifrado,
+      confianza del certificado, vencimiento y coincidencia de nombre de host -- sin desactivar
+      nunca la validacion TLS para fingir un resultado exitoso; si el certificado no es
+      confiable, se reporta el hecho y se distinguen los metadatos confirmados de los leidos
+      sin verificar.
+- [x] Auditoria de cookies (`modules/web/cookies.py`): `Secure`, `HttpOnly`, `SameSite`,
+      expiracion; el valor real de la cookie nunca se registra ni se muestra.
+- [x] Redirecciones y SSRF (`modules/web/redirecciones.py`): ninguna redireccion se sigue
+      automaticamente; solo se sigue con `--seguir-redirecciones` y unicamente si el destino es
+      una IP IPv4 literal autorizada en el alcance (maximo 5 saltos).
+- [x] `est web cabeceras|tls|cookies|auditar|reporte`, seccion "Analisis web" de la interfaz
+      visual (formulario completo con cancelacion) y Terminal AST (`web cabeceras|tls|cookies|
+      auditar`), con autocompletado.
+- [x] Persistencia atomica en `resultados_web` y exportacion a HTML/JSON reutilizando el mismo
+      esqueleto de informe que `est reporte generar`.
+- [x] Pruebas con un servidor HTTP(S) local y certificados generados por la propia suite
+      (nunca contra servidores publicos): cabeceras presentes/ausentes, certificados vencidos y
+      no confiables, validacion TLS, cookies, redirecciones fuera de alcance, prevencion de
+      SSRF, limites de tiempo/respuesta, cancelacion, persistencia, reportes, CLI y Textual.
+- [x] Las 199 pruebas anteriores siguen en verde.
+
+**Correcciones de una revision posterior de la misma PR**:
+
+- [x] `est web tls` contra un certificado no confiable (autofirmado/vencido/nombre equivocado)
+      ya no termina en un error generico sin hallazgos: la peticion HTTP real sigue validando
+      TLS por completo (nunca se desactiva en silencio), pero si falla por confianza, los
+      hallazgos de TLS ya diagnosticados se devuelven igual, junto con un hallazgo informativo
+      que explica que la parte HTTP no se completo.
+- [x] El estado "seguida"/"no seguida" de una redireccion ahora refleja lo que realmente
+      ocurrio (antes quedaba siempre en "no seguida" aunque AST si la siguiera).
+- [x] `debe_cancelar` se vuelve a comprobar justo antes de la transaccion SQLite (no solo
+      durante la peticion de red): una cancelacion detectada en ese momento tampoco persiste
+      nada.
+- [x] Los parametros de URL que suelen llevar un secreto (token, contrasena, API key...) se
+      ocultan (`core/redaccion.py`, movido desde `modules/web/` para que `core/validation.py`
+      tambien pueda reutilizarlo) antes de guardarse o mostrarse -- en la URL del objetivo, en
+      el destino de una redireccion, en mensajes de error y en los informes -- sin modificar la
+      URL real usada para la peticion autorizada.
+- [x] `--tiempo-limite` ahora se valida realmente contra el rango 1-30s
+      (`core/validation.py:validar_tiempo_limite_web`); el tiempo total de una auditoria
+      completa (al seguir redirecciones) tiene su propio presupuesto cooperativo de 60s
+      (`modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`).
+- [x] 38 pruebas nuevas (237 en total): `est web tls` de extremo a extremo contra certificados
+      no confiables/vencidos, estado real de cada tipo de redireccion (seguida/no seguida/fuera
+      de alcance/limite de saltos/limite de tiempo total), cancelacion justo antes de persistir,
+      redaccion de parametros sensibles (persistencia, CLI, informes, mensajes de error) y
+      validacion de `--tiempo-limite`.
+
+**Segunda revision de la misma PR**:
+
+- [x] Ningun mensaje de error de `validar_url_web()` (esquema no admitido, credenciales en la
+      URL, puerto invalido, host vacio, URL no interpretable) interpola ya la URL cruda: todos
+      pasan por `redactar_url()`, movida a `core/redaccion.py` precisamente para que
+      `core/validation.py` pudiera reutilizarla sin invertir la direccion de dependencias del
+      proyecto (`core/` nunca depende de `modules/`).
+- [x] El presupuesto de tiempo total de la auditoria ahora se mide con reloj monotonico ANTES
+      de cada peticion (incluida la primera) y se usa para recortar el `--tiempo-limite`
+      efectivo de esa peticion especifica, no solo para decidir si abortar antes de empezarla:
+      una peticion en curso ya no puede hacer que la auditoria completa supere el presupuesto
+      por mas de lo que le quedaba disponible. Documentado explicitamente como presupuesto
+      cooperativo, no como garantia estricta de pared.
+- [x] El estado "seguida" de una redireccion ya no puede registrarse un instante antes de que
+      el presupuesto de tiempo se agote y la peticion siguiente nunca llegue a intentarse: la
+      decision de seguir el salto y el tiempo limite de la peticion que lo sigue se calculan a
+      partir de la misma medicion del presupuesto restante, sin otra comprobacion de tiempo
+      entre medias que pueda contradecirla.
+- [x] 8 pruebas nuevas (252 en total): mensajes de error de `validar_url_web()` sin secretos en
+      claro (esquema invalido, credenciales, puerto invalido, host vacio, URL no interpretable),
+      un salto cuyo presupuesto se agota justo antes de intentarlo queda como "no seguida" (no
+      como "seguida" contradicha despues), y el tiempo limite efectivo de la peticion siguiente
+      se recorta segun el presupuesto restante (verificado interceptando la llamada real, sin
+      esperas largas).
+
+**Limitaciones conocidas**: solo se admiten objetivos con IP IPv4 literal (no nombres de
+dominio); el informe de auditoria web es independiente del de `escanear tcp`/`nmap`; el
+presupuesto de tiempo total de la auditoria es cooperativo, no una garantia estricta; cuando el
+certificado TLS no es confiable no hay hallazgos de cabeceras/cookies/redirecciones (solo de
+TLS), por diseno (ver [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
+
 ### Paso 4 - Nuclei (completado en PR independiente)
 
 - [x] `integrations/nuclei.py` + `commands/nuclei.py`: catalogo cerrado de 5 plantillas HTTP
@@ -141,13 +226,28 @@ entorno de desarrollo; los resultados de Nuclei tienen su propia tabla (`resulta
 todavia no aparecen en `est resultados` ni en `est reporte generar`; la garantia de aislamiento
 es sobre el contenido de la plantilla, no una sandbox de red a nivel de sistema operativo.
 
-### Pasos 3 y 5 - Pendientes (PRs independientes futuras)
+**Revision de seguridad posterior de la misma PR**: lista blanca estricta de estructura de
+plantillas (campos conocidos, rutas exclusivamente relativas a `{{BaseURL}}`, limites de
+bloques/rutas, tipos de matcher permitidos), hash SHA-256 aprobado por plantilla y ejecucion a
+partir de una copia validada (nunca la ruta original del catalogo, para evitar una ventana
+TOCTOU entre validar y ejecutar); configuracion y entorno de proceso aislados (sin proxy ni
+`NUCLEI_*`, con `HOME`/`XDG_CONFIG_HOME`/`APPDATA` redirigidos); un codigo de salida de Nuclei
+distinto de cero se trata siempre como un fallo real (nunca como exito sin hallazgos); segunda
+comprobacion de cancelacion justo antes de guardar los hallazgos; la salida JSONL solo acepta un
+`template-id` que pertenezca al conjunto de plantillas realmente ejecutadas, con limites de
+tamano por linea/total y de longitud por campo; los campos `matched-at`/`host`/`description`/
+`matcher-name` y el detalle de un error de proceso se redactan (no solo se truncan) antes de
+guardarse o mostrarse. Se replico ademas la correccion de binary planting de la PR #5 en
+`integrations/base.py`. Ver [docs/NUCLEI.md](NUCLEI.md) y [docs/SEGURIDAD.md](SEGURIDAD.md).
 
-- Auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones).
+### Paso 5 - Pendiente (PR independiente futura)
+
 - Integracion opcional con OWASP ZAP (solo analisis pasivo por defecto).
 - Cada integracion seguira el mismo motor (`integrations/base.py` + `integrations/proceso.py`)
   descrito arriba: documentacion en espanol, validacion de argumentos, comprobacion de
   instalacion y verificacion de alcance autorizado antes de ejecutar nada.
+- Unificar los resultados de `escanear tcp`, `nmap` y `web` en un unico listado/informe
+  general (hoy cada uno tiene su propia tabla e informe).
 
 ## Fase 4 - Asistente inteligente
 
