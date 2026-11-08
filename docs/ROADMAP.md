@@ -186,9 +186,62 @@ presupuesto de tiempo total de la auditoria es cooperativo, no una garantia estr
 certificado TLS no es confiable no hay hallazgos de cabeceras/cookies/redirecciones (solo de
 TLS), por diseno (ver [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
 
-### Pasos 4-5 - Pendientes (PRs independientes futuras)
+### Paso 4 - Nuclei (completado en PR independiente)
 
-- Adaptador opcional para Nuclei (plantillas de bajo impacto, nunca intrusivas por defecto).
+- [x] `integrations/nuclei.py` + `commands/nuclei.py`: catalogo cerrado de 5 plantillas HTTP
+      de bajo impacto, escritas por AURABYTE (`exposed-env-file`, `exposed-git-config`,
+      `directory-listing`, `server-version-disclosure`, `exposed-phpinfo`). El usuario solo
+      puede elegir por identificador (`--plantillas id1,id2`); nunca una ruta de plantilla
+      propia ni las plantillas publicas de la comunidad.
+- [x] Cada plantilla se vuelve a validar estructuralmente en cada ejecucion
+      (`validar_plantilla_estructura()`): se rechaza cualquier protocolo distinto de HTTP,
+      cualquier redireccion o cualquier mencion a Interactsh/OAST, por si el archivo cambiara
+      despues de instalado. Se desactivan ademas `-ni` (Interactsh) y `-duc` (comprobacion de
+      actualizaciones) al invocar el binario.
+- [x] `verificar_opciones_compatibles()`: comprueba contra `nuclei -h` que la version instalada
+      reconoce las opciones que AST necesita antes de construir el comando.
+- [x] Lectura de resultados JSONL linea a linea; una linea malformada se descarta sin
+      interrumpir el analisis del resto. El `request`/`response`/`curl-command` de Nuclei
+      nunca se guardan ni se muestran (solo un resumen saneado).
+- [x] Gestionable desde la CLI (`est nuclei version|plantillas|analizar|resultados|revisar|
+      reporte`) y desde la interfaz visual (seccion "Vulnerabilidades", que deja de ser un
+      marcador "Proximamente"): proyecto activo, deteccion, catalogo con explicacion,
+      confirmacion explicita antes de analizar, cancelacion real, tabla de hallazgos con
+      severidad/evidencia/recomendacion y marcado de falso positivo/confirmado.
+- [x] Persistencia atomica en `resultados_nuclei` (con estado de revision inicial `nuevo`) y
+      exportacion a HTML/JSON reutilizando el generador de informes existente.
+- [x] Pruebas con mocks, sin ejecutar Nuclei real ni tocar sistemas de terceros
+      (`tests/test_integraciones_nuclei.py`, `tests/test_tui_nuclei.py`): deteccion,
+      validacion de objetivo/plantillas/tiempo limite, opciones no compatibles, catalogo y
+      validacion estructural de plantillas (protocolo prohibido, redirecciones, Interactsh,
+      metodo distinto de GET, YAML invalido), JSONL malformado, ausencia de
+      request/response/cookies en los hallazgos, cancelacion real, rechazo fuera de alcance,
+      persistencia atomica, reportes, CLI y Textual (incluida la revision de falsos
+      positivos).
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas** (ver tambien [docs/NUCLEI.md](NUCLEI.md)): el catalogo aprobado es
+deliberadamente pequeno y no se ha podido validar contra un binario de Nuclei real en este
+entorno de desarrollo; los resultados de Nuclei tienen su propia tabla (`resultados_nuclei`) y
+todavia no aparecen en `est resultados` ni en `est reporte generar`; la garantia de aislamiento
+es sobre el contenido de la plantilla, no una sandbox de red a nivel de sistema operativo.
+
+**Revision de seguridad posterior de la misma PR**: lista blanca estricta de estructura de
+plantillas (campos conocidos, rutas exclusivamente relativas a `{{BaseURL}}`, limites de
+bloques/rutas, tipos de matcher permitidos), hash SHA-256 aprobado por plantilla y ejecucion a
+partir de una copia validada (nunca la ruta original del catalogo, para evitar una ventana
+TOCTOU entre validar y ejecutar); configuracion y entorno de proceso aislados (sin proxy ni
+`NUCLEI_*`, con `HOME`/`XDG_CONFIG_HOME`/`APPDATA` redirigidos); un codigo de salida de Nuclei
+distinto de cero se trata siempre como un fallo real (nunca como exito sin hallazgos); segunda
+comprobacion de cancelacion justo antes de guardar los hallazgos; la salida JSONL solo acepta un
+`template-id` que pertenezca al conjunto de plantillas realmente ejecutadas, con limites de
+tamano por linea/total y de longitud por campo; los campos `matched-at`/`host`/`description`/
+`matcher-name` y el detalle de un error de proceso se redactan (no solo se truncan) antes de
+guardarse o mostrarse. Se replico ademas la correccion de binary planting de la PR #5 en
+`integrations/base.py`. Ver [docs/NUCLEI.md](NUCLEI.md) y [docs/SEGURIDAD.md](SEGURIDAD.md).
+
+### Paso 5 - Pendiente (PR independiente futura)
+
 - Integracion opcional con OWASP ZAP (solo analisis pasivo por defecto).
 - Cada integracion seguira el mismo motor (`integrations/base.py` + `integrations/proceso.py`)
   descrito arriba: documentacion en espanol, validacion de argumentos, comprobacion de

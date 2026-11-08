@@ -26,6 +26,7 @@ from eurabyte_security.ui.tui.widgets.paneles import (
     PanelRedes,
     PanelReportes,
     PanelResultados,
+    PanelVulnerabilidades,
 )
 from eurabyte_security.ui.tui.widgets.terminal import PanelInfoComando, PanelTerminalAST
 
@@ -64,7 +65,7 @@ class AuraByteApp(App[None]):
                 yield PanelProximamente("Modulos", "Fase 3", id="panel-modulos")
                 yield PanelReconocimiento(id="panel-reconocimiento")
                 yield PanelAuditoriaWeb(id="panel-web")
-                yield PanelProximamente("Vulnerabilidades", "Fase 3", id="panel-vulnerabilidades")
+                yield PanelVulnerabilidades(id="panel-vulnerabilidades")
                 yield PanelRedes(id="panel-redes")
                 yield PanelHerramientas(id="panel-herramientas")
                 yield PanelResultados(id="panel-resultados")

@@ -25,6 +25,14 @@ _ARBOL_COMPLETADO = {
         "auditar": None,
         "reporte": None,
     },
+    "nuclei": {
+        "version": None,
+        "plantillas": None,
+        "analizar": None,
+        "resultados": None,
+        "revisar": None,
+        "reporte": None,
+    },
     "explicar": {
         tema: None
         for tema in (
@@ -36,6 +44,7 @@ _ARBOL_COMPLETADO = {
             "reporte",
             "interactivo",
             "web",
+            "nuclei",
         )
     },
     "resultados": None,

@@ -20,6 +20,7 @@ from eurabyte_security.commands.alcance import agregar_alcance as _agregar_alcan
 from eurabyte_security.commands.alcance import listar_alcance as _listar_alcance
 from eurabyte_security.commands.escanear import escanear_tcp as _escanear_tcp
 from eurabyte_security.commands.explicar import EXPLICACIONES
+from eurabyte_security.commands.nuclei import ejecutar_nuclei as _ejecutar_nuclei
 from eurabyte_security.commands.proyecto import crear_proyecto as _crear_proyecto
 from eurabyte_security.commands.proyecto import listar_proyectos as _listar_proyectos
 from eurabyte_security.commands.proyecto import usar_proyecto as _usar_proyecto
@@ -29,6 +30,7 @@ from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
 from eurabyte_security.core.redaccion import redactar_url as _redactar_url
+from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS as _PLANTILLAS_NUCLEI
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
 
@@ -37,6 +39,7 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
     "alcance": {"agregar": None, "listar": None},
     "escanear": {"tcp": None},
     "web": {"cabeceras": None, "tls": None, "cookies": None, "auditar": None},
+    "nuclei": {"plantillas": None, "analizar": None, "resultados": None},
     "explicar": dict.fromkeys(EXPLICACIONES),
     "resultados": None,
     "reporte": {"generar": None},
@@ -46,6 +49,10 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
 
 _ESTILOS_ESTADO = {"abierto": "bold green", "cerrado": "grey70", "error": "bold red"}
 _ESTILOS_SEVERIDAD = {"info": "grey70", "baja": "cyan", "media": "yellow", "alta": "bold red"}
+_ESTILOS_SEVERIDAD_NUCLEI = {
+    "info": "grey70", "low": "cyan", "medium": "yellow", "high": "bold red",
+    "critical": "bold red", "unknown": "grey70",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +200,7 @@ class MotorComandos:
             "alcance": self._alcance,
             "escanear": self._escanear,
             "web": self._web,
+            "nuclei": self._nuclei,
             "explicar": self._explicar,
             "resultados": self._resultados,
             "reporte": self._reporte,
@@ -326,6 +334,74 @@ class MotorComandos:
         return ResultadoComando(
             True, _tabla_hallazgos_web(resultado.hallazgos, f"Auditoria web - {url_mostrada}")
         )
+
+    # -- nuclei --------------------------------------------------------
+    def _nuclei(self, resto: list[str]) -> ResultadoComando:
+        if not resto:
+            return ResultadoComando(
+                False, "Uso: nuclei plantillas|analizar|resultados"
+            )
+        subcomando, *args = resto
+
+        if subcomando == "plantillas":
+            tabla = Table(title="Plantillas de Nuclei aprobadas por AST")
+            tabla.add_column("Id")
+            tabla.add_column("Nombre")
+            tabla.add_column("Severidad esperada")
+            for info in _PLANTILLAS_NUCLEI.values():
+                tabla.add_row(info.id_, info.nombre, info.severidad_esperada)
+            return ResultadoComando(True, tabla)
+
+        if subcomando == "analizar":
+            proyecto_nombre, args = _extraer_opcion(args, "--proyecto")
+            plantillas_txt, args = _extraer_opcion(args, "--plantillas")
+            tiempo_limite_txt, args = _extraer_opcion(args, "--tiempo-limite")
+            if not args:
+                return ResultadoComando(
+                    False, "Falta el objetivo. Uso: nuclei analizar OBJETIVO --plantillas id1,id2"
+                )
+            if not plantillas_txt:
+                return ResultadoComando(
+                    False, "Falta --plantillas. Ej: --plantillas exposed-env-file"
+                )
+            try:
+                tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 60.0
+            except ValueError:
+                return ResultadoComando(False, "--tiempo-limite debe ser numerico.")
+
+            ids = [p.strip() for p in plantillas_txt.split(",") if p.strip()]
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+            resultado, _guardados = _ejecutar_nuclei(
+                base_datos, proyecto, args[0], ids, tiempo_limite=tiempo_limite
+            )
+            tabla = Table(title=f"Nuclei - {args[0]}")
+            tabla.add_column("Plantilla")
+            tabla.add_column("Hallazgo")
+            tabla.add_column("Severidad")
+            for h in resultado.hallazgos:
+                estilo = _ESTILOS_SEVERIDAD_NUCLEI.get(h.severidad.lower(), "")
+                severidad_texto = f"[{estilo}]{h.severidad}[/{estilo}]" if estilo else h.severidad
+                tabla.add_row(h.plantilla_id, h.plantilla_nombre, severidad_texto)
+            return ResultadoComando(True, tabla)
+
+        if subcomando == "resultados":
+            proyecto_nombre, args = _extraer_opcion(args, "--proyecto")
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+            guardados = base_datos.listar_resultados_nuclei(proyecto.id, limite=200)
+            tabla = Table(title=f"Hallazgos de Nuclei - {proyecto.nombre}")
+            tabla.add_column("Objetivo")
+            tabla.add_column("Plantilla")
+            tabla.add_column("Severidad")
+            tabla.add_column("Revision")
+            for g in guardados:
+                estilo = _ESTILOS_SEVERIDAD_NUCLEI.get(g.severidad.lower(), "")
+                severidad_texto = f"[{estilo}]{g.severidad}[/{estilo}]" if estilo else g.severidad
+                tabla.add_row(g.objetivo, g.plantilla_id, severidad_texto, g.estado_revision)
+            return ResultadoComando(True, tabla)
+
+        return ResultadoComando(False, f"Subcomando desconocido: 'nuclei {subcomando}'.")
 
     # -- explicar ----------------------------------------------------
     def _explicar(self, resto: list[str]) -> ResultadoComando:

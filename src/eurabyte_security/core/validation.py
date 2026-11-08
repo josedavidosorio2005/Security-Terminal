@@ -24,6 +24,9 @@ PUERTO_MINIMO = 1
 PUERTO_MAXIMO = 65535
 MAX_PUERTOS_POR_ESCANEO = 1024
 
+ESQUEMAS_NUCLEI_VALIDOS = ("http", "https")
+PUERTOS_POR_DEFECTO_NUCLEI = {"http": 80, "https": 443}
+
 TIMEOUT_MINIMO = 0.1
 TIMEOUT_MAXIMO = 10.0
 
@@ -220,3 +223,75 @@ def validar_url_web(url: str) -> ComponentesURL:
         ruta = f"{ruta}?{partes.query}"
 
     return ComponentesURL(url_original=url, esquema=esquema, host=host, puerto=puerto, ruta=ruta)
+
+
+@dataclass(frozen=True, slots=True)
+class ObjetivoNuclei:
+    """Objetivo de un analisis de Nuclei ya validado: esquema, host IPv4 y puerto."""
+
+    url_original: str
+    esquema: str
+    host: ipaddress.IPv4Address
+    puerto: int
+
+
+def validar_objetivo_nuclei(objetivo: str) -> ObjetivoNuclei:
+    """Valida el objetivo de un analisis de Nuclei: esquema + host IPv4 + puerto, sin ruta.
+
+    A diferencia de una auditoria web completa, Nuclei nunca recibe una ruta ni una
+    cadena de consulta del usuario: los unicos caminos que puede pedir son los que ya
+    definen las plantillas aprobadas de AST (ver ``integrations/nuclei.py``). Aceptar
+    una ruta aqui no tendria ningun efecto util y solo anadiria una entrada que validar
+    sin necesidad. Igual que ``validar_objetivo``, solo se aceptan direcciones IPv4
+    literales como host (no nombres de dominio).
+    """
+    objetivo = objetivo.strip()
+    if not objetivo:
+        raise ErrorValidacion("El objetivo no puede estar vacio.")
+    if "://" not in objetivo:
+        objetivo = f"http://{objetivo}"
+
+    try:
+        partes = urlsplit(objetivo)
+    except ValueError as exc:
+        raise ErrorValidacion(f"'{objetivo}' no es un objetivo valido: {exc}") from exc
+
+    esquema = partes.scheme.lower()
+    if esquema not in ESQUEMAS_NUCLEI_VALIDOS:
+        raise ErrorValidacion(
+            f"El objetivo usa el esquema '{esquema or '(ninguno)'}', pero solo se "
+            f"admiten {' y '.join(ESQUEMAS_NUCLEI_VALIDOS)}."
+        )
+
+    if partes.username or partes.password:
+        raise ErrorValidacion("El objetivo no puede incluir credenciales (usuario/contrasena).")
+
+    if (partes.path and partes.path != "/") or partes.query or partes.fragment:
+        raise ErrorValidacion(
+            "El objetivo de Nuclei no admite ruta ni parametros de consulta: solo "
+            "esquema, host y puerto opcional (las rutas las define cada plantilla "
+            "aprobada, no el usuario)."
+        )
+
+    nombre_host = partes.hostname
+    if not nombre_host:
+        raise ErrorValidacion(f"'{objetivo}' no indica un host valido.")
+
+    try:
+        host = ipaddress.IPv4Address(nombre_host)
+    except ValueError as exc:
+        raise ErrorValidacion(
+            f"'{nombre_host}' no es una direccion IPv4 valida. Esta version de AST no "
+            "admite nombres de dominio como objetivo, solo direcciones IP."
+        ) from exc
+
+    try:
+        puerto = partes.port if partes.port is not None else PUERTOS_POR_DEFECTO_NUCLEI[esquema]
+    except ValueError as exc:
+        raise ErrorValidacion(f"'{objetivo}' tiene un puerto invalido.") from exc
+    if not (PUERTO_MINIMO <= puerto <= PUERTO_MAXIMO):
+        raise ErrorValidacion(
+            f"El puerto {puerto} esta fuera del rango valido ({PUERTO_MINIMO}-{PUERTO_MAXIMO})."
+        )
+
+    return ObjetivoNuclei(url_original=objetivo, esquema=esquema, host=host, puerto=puerto)

@@ -27,6 +27,7 @@ dependencies = [
     "textual>=1.0.0",
     "defusedxml>=0.7.1",
     "cryptography>=42.0.0",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +42,9 @@ est = "eurabyte_security.cli.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"eurabyte_security.integrations" = ["plantillas_nuclei/*.yaml"]
 
 [tool.ruff]
 line-length = 100

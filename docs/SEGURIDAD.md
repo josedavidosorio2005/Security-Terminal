@@ -35,13 +35,23 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
    binario externo, siempre con `subprocess.Popen(..., shell=False)` y una lista de argumentos
    ya validados -- nunca una cadena construida por interpolacion. Cada ejecucion tiene limite de
    tiempo y puede cancelarse de verdad (`Popen.kill()`), y el alcance autorizado se comprueba
-   **antes** de invocar la herramienta, igual que con `escanear tcp`.
-8. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
+   **antes** de invocar la herramienta, igual que con `escanear tcp`. La ruta del binario se
+   resuelve una sola vez (ruta absoluta) y es esa misma ruta la que se ejecuta, para no dejar una
+   segunda busqueda de PATH en manos del sistema operativo al lanzar el proceso; en Windows,
+   ademas, se desactiva explicitamente que esa busqueda incluya el directorio de trabajo actual
+   (mitiga "binary planting": que alguien coloque un ejecutable con el mismo nombre en esa
+   carpeta para que se ejecute en vez del binario real).
+8. **Cualquier texto que pueda venir del objetivo auditado (no solo del usuario) se escapa
+   antes de mostrarse.** Los campos que una integracion externa obtiene del sistema escaneado
+   (p. ej. el nombre de servicio o la version que Nmap identifica en el objetivo) pasan por
+   `ui/consola.py:texto_seguro` antes de mostrarse con marcado Rich, igual que el texto que
+   escribe el propio usuario: un objetivo auditado no deja de ser una fuente no confiable.
+9. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
    deteccion de servicios/version de Nmap (`-sV`) requiere activarla explicitamente
    (`--deteccion-version`); el motor esta preparado para que las futuras integraciones
-   (Nuclei, OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos
+   (OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos
    por defecto.
-9. **La auditoria web (`est web ...`) comprueba el alcance antes de cualquier peticion y nunca
+10. **La auditoria web (`est web ...`) comprueba el alcance antes de cualquier peticion y nunca
    sigue una redireccion sin verificarla primero.** `modules/web/cliente.py` usa `http.client`
    directamente (nunca `urllib.request` ni una libreria de terceros) precisamente para no
    seguir redirecciones automaticamente ni leer `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` del
@@ -52,15 +62,15 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
    hallazgo en vez de arriesgarse a un SSRF. Por la misma razon, esta version solo admite
    direcciones IPv4 literales como objetivo (ver `core/validation.py:validar_url_web`), no
    nombres de dominio.
-10. **La auditoria TLS nunca desactiva la validacion para fingir un resultado exitoso.**
+11. **La auditoria TLS nunca desactiva la validacion para fingir un resultado exitoso.**
     `modules/web/tls.py` intenta siempre una conexion con verificacion completa primero; si
     falla, solo abre una segunda conexion para leer los metadatos reales del certificado
     (fecha de vencimiento, emisor...), y el resultado deja explicito que la confianza no se
     pudo verificar y por que, distinguiendo esos metadatos de los que si fueron verificados.
-11. **Los valores de las cookies nunca se registran.** `modules/web/cookies.py` solo guarda y
+12. **Los valores de las cookies nunca se registran.** `modules/web/cookies.py` solo guarda y
     muestra el nombre de cada cookie y sus atributos (`Secure`, `HttpOnly`, `SameSite`...); el
     valor real jamas aparece en un hallazgo, en un log ni en un informe exportado.
-12. **Las URLs que suelen llevar un secreto (credenciales en el host, token/contrasena/API key
+13. **Las URLs que suelen llevar un secreto (credenciales en el host, token/contrasena/API key
     en la cadena de consulta o en el fragmento) se ocultan antes de mostrarse o guardarse.**
     `core/redaccion.py:redactar_url()` elimina las credenciales del host y oculta el valor de
     los parametros sensibles (por coincidencia de subcadena del nombre, no solo una lista
@@ -74,13 +84,49 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     nunca para lo que se envia por la red). `redactar_url()` vive en `core/` (no en
     `modules/web/`) para que `core/validation.py` -- el punto de control de seguridad comun a
     toda la aplicacion -- pueda reutilizarla sin que `core/` termine dependiendo de `modules/`.
-13. **Los limites se documentan segun lo que realmente garantizan.** El tiempo limite de una
+14. **Los limites se documentan segun lo que realmente garantizan.** El tiempo limite de una
     peticion de auditoria web (`--tiempo-limite`) es estricto (lo impone el `timeout` del
     socket); el presupuesto de tiempo total de toda una auditoria (al seguir redirecciones,
     `modules/web/auditor.py:TIEMPO_LIMITE_TOTAL_MAXIMO`) es deliberadamente un presupuesto
     cooperativo, documentado como tal: reduce el limite de la siguiente peticion a lo que
     queda del presupuesto, pero no puede evitar una pequena demora adicional fuera del control
     de AST (resolucion de la conexion, negociacion TLS, el planificador del sistema operativo).
+15. **Nuclei solo ejecuta un catalogo cerrado de plantillas HTTP de bajo impacto, escritas por
+   AURABYTE, nunca una ruta de plantilla que indique el usuario.** `est nuclei analizar` solo
+   acepta identificadores del catalogo aprobado (`integrations/nuclei.py:PLANTILLAS_APROBADAS`);
+   no existe ninguna opcion para pasar un archivo `.yaml` arbitrario ni para usar las plantillas
+   publicas de la comunidad. Cada plantilla se vuelve a validar estructuralmente en **cada
+   ejecucion** (`validar_plantilla_estructura()`), no solo cuando se escribio, con una **lista
+   blanca estricta** (campos de nivel superior/de `info`/de bloque HTTP/de matcher conocidos,
+   metodo `GET`, como maximo 4 rutas exclusivamente relativas a `{{BaseURL}}`, nunca una URL
+   absoluta a otro host): se rechaza cualquier campo que AST no reconozca, no solo los que estan
+   en una lista negra concreta. Ademas, cada plantilla aprobada tiene un **hash SHA-256 fijado**
+   (`InfoPlantillaNuclei.sha256`): si el archivo instalado no coincide, se rechaza la ejecucion;
+   cambiar ese hash exige revisar de nuevo todo el contenido a mano. Para evitar una ventana
+   entre "se valido este archivo" y "se ejecuto este archivo" (TOCTOU), AST nunca le pasa a
+   Nuclei la ruta original instalada: lee el contenido una vez, lo valida, y ejecuta una copia
+   nueva en un directorio temporal exclusivo de esa ejecucion. Se desactivan ademas
+   explicitamente Interactsh/OAST (`-ni`) y la comprobacion de actualizaciones (`-duc`) al
+   invocar el binario, y el proceso se invoca con un entorno aislado (sin variables de proxy ni
+   `NUCLEI_*`, con `HOME`/`XDG_CONFIG_HOME`/`APPDATA` redirigidos a un directorio vacio) para que
+   una configuracion, proxy o perfil que el usuario ya tuviera guardado en su sistema nunca se
+   aplique silenciosamente. Un codigo de salida de Nuclei distinto de cero se trata siempre como
+   un fallo real, nunca como "analisis exitoso sin hallazgos", y nunca deja un resultado parcial
+   guardado. Ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo, incluidas las garantias
+   que este diseno **no** puede ofrecer (no es una sandbox de red a nivel de sistema operativo).
+16. **Nuclei nunca guarda el trafico HTTP completo ni cabeceras de autenticacion/cookies, y
+    trata toda su salida JSONL como no confiable.** El `request`/`response`/`curl-command` que
+    Nuclei incluye en su salida se descartan explicitamente al interpretarla
+    (`integrations/nuclei.py:_analizar_jsonl_nuclei()`); lo que se guarda es un resumen propio
+    (donde se detecto el hallazgo, que matcher lo activo), nunca el trafico original, con una
+    longitud maxima por campo. Solo se acepta un `template-id` que pertenezca exactamente al
+    conjunto de plantillas que AST le pidio ejecutar en esa misma invocacion (nunca "cualquier
+    id del catalogo"); una linea mas larga de lo esperado, o una salida JSONL completa por
+    encima de un tamano maximo, se descarta o se rechaza sin usarla. Los campos `matched-at`/
+    `host`/`description`/`matcher-name`, y el detalle de un error de proceso, se **redactan**
+    (no solo se truncan) con el mismo mecanismo que usa la auditoria web
+    (`core/redaccion.py:redactar_url`) o con un redactor de texto libre propio para los campos
+    que no son una URL.
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 
@@ -93,10 +139,13 @@ Ver [SECURITY.md](../SECURITY.md).
 - Registra el alcance exacto que te autorizaron, ni mas ni menos.
 - Guarda las evidencias (resultados, informes) en un lugar seguro y bórralas cuando ya no las
   necesites; AST no las cifra por defecto.
-- No ejecutes integraciones externas (Nmap y las que sigan: Nuclei, OWASP ZAP) ni auditorias web
+- No ejecutes integraciones externas (Nmap, Nuclei y las que sigan: OWASP ZAP) ni auditorias web
   contra objetivos fuera del alcance acordado con el cliente o la organizacion.
 - Al usar `--deteccion-version` con Nmap, confirma primero que esa comprobacion en concreto
   esta autorizada; no es el comportamiento por defecto.
 - Al usar `--seguir-redirecciones` en `est web`, recuerda que AST solo sigue el salto si el
   destino ya esta autorizado en el alcance; si necesitas auditar un destino nuevo, agregalo
   primero al alcance en vez de depender de que la redireccion lo cubra.
+- Un hallazgo de Nuclei puede ser un falso positivo: revisa la evidencia antes de confirmarlo
+  (`est nuclei revisar ID --estado confirmado|falso_positivo`), no lo asumas como cierto solo
+  porque el escaner lo reporto.

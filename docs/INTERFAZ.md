@@ -37,9 +37,9 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Modulos | Proximamente (Fase 3) | Punto de entrada futuro a los modulos de auditoria. |
 | Reconocimiento | Implementada | Descubrimiento de puertos/servicios con Nmap, con boton de cancelar. |
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
-| Vulnerabilidades | Proximamente (Fase 3) | Reservado para integraciones como Nuclei. |
+| Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
-| Herramientas | Implementada | Detecta si Nmap/Nuclei/OWASP ZAP/tshark estan instalados, y la version de Nmap (no los ejecuta). |
+| Herramientas | Implementada | Detecta si Nmap/Nuclei/OWASP ZAP/tshark estan instalados, y la version de Nmap/Nuclei (no los ejecuta). |
 | Resultados | Implementada | Tabla de resultados guardados del proyecto activo. |
 | Reportes | Implementada | Genera informes HTML o JSON del proyecto activo. |
 | Aprendizaje | Proximamente (Fase 5) | Reservado para laboratorios y contenido educativo. |
@@ -121,11 +121,25 @@ dominio en esta entrega). Selecciona una fila de la tabla de hallazgos para ver 
 completa (significado, proposito, riesgo, recomendacion y referencia) debajo. Detalle completo
 en [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
 
+### Vulnerabilidades (Nuclei)
+
+Muestra si Nuclei esta instalado (y su version), el proyecto activo y el catalogo de
+plantillas aprobadas por AST (cada una con su severidad esperada y una descripcion corta):
+marca las que quieras ejecutar. Escribe el objetivo, un tiempo limite opcional y marca la
+casilla **"Confirmo que el objetivo esta autorizado"** -- el boton "Analizar" no hace nada
+sin esa confirmacion explicita, para que un clic accidental nunca dispare un analisis real.
+"Cancelar" detiene el proceso de Nuclei de verdad. Selecciona una fila de la tabla de
+hallazgos para ver su detalle completo (severidad, descripcion, evidencia saneada y
+recomendacion de mitigacion) y marcarla como "confirmado" o "falso positivo" -- como con
+cualquier escaner automatico, revisa la evidencia antes de confirmar un hallazgo. Igual que
+"Reconocimiento", rechaza objetivos fuera del alcance autorizado y no guarda nada si se
+cancela. Detalle completo (catalogo, limitaciones) en [docs/NUCLEI.md](NUCLEI.md).
+
 ### Herramientas
 
 Muestra si Nmap, Nuclei, OWASP ZAP y tshark estan instalados en el sistema (`PATH`), y la
-version detectada para Nmap. AST **nunca ejecuta un analisis automaticamente** desde este
-panel: solo comprueba presencia/version, de solo lectura.
+version detectada para Nmap y Nuclei. AST **nunca ejecuta un analisis automaticamente** desde
+este panel: solo comprueba presencia/version, de solo lectura.
 
 ### Reportes
 
@@ -174,8 +188,8 @@ el `PATH` del sistema; instalala y vuelve a pulsar "Volver a detectar".
 
 ## Cancelacion de un escaneo o analisis: semantica exacta
 
-Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento" o "Analisis web" (o al iniciarse un
-escaneo/analisis nuevo mientras otro seguia en curso):
+Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web" o "Vulnerabilidades"
+(o al iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
 
 - La semantica es **todo o nada**: un escaneo o analisis cancelado no guarda ningun resultado
   en la base de datos, ni siquiera de los puertos/hallazgos que ya se habian comprobado antes
@@ -184,8 +198,8 @@ escaneo/analisis nuevo mientras otro seguia en curso):
   cada 50ms, no solo cuando un puerto termina), pero las conexiones que ya se habian iniciado
   pueden completarse en segundo plano hasta su propio `--timeout` (limitacion de Python al
   cancelar hilos bloqueados en E/S): simplemente no se usa su resultado.
-- **Reconocimiento (Nmap)**: al cancelar, AST mata el proceso de Nmap de verdad
-  (`Popen.kill()`), no se limita a dejar de esperarlo.
+- **Reconocimiento (Nmap)** y **Vulnerabilidades (Nuclei)**: al cancelar, AST mata el proceso
+  externo de verdad (`Popen.kill()`), no se limita a dejar de esperarlo.
 - **Analisis web**: deja de leer el cuerpo de la respuesta en cuanto detecta la cancelacion;
   igual que las demas, no persiste ningun hallazgo del analisis cancelado.
 - Si inicias un segundo escaneo/analisis antes de que termine el primero, el primero se
@@ -196,10 +210,11 @@ escaneo/analisis nuevo mientras otro seguia en curso):
 
 - `est interfaz` necesita una terminal real (no funciona con la entrada/salida completamente
   redirigida), igual que cualquier aplicacion Textual.
-- Las secciones Modulos, Vulnerabilidades y Aprendizaje son marcadores de posicion para las
-  Fases 3 y 5: no tienen funcionalidad todavia.
+- Las secciones Modulos y Aprendizaje son marcadores de posicion para las Fases 3 y 5: no
+  tienen funcionalidad todavia (Analisis web y Vulnerabilidades ya estan implementadas).
 - El escudo de marca (barra superior y panel de Inicio) es una alternativa en texto ASCII
   mientras no exista el recurso grafico oficial (ver `eurabyte_security/marca.py`).
-- Los resultados de Nmap todavia no aparecen en `est resultados` ni en `est reporte generar`
-  (solo los de `escanear tcp`); se consultan por ahora solo en el propio panel/comando de Nmap.
-  Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md).
+- Los resultados de Nmap y de Nuclei todavia no aparecen en `est resultados` ni en
+  `est reporte generar` (solo los de `escanear tcp`); se consultan por ahora solo en el
+  propio panel/comando de cada uno. Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md) y
+  [docs/NUCLEI.md](NUCLEI.md).

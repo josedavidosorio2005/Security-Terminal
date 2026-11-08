@@ -21,14 +21,18 @@ src/eurabyte_security/
 │   ├── network/    Comprobaciones de red (Fase 1: escaneo TCP basico).
 │   ├── web/        Auditoria web (Fase 3, Paso 3): cabeceras HTTP, TLS, cookies,
 │   │               redirecciones. Detalle en docs/AUDITORIA_WEB.md.
-│   ├── vulnerability/  Analisis de vulnerabilidades (Fase 3: Nuclei...). Vacio todavia.
+│   ├── vulnerability/  Reservado para analisis de vulnerabilidades en Python puro
+│   │               (sin binario externo). Nuclei vive en integrations/, no aqui
+│   │               (sigue el mismo patron que Nmap: es un adaptador externo).
 │   └── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
 ├── integrations/   Motor de integraciones (Fase 3). Detalle en docs/INTEGRACIONES.md.
 │   ├── base.py     AdaptadorExterno: contrato comun (deteccion, version, validacion...).
 │   ├── proceso.py  Unico punto de ejecucion real de un binario externo (sin shell, con
 │   │               limite de tiempo y cancelacion mediante Popen.kill()).
 │   ├── deteccion.py  Deteccion/version de las herramientas (nunca las ejecuta de verdad).
-│   └── nmap.py     Primer adaptador concreto: descubrimiento de puertos y servicios.
+│   ├── nmap.py     Primer adaptador concreto: descubrimiento de puertos y servicios.
+│   ├── nuclei.py   Segundo adaptador: solo plantillas HTTP aprobadas (ver docs/NUCLEI.md).
+│   └── plantillas_nuclei/*.yaml   Catalogo de plantillas que nuclei.py puede ejecutar.
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
 ├── storage/        Repositorio SQLite (proyectos, alcances, resultados).
 └── ui/
@@ -119,7 +123,7 @@ comprueba que no queda nada guardado.
 5. `commands/nmap.py` persiste los resultados (atomicamente, ver arriba) y guarda el XML
    original como evidencia en `core/config.py:ruta_evidencias("nmap")`.
 
-Cualquier integracion futura (Nuclei, OWASP ZAP...) sigue el mismo patron: adaptador en
+Cualquier integracion futura (OWASP ZAP...) sigue el mismo patron: adaptador en
 `integrations/`, comando/orquestacion en `commands/` (donde vive la verificacion de alcance),
 nunca al reves.
 
@@ -145,6 +149,18 @@ sigue la misma separacion: la verificacion de alcance vive en `commands/web.py`,
 
 Detalle completo (que evalua cada categoria, por que la severidad nunca es automatica, como se
 protege contra SSRF) en [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
+
+## Nuclei: una capa extra de validacion sobre el mismo patron
+
+`integrations/nuclei.py:AdaptadorNuclei` sigue el mismo flujo que Nmap, con una diferencia
+importante: Nuclei puede ejecutar practicamente cualquier cosa segun la plantilla que se le
+indique, asi que AST nunca acepta una ruta de plantilla del usuario. Solo permite elegir, por
+identificador, entre un catalogo reducido (`PLANTILLAS_APROBADAS`) de plantillas que AURABYTE
+escribio y distribuye con el paquete (`integrations/plantillas_nuclei/*.yaml`). Antes de cada
+ejecucion, `validar_plantilla_estructura()` vuelve a leer el archivo y rechaza cualquier
+plantilla que declare un protocolo distinto de `http`, que siga redirecciones o que mencione
+Interactsh/OAST -- una comprobacion en tiempo de ejecucion, no solo una revision manual que se
+hizo una vez. Ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo.
 
 ## Texto seguro frente al marcado Rich
 
@@ -179,4 +195,4 @@ mostrar) se repite en los demas comandos (`proyecto`, `alcance`, `resultados`, `
 Toda la informacion vive en SQLite, en un unico archivo bajo el directorio de datos del usuario
 (`~/.eurabyte_security/est.db` por defecto, o `$EST_HOME/est.db` si se define esa variable de
 entorno). El esquema tiene las tablas `proyectos`, `alcances`, `resultados` (escaneo TCP),
-`resultados_nmap` y `resultados_web` (ver `storage/database.py`).
+`resultados_nmap`, `resultados_web` y `resultados_nuclei` (ver `storage/database.py`).

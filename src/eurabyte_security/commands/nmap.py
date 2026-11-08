@@ -83,7 +83,10 @@ def ejecutar_nmap(
 
 
 def _tabla_resultado_nmap(resultado: ResultadoNmap) -> Table:
-    tabla = Table(title=f"Nmap - {resultado.objetivo}")
+    # Protocolo/estado/servicio/version vienen de la respuesta del objetivo escaneado
+    # (Nmap los vuelca tal cual): se escapan siempre antes de mostrarlos con marcado
+    # Rich, igual que cualquier otro texto no controlado por AST (ver ui/consola.py).
+    tabla = Table(title=f"Nmap - {texto_seguro(resultado.objetivo)}")
     tabla.add_column("Puerto")
     tabla.add_column("Protocolo")
     tabla.add_column("Estado")
@@ -91,10 +94,14 @@ def _tabla_resultado_nmap(resultado: ResultadoNmap) -> Table:
     tabla.add_column("Version")
     for puerto in resultado.puertos:
         estilo = _ESTILOS_ESTADO.get(puerto.estado, "")
-        estado_texto = f"[{estilo}]{puerto.estado}[/{estilo}]" if estilo else puerto.estado
+        estado_seguro = texto_seguro(puerto.estado)
+        estado_texto = f"[{estilo}]{estado_seguro}[/{estilo}]" if estilo else estado_seguro
         tabla.add_row(
-            str(puerto.puerto), puerto.protocolo, estado_texto, puerto.servicio or "-",
-            puerto.version or "-",
+            str(puerto.puerto),
+            texto_seguro(puerto.protocolo),
+            estado_texto,
+            texto_seguro(puerto.servicio) if puerto.servicio else "-",
+            texto_seguro(puerto.version) if puerto.version else "-",
         )
     return tabla
 
@@ -132,7 +139,7 @@ def descubrir_cmd(
 
     consola.print(_tabla_resultado_nmap(resultado))
     if ruta_xml is not None:
-        consola.print(f"Evidencia XML guardada en: {ruta_xml}")
+        consola.print(f"Evidencia XML guardada en: {texto_seguro(ruta_xml)}")
 
 
 @nmap_app.command("version")
@@ -145,4 +152,7 @@ def version_cmd() -> None:
             f"comando '{info.comando}' en el PATH del sistema)."
         )
         return
-    consola.print(f"Nmap instalado en: {info.ruta}\nVersion: {info.version or 'desconocida'}")
+    consola.print(
+        f"Nmap instalado en: {texto_seguro(info.ruta)}\n"
+        f"Version: {texto_seguro(info.version) if info.version else 'desconocida'}"
+    )

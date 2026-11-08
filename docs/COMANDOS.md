@@ -115,10 +115,38 @@ est web reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]
 `URL` debe usar una direccion IPv4 literal ya autorizada en el alcance del proyecto (no se
 admiten nombres de dominio en esta entrega, igual que `escanear tcp`/`nmap`).
 
+## `est nuclei`
+
+Integracion con Nuclei (Fase 3): solo plantillas HTTP de bajo impacto, de un catalogo aprobado
+por AST (nunca una ruta de plantilla arbitraria). Detalle completo (catalogo, validacion de
+plantillas, limitaciones) en [docs/NUCLEI.md](NUCLEI.md).
+
+```bash
+est nuclei version
+est nuclei plantillas
+est nuclei analizar OBJETIVO --plantillas id1,id2 [--proyecto NOMBRE] [--tiempo-limite 60]
+est nuclei resultados [--proyecto NOMBRE] [--limite 50]
+est nuclei revisar ID --estado nuevo|confirmado|falso_positivo
+est nuclei reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est nuclei version` | Muestra si Nuclei esta instalado y su version. |
+| `est nuclei plantillas` | Lista el catalogo de plantillas aprobadas, con su explicacion. |
+| `est nuclei analizar OBJETIVO --plantillas ...` | Ejecuta Nuclei dentro del alcance autorizado. |
+| `est nuclei resultados` | Muestra los hallazgos guardados de un proyecto. |
+| `est nuclei revisar ID --estado ...` | Marca un hallazgo como confirmado o falso positivo. |
+| `est nuclei reporte` | Exporta los hallazgos guardados a HTML o JSON. |
+
+Al igual que `escanear tcp`/`nmap`, rechaza cualquier objetivo que no este en el alcance
+autorizado del proyecto. Requiere tener Nuclei instalado.
+
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,
-`alcance`, `tcp`, `escanear`, `nmap`, `web`, `resultados`, `reporte`, `interactivo`, `interfaz`.
+`alcance`, `tcp`, `escanear`, `nmap`, `web`, `nuclei`, `resultados`, `reporte`, `interactivo`,
+`interfaz`.
 
 ```bash
 est explicar tcp

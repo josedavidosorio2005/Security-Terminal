@@ -117,10 +117,16 @@ no persiste ningun resultado ni guarda evidencia.
 - **Linux (Fedora/RHEL)**: `sudo dnf install nmap`.
 - **macOS**: `brew install nmap`.
 
+## Nuclei
+
+Segundo adaptador implementado, en su propia PR independiente. Sigue el mismo motor descrito
+arriba, con una capa extra de validacion (catalogo cerrado de plantillas, revalidadas
+estructuralmente en cada ejecucion): ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo.
+
 ## Proximas integraciones (fuera del alcance de este PR)
 
-Nuclei y OWASP ZAP estan en el roadmap (ver [ROADMAP.md](ROADMAP.md)) y se entregaran en PRs
-independientes, siguiendo el mismo motor de integraciones descrito aqui.
+OWASP ZAP esta en el roadmap (ver [ROADMAP.md](ROADMAP.md)) y se entregara en una PR
+independiente, siguiendo el mismo motor de integraciones descrito aqui.
 
 La auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones) ya esta
 implementada, pero **no pasa por este motor de integraciones** (no invoca ningun binario

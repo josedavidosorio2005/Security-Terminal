@@ -1,0 +1,23 @@
+id: server-version-disclosure
+
+info:
+  name: Divulgacion de version del servidor en la cabecera Server
+  author: AURABYTE
+  severity: info
+  description: >
+    Comprueba si la cabecera 'Server' de la respuesta incluye un numero de
+    version especifico del software (nginx, Apache, IIS), informacion util
+    para un atacante que busque vulnerabilidades conocidas de esa version
+    exacta. Una sola peticion GET de solo lectura, sin seguir
+    redirecciones.
+  tags: ast-bajo-impacto,exposure
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)Server:\\s*(nginx|apache|microsoft-iis)/[0-9]"
