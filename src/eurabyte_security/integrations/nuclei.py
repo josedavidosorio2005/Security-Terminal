@@ -31,6 +31,15 @@ en tiempo de ejecucion que una plantilla aprobada hoy nunca abra una conexion fu
 objetivo autorizado (solo que, al escribirla, no se le dio ningun motivo para hacerlo).
 Por eso el catalogo se mantiene deliberadamente pequeno y cada plantilla hace como
 maximo un puñado de peticiones GET de solo lectura contra ``{{BaseURL}}`` del objetivo.
+
+La salida de Nuclei (JSONL, ``stderr``/``stdout`` de un proceso que termino en error) se
+trata como no confiable tambien en cuanto a su CONTENIDO, no solo en cuanto a su tamano
+o a los identificadores que reporta: los campos ``matched-at``/``host`` se redactan como
+URL (``core/redaccion.py:redactar_url``, el mismo mecanismo que usa la auditoria web) y
+el resto de texto libre (``description``, ``matcher-name``, el detalle de un error de
+proceso) se pasa por ``_redactar_texto_libre`` antes de truncarse, guardarse o mostrarse.
+No basta con truncar un posible secreto: un valor truncado sigue siendo, en su parte
+visible, el secreto original.
 """
 
 from __future__ import annotations
@@ -51,6 +60,7 @@ from eurabyte_security.core.errores import (
     ErrorIntegracion,
     ErrorParametrosIntegracion,
 )
+from eurabyte_security.core.redaccion import PALABRAS_SENSIBLES, VALOR_REDACTADO, redactar_url
 from eurabyte_security.core.validation import ObjetivoNuclei, validar_objetivo_nuclei
 from eurabyte_security.integrations.base import AdaptadorExterno
 
@@ -119,6 +129,14 @@ _TAMANO_MAXIMO_JSONL_BYTES = 10 * 1024 * 1024  # 10 MiB
 _LONGITUD_MAXIMA_LINEA_JSONL = 200_000
 _LONGITUD_MAXIMA_CAMPO_CORTO = 200
 _LONGITUD_MAXIMA_CAMPO_LARGO = 300
+
+# Busca 'palabra_sensible: valor' o 'palabra_sensible=valor' (insensible a mayusculas)
+# en texto libre (no necesariamente una URL): "Authorization: Bearer abc123" redacta
+# "Bearer abc123" completo, no solo el primer token, deteniendose en el siguiente
+# separador de campo (coma, punto y coma o salto de linea) si lo hay.
+_PATRON_SECRETO_EN_TEXTO = re.compile(
+    r"(?i)((?:" + "|".join(re.escape(p) for p in PALABRAS_SENSIBLES) + r")\w*\s*[:=]\s*)([^,;\n]+)"
+)
 
 # --- Opciones de la linea de comandos de Nuclei ---
 
@@ -685,9 +703,8 @@ class AdaptadorNuclei(AdaptadorExterno):
                     "Reduce la cantidad de plantillas o aumenta el limite de tiempo."
                 )
             if resultado_proceso.codigo_salida != 0:
-                detalle = _texto_corto(
-                    (resultado_proceso.stderr or resultado_proceso.stdout or "").strip(), 500
-                )
+                detalle_bruto = (resultado_proceso.stderr or resultado_proceso.stdout or "").strip()
+                detalle = _texto_corto(_redactar_texto_libre(detalle_bruto), 500)
                 raise ErrorIntegracion(
                     "Nuclei termino con un error (codigo de salida "
                     f"{resultado_proceso.codigo_salida}) contra '{objetivo}'; no se guarda "
@@ -719,6 +736,23 @@ class AdaptadorNuclei(AdaptadorExterno):
 def _texto_corto(valor: object, longitud_maxima: int = 300) -> str:
     texto = str(valor) if valor is not None else ""
     return texto if len(texto) <= longitud_maxima else texto[: longitud_maxima - 3] + "..."
+
+
+def _redactar_texto_libre(texto: str) -> str:
+    """Redacta posibles secretos en texto libre (no necesariamente una URL).
+
+    ``core/redaccion.py:redactar_url`` esta pensada para query strings/fragmentos de
+    una URL; los campos de Nuclei que no tienen forma de URL (``description``,
+    ``matcher-name``, el detalle de ``stderr``/``stdout`` de un proceso que termino en
+    error) pueden igualmente contener un patron ``palabra_sensible: valor`` o
+    ``palabra_sensible=valor`` -- por ejemplo, una cabecera ``Authorization: Bearer
+    ...`` que Nuclei hubiera volcado en un mensaje de error. Hoy estos campos son, en
+    el camino normal, texto estatico que AURABYTE escribio (la descripcion de una
+    plantilla) o metadatos propios de Nuclei (el nombre del matcher): se redactan
+    igual porque AST trata TODA la salida de un binario externo como no confiable, no
+    solo cuando se sabe de antemano que puede traer algo sensible.
+    """
+    return _PATRON_SECRETO_EN_TEXTO.sub(lambda m: m.group(1) + VALOR_REDACTADO, texto)
 
 
 def _analizar_jsonl_nuclei(
@@ -772,13 +806,19 @@ def _analizar_jsonl_nuclei(
             continue
 
         severidad = _texto_corto(info.get("severity") or "unknown", _LONGITUD_MAXIMA_CAMPO_CORTO)
-        descripcion = _texto_corto(info.get("description") or "", _LONGITUD_MAXIMA_CAMPO_LARGO)
-        matched_at = _texto_corto(
-            datos.get("matched-at") or datos.get("host") or "", _LONGITUD_MAXIMA_CAMPO_LARGO
+        descripcion = _texto_corto(
+            _redactar_texto_libre(str(info.get("description") or "")), _LONGITUD_MAXIMA_CAMPO_LARGO
         )
+        # 'matched-at'/'host' son el campo con mas probabilidad de llevar una URL completa
+        # (con posibles credenciales en el host o un parametro de consulta sensible): se
+        # redactan con el mismo mecanismo que usa la auditoria web, antes de truncar --
+        # truncar despues de redactar, nunca antes, para no mostrar un prefijo del secreto
+        # original si la redaccion solo pudiera aplicarse sobre el valor completo.
+        matched_at_bruto = str(datos.get("matched-at") or datos.get("host") or "")
+        matched_at = _texto_corto(redactar_url(matched_at_bruto), _LONGITUD_MAXIMA_CAMPO_LARGO)
+        matcher_nombre_bruto = str(datos.get("matcher-name") or datos.get("matcher_name") or "")
         matcher_nombre = _texto_corto(
-            datos.get("matcher-name") or datos.get("matcher_name") or "",
-            _LONGITUD_MAXIMA_CAMPO_CORTO,
+            _redactar_texto_libre(matcher_nombre_bruto), _LONGITUD_MAXIMA_CAMPO_CORTO
         )
         evidencia = f"{matched_at} (matcher: {matcher_nombre})" if matcher_nombre else matched_at
 

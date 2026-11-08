@@ -16,6 +16,10 @@ Cubren, de forma deterministas y sin ejecutar Nuclei real:
    no pertenece al conjunto de plantillas que AST pidio ejecutar en esa misma
    invocacion se descarta, los campos tienen una longitud maxima y una salida
    demasiado grande (por linea o en total) se rechaza sin usarla.
+6. Que los datos sensibles presentes en ``matched-at``/``host``/``description``/
+   ``matcher-name``, o en el ``stderr``/``stdout`` de un proceso que termino en
+   error, se REDACTAN (no solo se truncan): un secreto nunca debe sobrevivir, ni
+   siquiera parcialmente, en lo que AST guarda o muestra.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from rich.console import Console
 from eurabyte_security.commands.nuclei import _tabla_hallazgos_nuclei, ejecutar_nuclei
 from eurabyte_security.commands.proyecto import crear_proyecto
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorIntegracion
+from eurabyte_security.core.redaccion import VALOR_REDACTADO
 from eurabyte_security.integrations.nuclei import (
     _LONGITUD_MAXIMA_CAMPO_CORTO,
     PLANTILLAS_APROBADAS,
@@ -37,6 +42,7 @@ from eurabyte_security.integrations.nuclei import (
     _analizar_jsonl_nuclei,
     _cargar_y_validar_plantilla,
     _opciones_aislamiento_disponibles,
+    _redactar_texto_libre,
     _variables_entorno_aisladas,
     ruta_plantilla,
     validar_plantilla_estructura,
@@ -446,3 +452,114 @@ def test_jsonl_con_marcado_rich_en_los_campos_no_rompe_la_tabla_cli():
     tabla = _tabla_hallazgos_nuclei(hallazgos, "prueba")
     # No debe lanzar rich.errors.MarkupError al renderizarla con un Console real.
     Console().print(tabla)
+
+
+# ---------------------------------------------------------------------------
+# (6) Redaccion de datos sensibles (no basta con truncar).
+# ---------------------------------------------------------------------------
+
+
+def test_redactar_texto_libre_oculta_el_valor_no_solo_la_clave():
+    texto = "Authorization: Bearer secreto-super-largo-123456"
+    resultado = _redactar_texto_libre(texto)
+    assert "secreto-super-largo-123456" not in resultado
+    assert VALOR_REDACTADO in resultado
+    assert resultado.startswith("Authorization:")
+
+
+def test_redactar_texto_libre_no_afecta_texto_sin_secretos():
+    texto = "Comprueba si el archivo .env es accesible publicamente."
+    assert _redactar_texto_libre(texto) == texto
+
+
+def test_jsonl_con_secreto_en_matched_at_se_redacta():
+    """'matched-at' con una URL con un parametro sensible: se redacta, no solo se trunca."""
+    linea = _linea_hallazgo(matched_at="http://127.0.0.1/.env?session_token=secreto-de-sesion")
+    hallazgos, _ = _analizar_jsonl_nuclei(linea, ids_ejecutados=frozenset({"exposed-env-file"}))
+    assert len(hallazgos) == 1
+    assert "secreto-de-sesion" not in hallazgos[0].evidencia
+    # 'redactar_url' codifica el valor redactado como parte de una query string
+    # (urlencode): el marcador sigue presente, aunque '<'/'>' queden con %-encoding.
+    assert "redactado" in hallazgos[0].evidencia
+
+
+def test_jsonl_con_secreto_en_host_se_redacta():
+    linea = json.dumps(
+        {
+            "template-id": "exposed-env-file",
+            "info": {"name": "n", "severity": "high", "description": "d"},
+            "host": "http://admin:clave-secreta-de-host@127.0.0.1/",
+            "matcher-name": "word",
+        }
+    )
+    hallazgos, _ = _analizar_jsonl_nuclei(linea, ids_ejecutados=frozenset({"exposed-env-file"}))
+    assert len(hallazgos) == 1
+    assert "clave-secreta-de-host" not in hallazgos[0].evidencia
+    assert "admin" not in hallazgos[0].evidencia
+
+
+def test_jsonl_con_secreto_en_description_se_redacta():
+    linea = json.dumps(
+        {
+            "template-id": "exposed-env-file",
+            "info": {
+                "name": "n",
+                "severity": "high",
+                "description": "api_key: abcdef-secreto-de-prueba",
+            },
+            "matched-at": "http://127.0.0.1/.env",
+            "matcher-name": "word",
+        }
+    )
+    hallazgos, _ = _analizar_jsonl_nuclei(linea, ids_ejecutados=frozenset({"exposed-env-file"}))
+    assert len(hallazgos) == 1
+    assert "abcdef-secreto-de-prueba" not in hallazgos[0].descripcion
+    assert VALOR_REDACTADO in hallazgos[0].descripcion
+
+
+def test_jsonl_con_secreto_en_matcher_name_se_redacta():
+    linea = json.dumps(
+        {
+            "template-id": "exposed-env-file",
+            "info": {"name": "n", "severity": "high", "description": "d"},
+            "matched-at": "http://127.0.0.1/.env",
+            "matcher-name": "password=credencial-filtrada-de-prueba",
+        }
+    )
+    hallazgos, _ = _analizar_jsonl_nuclei(linea, ids_ejecutados=frozenset({"exposed-env-file"}))
+    assert len(hallazgos) == 1
+    assert "credencial-filtrada-de-prueba" not in hallazgos[0].evidencia
+
+
+def test_plantillas_reales_no_producen_falsos_positivos_de_redaccion():
+    """La prosa en espanol de las 5 plantillas aprobadas no debe quedar redactada."""
+    for info in PLANTILLAS_APROBADAS.values():
+        assert _redactar_texto_libre(info.descripcion) == info.descripcion
+
+
+def test_error_de_proceso_con_secreto_en_stderr_se_redacta(monkeypatch):
+    monkeypatch.setattr(AdaptadorNuclei, "esta_instalado", lambda self: True)
+    monkeypatch.setattr(AdaptadorNuclei, "ruta_binario", lambda self: "/usr/bin/nuclei")
+
+    def _ejecutar_binario_falso(
+        self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None
+    ):
+        if argumentos == ["-h"]:
+            return _resultado_ayuda_ok()
+        ruta_salida = Path(argumentos[argumentos.index("-o") + 1])
+        ruta_salida.write_text("", encoding="utf-8")
+        return ResultadoProceso(
+            codigo_salida=1,
+            stdout="",
+            stderr="fallo de conexion: proxy_token=secreto-de-proxy-filtrado",
+            agotado_por_tiempo=False,
+        )
+
+    monkeypatch.setattr(AdaptadorNuclei, "_ejecutar_binario", _ejecutar_binario_falso)
+
+    with pytest.raises(ErrorIntegracion) as info_excepcion:
+        AdaptadorNuclei().ejecutar(objetivo="127.0.0.1", plantillas_ids=["exposed-env-file"])
+
+    mensaje = str(info_excepcion.value)
+    assert "secreto-de-proxy-filtrado" not in mensaje
+    assert VALOR_REDACTADO in mensaje
