@@ -307,3 +307,48 @@ async def test_panel_vulnerabilidades_marcar_falso_positivo_actualiza_tabla(monk
 
         mensaje = str(app.query_one("#nuclei-mensaje").render()).lower()
         assert "falso_positivo" in mensaje
+
+
+async def test_panel_vulnerabilidades_resaltar_plantilla_muestra_descripcion_completa():
+    """La descripcion completa de una plantilla solo aparece al resaltarla/elegirla."""
+    app = AuraByteApp()
+    async with app.run_test(size=(120, 35)) as pilot:
+        await pilot.pause()
+        await _crear_proyecto(pilot, "nuclei-descripcion")
+
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-vulnerabilidades"
+        await pilot.pause()
+
+        seleccion = app.query_one("#nuclei-plantillas", SelectionList)
+        assert len(seleccion.options) > 1, "la prueba necesita al menos dos plantillas"
+
+        seleccion.highlighted = 0
+        await pilot.pause()
+        detalle_primera = str(app.query_one("#nuclei-plantilla-detalle").render())
+        assert "severidad esperada" in detalle_primera.lower()
+
+        seleccion.highlighted = 1
+        await pilot.pause()
+        detalle_segunda = str(app.query_one("#nuclei-plantilla-detalle").render())
+        assert "severidad esperada" in detalle_segunda.lower()
+        assert detalle_segunda != detalle_primera
+
+
+async def test_panel_vulnerabilidades_seleccionar_todas_marca_todo_el_catalogo():
+    from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS
+
+    app = AuraByteApp()
+    async with app.run_test(size=(120, 35)) as pilot:
+        await pilot.pause()
+        await _crear_proyecto(pilot, "nuclei-seleccionar-todas")
+
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-vulnerabilidades"
+        await pilot.pause()
+
+        seleccion = app.query_one("#nuclei-plantillas", SelectionList)
+        assert len(seleccion.selected) == 0
+
+        await _clic_centro(pilot, "#nuclei-seleccionar-todas")
+        await pilot.pause()
+
+        assert len(seleccion.selected) == len(PLANTILLAS_APROBADAS)

@@ -22,6 +22,16 @@ Screen {
     padding: 0 1;
 }
 
+/* Sin 'width: auto' explicito, un Static hijo de un Horizontal reclama TODO el
+   ancho restante del contenedor en vez de su ancho de contenido: con cinco
+   Static en #encabezado (logo, nombre, version, proyecto, so) eso empuja cada
+   uno tras el primero fuera de la pantalla visible (bug real, no solo
+   cosmetico: el nombre AURABYTE quedaba oculto). Cada hijo del encabezado
+   fija su propio ancho de contenido explicitamente para evitarlo. */
+#encabezado > * {
+    width: auto;
+}
+
 /* Escudo de marca (azul/cian): usado en la barra superior y en el panel
    de inicio (ver eurabyte_security/marca.py: ESCUDO_COMPACTO/ESCUDO_ASCII). */
 .logo {
@@ -38,6 +48,31 @@ Screen {
     color: $ast-texto-tenue;
 }
 
+/* En terminales angostas, 'version' y 'so' se ocultan primero (ver
+   AuraByteApp._ajustar_responsivo): el nombre y el proyecto activo son la
+   informacion que de verdad importa para saber donde esta el usuario. */
+#encabezado.compacto #encabezado-version,
+#encabezado.compacto #encabezado-so {
+    display: none;
+}
+
+/* Boton para plegar/desplegar el panel contextual derecho a demanda (no solo
+   automaticamente por ancho): ver AuraByteApp.action_alternar_info. */
+.boton-info {
+    dock: right;
+    height: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: $ast-texto-tenue;
+    padding: 0 1;
+}
+
+.boton-info:hover {
+    color: $ast-borde;
+    background: transparent;
+}
+
 #cuerpo {
     height: 1fr;
 }
@@ -49,7 +84,7 @@ Screen {
 }
 
 #barra-lateral.compacta {
-    width: 10;
+    width: 16;
 }
 
 #barra-lateral OptionList {
@@ -83,6 +118,15 @@ Screen {
     text-style: bold;
     color: $ast-borde;
     margin-bottom: 1;
+}
+
+/* Subtitulo de una seccion dentro de un panel (p. ej. "1. Elige las plantillas",
+   "2. Confirma el objetivo"): agrupa controles relacionados en pasos faciles de
+   seguir sin necesitar un titulo tan prominente como .titulo-panel. */
+.ast-subtitulo {
+    text-style: bold;
+    color: $ast-acento;
+    margin-top: 1;
 }
 
 #inicio-marca {

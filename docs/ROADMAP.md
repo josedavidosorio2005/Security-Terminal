@@ -333,6 +333,42 @@ consulta y en un informe global.
       con los comandos existentes. Ninguna requiere Nmap, Nuclei ni ZAP instalados.
 - [x] CI verificado en Windows y Linux.
 
+### Rediseno profesional de la interfaz visual (completado en este PR)
+
+Corrige problemas visuales reales detectados en la interfaz Textual (no solo ajustes
+esteticos) y hace el panel contextual derecho plegable a demanda.
+
+- [x] **Bug de layout corregido**: los `Static` del encabezado (logo, nombre, version,
+      proyecto, sistema operativo) no tenian `width: auto` explicito, asi que cada uno
+      reclamaba todo el ancho restante del contenedor y quedaba empujado casi
+      completamente fuera de la pantalla visible -- el nombre AURABYTE realmente
+      quedaba oculto, no solo visualmente apretado. Verificado con
+      `Widget.region` en las 4 resoluciones de prueba antes y despues del cambio.
+- [x] El encabezado oculta primero version y sistema operativo por debajo de 90
+      columnas (conserva siempre nombre y proyecto activo); la barra lateral se
+      compacta por debajo de 90 columnas (antes 70) para dejar mas espacio a la zona
+      central en resoluciones intermedias.
+- [x] El panel contextual derecho es plegable a demanda (boton "Info" en el
+      encabezado, o tecla `F2`), no solo una columna forzada por el ancho de la
+      terminal (`AuraByteApp.action_alternar_info`).
+- [x] Panel "Vulnerabilidades" (Nuclei): la lista extensa de descripciones de cada
+      plantilla (visible todo el tiempo) se reemplaza por una lista compacta con la
+      descripcion completa solo al resaltar/seleccionar una plantilla, mas un boton
+      "Seleccionar todas las aprobadas".
+- [x] Verificado con Textual Pilot en las 4 resoluciones pedidas (80x24, 100x30,
+      120x35, 160x45): sin controles recortados, con scroll funcionando y navegacion
+      conservada. Capturas SVG reales (`App.export_screenshot`) antes/despues en
+      [docs/capturas/](capturas/).
+- [x] Pruebas automatizadas nuevas para el toggle del panel de info y el nuevo flujo
+      de plantillas de Nuclei (resaltar para ver descripcion, seleccionar todas).
+- [x] CI verificado en Windows y Linux.
+
+Pendiente explicito para una iteracion posterior: el mismo nivel de rediseno aplicado a
+Reconocimiento, Analisis web y OWASP ZAP ya seguian el patron de formulario
+compacto-arriba/tabla-abajo sin solapamientos, por lo que no requirieron cambios de
+fondo en este PR; una revision visual dedicada a esos tres paneles queda abierta si se
+detectan problemas especificos.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

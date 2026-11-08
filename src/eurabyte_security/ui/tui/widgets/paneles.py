@@ -676,24 +676,32 @@ class PanelVulnerabilidades(VerticalScroll):
         self._guardados: list = []
         self._id_seleccionado: int | None = None
 
+    _DESCRIPCION_PLANTILLA_POR_DEFECTO = (
+        "Navega con las flechas o el raton para ver aqui la descripcion completa de "
+        "cada plantilla; marca su casilla (barra espaciadora o clic) para incluirla "
+        "en el analisis."
+    )
+
     def compose(self):
         yield Static("Vulnerabilidades (Nuclei)", classes="titulo-panel")
         yield Static("", id="nuclei-deteccion", classes="ast-tenue")
         yield Static("", id="nuclei-proyecto", classes="ast-tenue")
-        yield Static(
-            "\n".join(
-                f"- {info.id_} ({info.severidad_esperada}): {info.descripcion}"
-                for info in PLANTILLAS_APROBADAS.values()
-            ),
-            classes="ast-caja",
-        )
+
+        yield Static("1. Elige las plantillas aprobadas", classes="ast-subtitulo")
         yield SelectionList(
             *[
-                (f"{info.id_} - {info.nombre}", info.id_)
+                (f"{info.id_} ({info.severidad_esperada}) - {info.nombre}", info.id_)
                 for info in PLANTILLAS_APROBADAS.values()
             ],
             id="nuclei-plantillas",
         )
+        yield Button("Seleccionar todas las aprobadas", id="nuclei-seleccionar-todas")
+        yield Static(
+            self._DESCRIPCION_PLANTILLA_POR_DEFECTO, id="nuclei-plantilla-detalle",
+            classes="ast-caja",
+        )
+
+        yield Static("2. Confirma el objetivo autorizado", classes="ast-subtitulo")
         yield Input(
             placeholder="Objetivo autorizado (IP o esquema://IP:puerto)", id="nuclei-objetivo"
         )
@@ -704,6 +712,8 @@ class PanelVulnerabilidades(VerticalScroll):
             yield Button("Analizar", id="nuclei-analizar", variant="primary")
             yield Button("Cancelar", id="nuclei-cancelar")
         yield Static("", id="nuclei-mensaje", classes="ast-tenue")
+
+        yield Static("3. Resultados", classes="ast-subtitulo")
         yield DataTable(id="nuclei-tabla", cursor_type="row")
         yield Static("", id="nuclei-detalle", classes="ast-caja")
         with Horizontal():
@@ -738,6 +748,23 @@ class PanelVulnerabilidades(VerticalScroll):
         msg = self.query_one("#nuclei-mensaje", Static)
         msg.update(texto)
         msg.set_classes(clase)
+
+    @on(Button.Pressed, "#nuclei-seleccionar-todas")
+    def _seleccionar_todas(self, _evento: Button.Pressed) -> None:
+        self.query_one("#nuclei-plantillas", SelectionList).select_all()
+
+    @on(SelectionList.SelectionHighlighted, "#nuclei-plantillas")
+    def _plantilla_resaltada(self, event: SelectionList.SelectionHighlighted) -> None:
+        info = PLANTILLAS_APROBADAS.get(str(event.selection.value))
+        detalle = self.query_one("#nuclei-plantilla-detalle", Static)
+        if info is None:
+            detalle.update(self._DESCRIPCION_PLANTILLA_POR_DEFECTO)
+            return
+        detalle.update(
+            f"[bold]{texto_seguro(info.id_)}[/bold] - {texto_seguro(info.nombre)}\n"
+            f"Severidad esperada: {texto_seguro(info.severidad_esperada)}\n"
+            f"{texto_seguro(info.descripcion)}"
+        )
 
     @on(Button.Pressed, "#nuclei-analizar")
     def _iniciar(self, _evento: Button.Pressed) -> None:

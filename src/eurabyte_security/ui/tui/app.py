@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from textual import events
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import ContentSwitcher, Input, OptionList, TabbedContent, TabPane
+from textual.widgets import Button, ContentSwitcher, Input, OptionList, TabbedContent, TabPane
 
 from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.marca import ABREVIATURA, NOMBRE_PRODUCTO
@@ -35,7 +35,8 @@ _RUTA_CSS = Path(__file__).with_name("estilos.tcss")
 
 # Umbrales de adaptacion responsiva (columnas de terminal disponibles).
 ANCHO_OCULTAR_INFO = 100
-ANCHO_LATERAL_COMPACTO = 70
+ANCHO_LATERAL_COMPACTO = 90
+ANCHO_ENCABEZADO_COMPACTO = 90
 
 
 class AuraByteApp(App[None]):
@@ -46,7 +47,13 @@ class AuraByteApp(App[None]):
 
     BINDINGS = [
         ("ctrl+q", "quit", "Salir"),
+        ("f2", "alternar_info", "Info"),
     ]
+
+    # None = sigue el ancho de la terminal (ver _info_debe_mostrarse); True/False = el
+    # usuario lo forzo con el boton "Info" del encabezado o con F2, y eso prevalece sobre
+    # el ancho hasta que lo vuelva a cambiar.
+    _info_forzado: bool | None = None
 
     def compose(self) -> ComposeResult:
         yield Encabezado(id="encabezado")
@@ -115,8 +122,28 @@ class AuraByteApp(App[None]):
     def on_resize(self, event: events.Resize) -> None:
         self._ajustar_responsivo(event.size.width)
 
+    def action_alternar_info(self) -> None:
+        """Pliega/despliega el panel contextual derecho a demanda (tecla F2 o boton)."""
+        visible_actual = self._info_debe_mostrarse(self.size.width)
+        self._info_forzado = not visible_actual
+        self._ajustar_responsivo(self.size.width)
+
+    @on(Button.Pressed, "#encabezado-info-toggle")
+    def _alternar_info_click(self, _evento: Button.Pressed) -> None:
+        self.action_alternar_info()
+
+    def _info_debe_mostrarse(self, ancho: int) -> bool:
+        if self._info_forzado is not None:
+            return self._info_forzado
+        return ancho >= ANCHO_OCULTAR_INFO
+
     def _ajustar_responsivo(self, ancho: int) -> None:
-        self.query_one("#panel-info").set_classes("oculto" if ancho < ANCHO_OCULTAR_INFO else "")
+        info_visible = self._info_debe_mostrarse(ancho)
+        self.query_one("#panel-info").set_classes("" if info_visible else "oculto")
+        self.query_one(Encabezado).actualizar_boton_info(info_visible)
         self.query_one("#barra-lateral").set_classes(
             "compacta" if ancho < ANCHO_LATERAL_COMPACTO else ""
+        )
+        self.query_one("#encabezado").set_classes(
+            "compacto" if ancho < ANCHO_ENCABEZADO_COMPACTO else ""
         )
