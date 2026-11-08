@@ -11,6 +11,7 @@ from eurabyte_security.commands.alcance import alcance_app
 from eurabyte_security.commands.escanear import escanear_app
 from eurabyte_security.commands.explicar import explicar_cmd
 from eurabyte_security.commands.nmap import nmap_app
+from eurabyte_security.commands.nuclei import nuclei_app
 from eurabyte_security.commands.proyecto import proyecto_app
 from eurabyte_security.commands.reporte import reporte_app
 from eurabyte_security.commands.resultados import resultados_cmd
@@ -30,6 +31,7 @@ app.add_typer(alcance_app, name="alcance")
 app.add_typer(escanear_app, name="escanear")
 app.add_typer(reporte_app, name="reporte")
 app.add_typer(nmap_app, name="nmap")
+app.add_typer(nuclei_app, name="nuclei")
 app.command("explicar")(explicar_cmd)
 app.command("resultados")(resultados_cmd)
 

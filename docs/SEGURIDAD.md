@@ -39,8 +39,25 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
 8. **Ninguna integracion activa esta habilitada por defecto mas alla de lo minimo.** La
    deteccion de servicios/version de Nmap (`-sV`) requiere activarla explicitamente
    (`--deteccion-version`); el motor esta preparado para que las futuras integraciones
-   (Nuclei, OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos
-   por defecto.
+   (OWASP ZAP) sigan el mismo principio: nunca plantillas intrusivas ni ataques activos por
+   defecto.
+9. **Nuclei solo ejecuta un catalogo cerrado de plantillas HTTP de bajo impacto, escritas por
+   AURABYTE, nunca una ruta de plantilla que indique el usuario.** `est nuclei analizar` solo
+   acepta identificadores del catalogo aprobado (`integrations/nuclei.py:PLANTILLAS_APROBADAS`);
+   no existe ninguna opcion para pasar un archivo `.yaml` arbitrario ni para usar las plantillas
+   publicas de la comunidad. Ademas, cada plantilla se vuelve a validar estructuralmente en
+   **cada ejecucion** (`validar_plantilla_estructura()`), no solo cuando se escribio: se rechaza
+   cualquier plantilla que declare un protocolo distinto de HTTP, que siga redirecciones o que
+   mencione Interactsh/OAST, por si el archivo cambiara despues de instalar AST. Se desactivan
+   ademas explicitamente Interactsh/OAST (`-ni`) y la comprobacion de actualizaciones (`-duc`)
+   al invocar el binario. Ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo, incluidas
+   las garantias que este diseno **no** puede ofrecer (no es una sandbox de red a nivel de
+   sistema operativo).
+10. **Nuclei nunca guarda el trafico HTTP completo ni cabeceras de autenticacion/cookies.** El
+    `request`/`response`/`curl-command` que Nuclei incluye en su salida JSONL se descartan
+    explicitamente al interpretarla (`integrations/nuclei.py:_analizar_jsonl_nuclei()`); lo que
+    se guarda es un resumen propio (donde se detecto el hallazgo, que matcher lo activo), nunca
+    el trafico original.
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 
@@ -53,7 +70,10 @@ Ver [SECURITY.md](../SECURITY.md).
 - Registra el alcance exacto que te autorizaron, ni mas ni menos.
 - Guarda las evidencias (resultados, informes) en un lugar seguro y bórralas cuando ya no las
   necesites; AST no las cifra por defecto.
-- No ejecutes integraciones externas (Nmap y las que sigan: Nuclei, OWASP ZAP) contra objetivos
+- No ejecutes integraciones externas (Nmap, Nuclei y las que sigan: OWASP ZAP) contra objetivos
   fuera del alcance acordado con el cliente o la organizacion.
 - Al usar `--deteccion-version` con Nmap, confirma primero que esa comprobacion en concreto
   esta autorizada; no es el comportamiento por defecto.
+- Un hallazgo de Nuclei puede ser un falso positivo: revisa la evidencia antes de confirmarlo
+  (`est nuclei revisar ID --estado confirmado|falso_positivo`), no lo asumas como cierto solo
+  porque el escaner lo reporto.

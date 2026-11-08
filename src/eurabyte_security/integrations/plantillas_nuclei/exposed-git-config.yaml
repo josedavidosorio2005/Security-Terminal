@@ -1,0 +1,29 @@
+id: exposed-git-config
+
+info:
+  name: Archivo .git/config expuesto
+  author: AURABYTE
+  severity: high
+  description: >
+    Comprueba si el archivo de configuracion de un repositorio Git
+    (.git/config) es accesible publicamente: puede filtrar la URL de
+    remotos (a veces con credenciales embebidas) y confirma que el
+    historial completo del repositorio podria descargarse. Una sola
+    peticion GET de solo lectura, sin seguir redirecciones.
+  tags: ast-bajo-impacto,exposure,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+        condition: or
