@@ -41,8 +41,16 @@ def ejecutar_proceso(
     tiempo_limite: float = 30.0,
     entrada: str | None = None,
     debe_cancelar: Callable[[], bool] | None = None,
+    variables_entorno: dict[str, str] | None = None,
 ) -> ResultadoProceso:
-    """Ejecuta ``comando`` sin shell, con limite de tiempo, E/S capturada y cancelacion."""
+    """Ejecuta ``comando`` sin shell, con limite de tiempo, E/S capturada y cancelacion.
+
+    ``variables_entorno`` es opcional: si no se indica (``None``), el proceso hereda
+    el entorno de AST sin cambios (igual que antes de este parametro). Si se indica,
+    sustituye por completo el entorno del proceso -- lo usa ``AdaptadorNuclei`` para
+    aislar la ejecucion de una configuracion de Nuclei preexistente del usuario (ver
+    ``integrations/nuclei.py``).
+    """
     proceso = subprocess.Popen(  # noqa: S603 - sin shell, argumentos en lista
         comando,
         stdin=subprocess.PIPE if entrada is not None else None,
@@ -50,6 +58,7 @@ def ejecutar_proceso(
         stderr=subprocess.PIPE,
         text=True,
         shell=False,
+        env=variables_entorno,
     )
 
     inicio = time.monotonic()

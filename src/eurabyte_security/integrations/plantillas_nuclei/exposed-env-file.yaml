@@ -1,0 +1,29 @@
+id: exposed-env-file
+
+info:
+  name: Archivo .env expuesto
+  author: AURABYTE
+  severity: high
+  description: >
+    Comprueba si el archivo .env (variables de entorno, habitualmente con
+    credenciales de base de datos u otras claves) es accesible publicamente
+    en la raiz del sitio. Una sola peticion GET de solo lectura, sin seguir
+    redirecciones.
+  tags: ast-bajo-impacto,exposure,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "APP_KEY="
+          - "DB_PASSWORD="
+          - "DB_HOST="
+        condition: or

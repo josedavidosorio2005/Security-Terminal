@@ -62,8 +62,10 @@ def _instalar_nmap_falso(monkeypatch, salida_xml: str | None = XML_EJEMPLO) -> N
 
 
 def test_nmap_no_instalado_lanza_error_claro(monkeypatch):
-    # ruta_binario() es la fuente de verdad real (esta_instalado() delega en
-    # ella); se simula "no instalado" como lo haria shutil.which de verdad.
+    # ruta_binario() es la fuente de verdad real (esta_instalado() delega en ella, y
+    # ahora tambien lo hace requerir_instalada()/_ejecutar_binario() tras la correccion
+    # de seguridad de binary planting): se simula "no instalado" como lo haria
+    # shutil.which de verdad, no solo esta_instalado().
     monkeypatch.setattr(AdaptadorNmap, "ruta_binario", lambda self: None)
     with pytest.raises(ErrorHerramientaNoDisponible):
         AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="80")
@@ -201,7 +203,9 @@ def test_ejecutar_binario_usa_la_ruta_absoluta_resuelta_no_el_nombre_pelado(monk
     def ruta_falsa(self) -> str:
         return "/opt/herramientas/nmap"
 
-    def ejecutar_proceso_falso(comando, *, tiempo_limite, entrada=None, debe_cancelar=None):
+    def ejecutar_proceso_falso(
+        comando, *, tiempo_limite, entrada=None, debe_cancelar=None, variables_entorno=None
+    ):
         capturado["comando"] = comando
         return ResultadoProceso(codigo_salida=0, stdout="", stderr="", agotado_por_tiempo=False)
 

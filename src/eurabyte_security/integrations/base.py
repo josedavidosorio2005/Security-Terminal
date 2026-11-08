@@ -107,16 +107,25 @@ class AdaptadorExterno(ABC):
         *,
         tiempo_limite: float,
         debe_cancelar: Callable[[], bool] | None = None,
+        variables_entorno: dict[str, str] | None = None,
     ) -> ResultadoProceso:
         """Punto unico de ejecucion real del binario: sin shell, con limite de tiempo.
 
         Usa la ruta absoluta ya resuelta por ``ruta_binario()`` (no el nombre
         "pelado" del comando), para que no haya una segunda resolucion de
-        PATH independiente al lanzar el proceso.
+        PATH independiente al lanzar el proceso. ``variables_entorno`` es
+        opcional: por defecto el proceso hereda el entorno del propio AST sin
+        cambios; un adaptador que necesite aislar la configuracion de la
+        herramienta de un perfil de usuario preexistente (ver
+        ``integrations/nuclei.py``) puede pasar un entorno propio ya
+        construido.
         """
         ruta = self._resolver_ruta_o_fallar()
         return ejecutar_proceso(
-            [ruta, *argumentos], tiempo_limite=tiempo_limite, debe_cancelar=debe_cancelar
+            [ruta, *argumentos],
+            tiempo_limite=tiempo_limite,
+            debe_cancelar=debe_cancelar,
+            variables_entorno=variables_entorno,
         )
 
     @abstractmethod

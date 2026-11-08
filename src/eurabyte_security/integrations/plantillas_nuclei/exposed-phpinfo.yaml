@@ -1,0 +1,30 @@
+id: exposed-phpinfo
+
+info:
+  name: phpinfo() expuesto
+  author: AURABYTE
+  severity: medium
+  description: >
+    Comprueba si un script de diagnostico phpinfo() es accesible
+    publicamente en rutas habituales: revela configuracion detallada del
+    servidor (rutas del sistema, extensiones cargadas, variables de
+    entorno). Una sola peticion GET de solo lectura por ruta, sin seguir
+    redirecciones.
+  tags: ast-bajo-impacto,exposure,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "phpinfo()"
+          - "PHP Version"
+        condition: or

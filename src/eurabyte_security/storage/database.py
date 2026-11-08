@@ -47,6 +47,20 @@ CREATE TABLE IF NOT EXISTS resultados_nmap (
     version TEXT,
     creado_en TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS resultados_nuclei (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    objetivo TEXT NOT NULL,
+    plantilla_id TEXT NOT NULL,
+    plantilla_version TEXT NOT NULL,
+    nombre_hallazgo TEXT NOT NULL,
+    severidad TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    evidencia TEXT,
+    estado_revision TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
 """
 
 
@@ -89,6 +103,21 @@ class ResultadoNmap:
     estado: str
     servicio: str | None
     version: str | None
+    creado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoNuclei:
+    id: int
+    proyecto_id: int
+    objetivo: str
+    plantilla_id: str
+    plantilla_version: str
+    nombre_hallazgo: str
+    severidad: str
+    descripcion: str
+    evidencia: str | None
+    estado_revision: str
     creado_en: str
 
 
@@ -289,3 +318,83 @@ class BaseDatos:
                     (proyecto_id, limite),
                 ).fetchall()
         return [ResultadoNmap(**fila) for fila in filas]
+
+    # -- Resultados de Nuclei --------------------------------------------
+    def agregar_resultados_nuclei(
+        self,
+        proyecto_id: int,
+        objetivo: str,
+        resultados: list[tuple[str, str, str, str, str, str | None]],
+    ) -> list[ResultadoNuclei]:
+        """Inserta hallazgos de Nuclei en una sola transaccion (todo o nada).
+
+        ``resultados`` es una lista de ``(plantilla_id, plantilla_version,
+        nombre_hallazgo, severidad, descripcion, evidencia)``. Cada fila se guarda con
+        ``estado_revision`` inicial ``'nuevo'`` (ver :meth:`actualizar_estado_revision_nuclei`
+        para marcarlo como confirmado o falso positivo mas adelante). Misma semantica de
+        atomicidad que :meth:`agregar_resultados_nmap`: un analisis cancelado no llega a
+        llamar a este metodo, por lo que no queda ningun hallazgo parcial.
+        """
+        guardados: list[ResultadoNuclei] = []
+        with self._conectar() as conexion:
+            for (
+                plantilla_id,
+                plantilla_version,
+                nombre_hallazgo,
+                severidad,
+                descripcion,
+                evidencia,
+            ) in resultados:
+                cursor = conexion.execute(
+                    "INSERT INTO resultados_nuclei (proyecto_id, objetivo, plantilla_id, "
+                    "plantilla_version, nombre_hallazgo, severidad, descripcion, evidencia, "
+                    "estado_revision, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        proyecto_id,
+                        objetivo,
+                        plantilla_id,
+                        plantilla_version,
+                        nombre_hallazgo,
+                        severidad,
+                        descripcion,
+                        evidencia,
+                        "nuevo",
+                        _ahora(),
+                    ),
+                )
+                fila = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, plantilla_id, plantilla_version, "
+                    "nombre_hallazgo, severidad, descripcion, evidencia, estado_revision, "
+                    "creado_en FROM resultados_nuclei WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(ResultadoNuclei(**fila))
+        return guardados
+
+    def listar_resultados_nuclei(
+        self, proyecto_id: int | None = None, limite: int = 200
+    ) -> list[ResultadoNuclei]:
+        columnas = (
+            "id, proyecto_id, objetivo, plantilla_id, plantilla_version, nombre_hallazgo, "
+            "severidad, descripcion, evidencia, estado_revision, creado_en"
+        )
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_nuclei ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_nuclei WHERE proyecto_id = ? "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [ResultadoNuclei(**fila) for fila in filas]
+
+    def actualizar_estado_revision_nuclei(self, id_: int, estado_revision: str) -> None:
+        with self._conectar() as conexion:
+            conexion.execute(
+                "UPDATE resultados_nuclei SET estado_revision = ? WHERE id = ?",
+                (estado_revision, id_),
+            )
