@@ -240,14 +240,59 @@ tamano por linea/total y de longitud por campo; los campos `matched-at`/`host`/`
 guardarse o mostrarse. Se replico ademas la correccion de binary planting de la PR #5 en
 `integrations/base.py`. Ver [docs/NUCLEI.md](NUCLEI.md) y [docs/SEGURIDAD.md](SEGURIDAD.md).
 
-### Paso 5 - Pendiente (PR independiente futura)
+### Paso 5 - OWASP ZAP, analisis pasivo (completado en PR independiente)
 
-- Integracion opcional con OWASP ZAP (solo analisis pasivo por defecto).
-- Cada integracion seguira el mismo motor (`integrations/base.py` + `integrations/proceso.py`)
-  descrito arriba: documentacion en espanol, validacion de argumentos, comprobacion de
-  instalacion y verificacion de alcance autorizado antes de ejecutar nada.
-- Unificar los resultados de `escanear tcp`, `nmap` y `web` en un unico listado/informe
-  general (hoy cada uno tiene su propia tabla e informe).
+- [x] `integrations/zap.py` + `modules/vulnerability/zap.py` + `commands/zap.py`: solo
+      analisis pasivo, nunca active scan, spider, ajaxSpider ni fuzzing. ZAP no lo instala
+      AST: debe estar ya corriendo por cuenta del usuario, con su API expuesta en loopback.
+      A diferencia de Nmap/Nuclei, no se invoca como subproceso: se habla con su API REST
+      via `http.client` directo (igual patron que la auditoria web), sin `urllib.request`
+      ni variables de entorno de proxy.
+- [x] El endpoint de administracion de ZAP debe ser loopback HTTP **literal**
+      (`http://127.0.0.1:<puerto>`): se rechaza explicitamente `localhost` (su resolucion
+      depende del archivo de hosts del sistema, no es una garantia), cualquier host remoto
+      y cualquier esquema distinto de `http`.
+- [x] La unica peticion que llega al objetivo es la que la propia API de ZAP hace a traves
+      de `core/action/accessUrl` (`followRedirects=false`), que alimenta el analizador
+      pasivo sin explorar nada mas; las alertas se consultan filtradas por `baseurl` para
+      nunca mezclar hallazgos de otras auditorias que pudiera tener la misma instancia
+      compartida de ZAP (y nunca se borran sesiones ni alertas ajenas).
+- [x] La API key se lee de `EST_ZAP_API_KEY` (nunca de un archivo versionado) y nunca
+      aparece en un mensaje de error, log o informe.
+- [x] Toda la salida de ZAP se trata como no confiable: los campos de texto libre
+      (descripcion, evidencia, solucion, referencia) y la URL de cada alerta se redactan
+      (`core/redaccion.py:redactar_url`/`redactar_texto_libre`, el mismo mecanismo
+      compartido con Nuclei y la auditoria web) y se acotan en longitud antes de guardarse
+      o mostrarse.
+- [x] Gestionable desde la CLI (`est zap estado|pasivo|resultados|revisar|reporte`) y desde
+      la interfaz visual (seccion "OWASP ZAP", con confirmacion explicita antes de
+      analizar, cancelacion y tabla de alertas con severidad/confianza/recomendacion y
+      marcado de falso positivo/confirmado).
+- [x] Persistencia atomica en `resultados_zap` (con estado de revision inicial `nuevo`) y
+      exportacion a HTML/JSON reutilizando el generador de informes existente.
+- [x] Pruebas con mocks, sin llamar a una instancia de ZAP real
+      (`tests/test_integraciones_zap.py`, `tests/test_tui_zap.py`): endpoint de
+      administracion (loopback literal, rechazo de `localhost`/remoto/HTTPS), validacion
+      del objetivo, diagnostico disponible/no disponible, `accessUrl` sin seguir
+      redirecciones, filtrado de alertas por `baseurl`, descarte de alertas malformadas,
+      redaccion de datos sensibles (URL/evidencia/descripcion), que la API key nunca
+      aparece en un mensaje de error, timeout, cancelacion (durante la espera y justo
+      antes de guardar), rechazo fuera de alcance, persistencia atomica, reportes, CLI y
+      Textual (incluida la revision de falsos positivos).
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas** (ver tambien [docs/OWASP_ZAP.md](OWASP_ZAP.md)): el analisis
+pasivo no se ha podido validar contra una instancia de ZAP real en este entorno de
+desarrollo; los resultados de ZAP tienen su propia tabla (`resultados_zap`) y todavia no
+aparecen en `est resultados` ni en `est reporte generar`; la garantia de aislamiento es sobre
+el contenido de la peticion (solo GET, sin redirecciones, filtrado por objetivo), no una
+sandbox de red a nivel de sistema operativo; una instancia de ZAP compartida con otras
+auditorias sigue acumulando esa unica peticion GET en su historial (visible via otras
+llamadas a su API), aunque AST nunca la mezcle en sus propios resultados.
+
+Pendiente para una iteracion posterior: unificar los resultados de `escanear tcp`, `nmap`,
+`web`, `nuclei` y `zap` en un unico listado/informe general (hoy cada uno tiene su propia
+tabla e informe).
 
 ## Fase 4 - Asistente inteligente
 

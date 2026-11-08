@@ -28,9 +28,11 @@ from eurabyte_security.commands.reporte import generar_reporte as _generar_repor
 from eurabyte_security.commands.resultados import obtener_resultados as _obtener_resultados
 from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
+from eurabyte_security.commands.zap import ejecutar_zap_pasivo as _ejecutar_zap_pasivo
 from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
 from eurabyte_security.core.redaccion import redactar_url as _redactar_url
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS as _PLANTILLAS_NUCLEI
+from eurabyte_security.integrations.zap import AdaptadorZAP as _AdaptadorZAP
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
 
@@ -40,6 +42,7 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
     "escanear": {"tcp": None},
     "web": {"cabeceras": None, "tls": None, "cookies": None, "auditar": None},
     "nuclei": {"plantillas": None, "analizar": None, "resultados": None},
+    "zap": {"estado": None, "pasivo": None, "resultados": None},
     "explicar": dict.fromkeys(EXPLICACIONES),
     "resultados": None,
     "reporte": {"generar": None},
@@ -52,6 +55,9 @@ _ESTILOS_SEVERIDAD = {"info": "grey70", "baja": "cyan", "media": "yellow", "alta
 _ESTILOS_SEVERIDAD_NUCLEI = {
     "info": "grey70", "low": "cyan", "medium": "yellow", "high": "bold red",
     "critical": "bold red", "unknown": "grey70",
+}
+_ESTILOS_RIESGO_ZAP = {
+    "informational": "grey70", "low": "cyan", "medium": "yellow", "high": "bold red",
 }
 
 
@@ -201,6 +207,7 @@ class MotorComandos:
             "escanear": self._escanear,
             "web": self._web,
             "nuclei": self._nuclei,
+            "zap": self._zap,
             "explicar": self._explicar,
             "resultados": self._resultados,
             "reporte": self._reporte,
@@ -402,6 +409,63 @@ class MotorComandos:
             return ResultadoComando(True, tabla)
 
         return ResultadoComando(False, f"Subcomando desconocido: 'nuclei {subcomando}'.")
+
+    # -- zap -------------------------------------------------------------
+    def _zap(self, resto: list[str]) -> ResultadoComando:
+        if not resto:
+            return ResultadoComando(False, "Uso: zap estado|pasivo|resultados")
+        subcomando, *args = resto
+
+        if subcomando == "estado":
+            info = _AdaptadorZAP().info()
+            if not info.disponible:
+                return ResultadoComando(False, f"OWASP ZAP no esta disponible: {info.mensaje}")
+            return ResultadoComando(
+                True, f"OWASP ZAP disponible. Version: {info.version or 'desconocida'}"
+            )
+
+        if subcomando == "pasivo":
+            proyecto_nombre, args = _extraer_opcion(args, "--proyecto")
+            tiempo_limite_txt, args = _extraer_opcion(args, "--tiempo-limite")
+            if not args:
+                return ResultadoComando(False, "Falta la URL. Uso: zap pasivo URL")
+            try:
+                tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 60.0
+            except ValueError:
+                return ResultadoComando(False, "--tiempo-limite debe ser numerico.")
+
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+            resultado, _guardados = _ejecutar_zap_pasivo(
+                base_datos, proyecto, args[0], tiempo_limite=tiempo_limite
+            )
+            tabla = Table(title=f"OWASP ZAP - {_redactar_url(args[0])}")
+            tabla.add_column("Regla")
+            tabla.add_column("Hallazgo")
+            tabla.add_column("Riesgo")
+            for h in resultado.hallazgos:
+                estilo = _ESTILOS_RIESGO_ZAP.get(h.riesgo.lower(), "")
+                riesgo_texto = f"[{estilo}]{h.riesgo}[/{estilo}]" if estilo else h.riesgo
+                tabla.add_row(h.plugin_id, h.nombre, riesgo_texto)
+            return ResultadoComando(True, tabla)
+
+        if subcomando == "resultados":
+            proyecto_nombre, args = _extraer_opcion(args, "--proyecto")
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, proyecto_nombre)
+            guardados = base_datos.listar_resultados_zap(proyecto.id, limite=200)
+            tabla = Table(title=f"Hallazgos de OWASP ZAP - {proyecto.nombre}")
+            tabla.add_column("Objetivo")
+            tabla.add_column("Regla")
+            tabla.add_column("Riesgo")
+            tabla.add_column("Revision")
+            for g in guardados:
+                estilo = _ESTILOS_RIESGO_ZAP.get(g.riesgo.lower(), "")
+                riesgo_texto = f"[{estilo}]{g.riesgo}[/{estilo}]" if estilo else g.riesgo
+                tabla.add_row(g.objetivo, g.plugin_id, riesgo_texto, g.estado_revision)
+            return ResultadoComando(True, tabla)
+
+        return ResultadoComando(False, f"Subcomando desconocido: 'zap {subcomando}'.")
 
     # -- explicar ----------------------------------------------------
     def _explicar(self, resto: list[str]) -> ResultadoComando:

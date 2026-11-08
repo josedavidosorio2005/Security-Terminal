@@ -41,13 +41,13 @@ ejecuta comandos a traves de un shell del sistema.
 
 - `est interfaz`: aplicacion Textual real, no una maqueta. Conectada a la misma base de datos y
   a la misma logica que la CLI.
-- Barra superior (logo, version, proyecto activo, sistema operativo), barra lateral con las 14
+- Barra superior (logo, version, proyecto activo, sistema operativo), barra lateral con las 15
   secciones del roadmap, terminal interactiva integrada con autocompletado contextual y
   sugerencias, paneles dedicados para Proyectos, Alcance, Redes (escaneo TCP con cancelacion),
-  Resultados, Reportes, Herramientas (deteccion de Nmap/Nuclei/ZAP/tshark sin ejecutarlos) y
-  Configuracion.
-- Las secciones todavia no implementadas (Modulos, Analisis web, Vulnerabilidades,
-  Aprendizaje) se muestran explicitamente como "Proximamente": nunca simulan datos falsos.
+  Reconocimiento (Nmap), Analisis web, Vulnerabilidades (Nuclei), OWASP ZAP, Resultados,
+  Reportes, Herramientas (deteccion de Nmap/Nuclei/ZAP/tshark sin ejecutarlos) y Configuracion.
+- Las secciones todavia no implementadas (Modulos, Aprendizaje) se muestran explicitamente
+  como "Proximamente": nunca simulan datos falsos.
 - Interfaz adaptable: en terminales estrechas oculta el panel de informacion y compacta la
   barra lateral, sin perder acceso a ninguna funcionalidad (sigue disponible desde la Terminal).
 
@@ -61,9 +61,20 @@ Manual de usuario completo (atajos, paneles, solucion de problemas) en
   normalizacion de resultados y registro de evidencias.
 - **Nmap** (`est nmap descubrir`, panel "Reconocimiento"): descubrimiento de puertos y, si se
   autoriza explicitamente, identificacion de servicios/version. Cada analisis guarda su XML
-  original como evidencia. Detalle en [docs/INTEGRACIONES.md](docs/INTEGRACIONES.md).
-- Nuclei, OWASP ZAP y la auditoria web no intrusiva llegaran en PRs independientes siguiendo el
-  mismo motor.
+  original como evidencia.
+- **Auditoria web no intrusiva** (`est web cabeceras|tls|cookies|auditar`, panel "Analisis
+  web"): cabeceras HTTP de seguridad, certificado/TLS, cookies y redirecciones (con proteccion
+  SSRF), con redaccion de datos sensibles en URLs.
+- **Nuclei** (`est nuclei analizar`, panel "Vulnerabilidades"): catalogo cerrado de 5
+  plantillas HTTP de bajo impacto escritas por AURABYTE, revalidadas estructuralmente (lista
+  blanca + hash SHA-256) en cada ejecucion; nunca una plantilla arbitraria del usuario.
+- **OWASP ZAP** (`est zap pasivo`, panel "OWASP ZAP"): solo analisis pasivo -- nunca active
+  scan, spider, ajaxSpider ni fuzzing. ZAP no lo instala AST: debe estar ya corriendo por tu
+  cuenta, con su API restringida a loopback.
+
+Detalle completo de cada integracion en [docs/INTEGRACIONES.md](docs/INTEGRACIONES.md),
+[docs/AUDITORIA_WEB.md](docs/AUDITORIA_WEB.md), [docs/NUCLEI.md](docs/NUCLEI.md) y
+[docs/OWASP_ZAP.md](docs/OWASP_ZAP.md).
 
 ## Instalacion
 
@@ -93,6 +104,9 @@ est proyecto listar
 est alcance agregar 127.0.0.1/32
 est escanear tcp 127.0.0.1 --puertos 22,80,443
 est nmap descubrir 127.0.0.1 --puertos 22,80,443   # Fase 3, requiere tener Nmap instalado
+est web auditar http://127.0.0.1/                  # Fase 3, auditoria web no intrusiva
+est nuclei analizar 127.0.0.1 --plantillas exposed-env-file  # Fase 3, requiere Nuclei instalado
+est zap pasivo http://127.0.0.1/                   # Fase 3, requiere ZAP ya corriendo
 est explicar tcp
 est resultados
 est reporte generar --formato html
@@ -108,8 +122,9 @@ integraciones, almacenamiento e interfaz, incluida la TUI de Textual). Ver
 
 ## Roadmap
 
-AST se desarrolla en fases incrementales (MVP, interfaz visual, integraciones con
-Nmap/Nuclei/ZAP, asistente de IA, plataforma de plugins). Ver [docs/ROADMAP.md](docs/ROADMAP.md).
+AST se desarrolla en fases incrementales (MVP, interfaz visual, integraciones con Nmap, auditoria
+web, Nuclei y OWASP ZAP, asistente de IA, plataforma de plugins). Ver
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Pruebas
 

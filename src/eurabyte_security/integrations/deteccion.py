@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from eurabyte_security.integrations.base import AdaptadorExterno
 from eurabyte_security.integrations.nmap import AdaptadorNmap
 from eurabyte_security.integrations.nuclei import AdaptadorNuclei
+from eurabyte_security.integrations.zap import TIEMPO_LIMITE_DIAGNOSTICO_AUTOMATICO, AdaptadorZAP
 
 HERRAMIENTAS_SOLO_DETECCION: tuple[tuple[str, str], ...] = (
-    ("OWASP ZAP", "zap.sh"),
     ("tshark", "tshark"),
 )
 
@@ -35,7 +35,14 @@ class HerramientaExterna:
 
 
 def detectar_herramientas() -> list[HerramientaExterna]:
-    """Comprueba que herramientas de la Fase 3 estan instaladas en el PATH."""
+    """Comprueba que herramientas de la Fase 3 estan instaladas/disponibles.
+
+    Para Nmap/Nuclei, "disponible" significa que el binario esta en el PATH del sistema
+    (``shutil.which``). Para OWASP ZAP, que no se invoca como binario sino como un
+    servicio HTTP ya en marcha, significa que su API responde en el endpoint configurado
+    (``EST_ZAP_URL``) -- ver ``integrations/zap.py``. Ninguna de estas comprobaciones
+    ejecuta un analisis real, solo lectura.
+    """
     resultado = [
         HerramientaExterna(
             nombre=info.nombre, comando=info.comando, instalada=info.instalada,
@@ -43,6 +50,18 @@ def detectar_herramientas() -> list[HerramientaExterna]:
         )
         for info in (adaptador.info() for adaptador in _ADAPTADORES)
     ]
+
+    info_zap = AdaptadorZAP().info(tiempo_limite=TIEMPO_LIMITE_DIAGNOSTICO_AUTOMATICO)
+    resultado.append(
+        HerramientaExterna(
+            nombre="OWASP ZAP",
+            comando=AdaptadorZAP().configuracion().url_base,
+            instalada=info_zap.disponible,
+            ruta=None,
+            version=info_zap.version,
+        )
+    )
+
     for nombre, comando in HERRAMIENTAS_SOLO_DETECCION:
         ruta = shutil.which(comando)
         resultado.append(

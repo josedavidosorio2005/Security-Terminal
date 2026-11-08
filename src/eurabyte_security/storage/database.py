@@ -77,6 +77,22 @@ CREATE TABLE IF NOT EXISTS resultados_nuclei (
     estado_revision TEXT NOT NULL,
     creado_en TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS resultados_zap (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    objetivo TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    nombre_hallazgo TEXT NOT NULL,
+    riesgo TEXT NOT NULL,
+    confianza TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    evidencia TEXT,
+    solucion TEXT NOT NULL,
+    referencia TEXT,
+    estado_revision TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
 """
 
 
@@ -150,6 +166,23 @@ class ResultadoNuclei:
     severidad: str
     descripcion: str
     evidencia: str | None
+    estado_revision: str
+    creado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoZAP:
+    id: int
+    proyecto_id: int
+    objetivo: str
+    plugin_id: str
+    nombre_hallazgo: str
+    riesgo: str
+    confianza: str
+    descripcion: str
+    evidencia: str | None
+    solucion: str
+    referencia: str | None
     estado_revision: str
     creado_en: str
 
@@ -506,5 +539,89 @@ class BaseDatos:
         with self._conectar() as conexion:
             conexion.execute(
                 "UPDATE resultados_nuclei SET estado_revision = ? WHERE id = ?",
+                (estado_revision, id_),
+            )
+
+    # -- Resultados de OWASP ZAP -----------------------------------------
+    def agregar_resultados_zap(
+        self,
+        proyecto_id: int,
+        objetivo: str,
+        resultados: list[tuple[str, str, str, str, str, str | None, str, str | None]],
+    ) -> list[ResultadoZAP]:
+        """Inserta hallazgos de ZAP en una sola transaccion (todo o nada).
+
+        ``resultados`` es una lista de ``(plugin_id, nombre_hallazgo, riesgo, confianza,
+        descripcion, evidencia, solucion, referencia)``. Cada fila se guarda con
+        ``estado_revision`` inicial ``'nuevo'``. Misma semantica de atomicidad que
+        :meth:`agregar_resultados_nuclei`: un analisis cancelado no llega a llamar a este
+        metodo, por lo que no queda ningun hallazgo parcial.
+        """
+        guardados: list[ResultadoZAP] = []
+        with self._conectar() as conexion:
+            for (
+                plugin_id,
+                nombre_hallazgo,
+                riesgo,
+                confianza,
+                descripcion,
+                evidencia,
+                solucion,
+                referencia,
+            ) in resultados:
+                cursor = conexion.execute(
+                    "INSERT INTO resultados_zap (proyecto_id, objetivo, plugin_id, "
+                    "nombre_hallazgo, riesgo, confianza, descripcion, evidencia, solucion, "
+                    "referencia, estado_revision, creado_en) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        proyecto_id,
+                        objetivo,
+                        plugin_id,
+                        nombre_hallazgo,
+                        riesgo,
+                        confianza,
+                        descripcion,
+                        evidencia,
+                        solucion,
+                        referencia,
+                        "nuevo",
+                        _ahora(),
+                    ),
+                )
+                fila = conexion.execute(
+                    "SELECT id, proyecto_id, objetivo, plugin_id, nombre_hallazgo, riesgo, "
+                    "confianza, descripcion, evidencia, solucion, referencia, estado_revision, "
+                    "creado_en FROM resultados_zap WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(ResultadoZAP(**fila))
+        return guardados
+
+    def listar_resultados_zap(
+        self, proyecto_id: int | None = None, limite: int = 200
+    ) -> list[ResultadoZAP]:
+        columnas = (
+            "id, proyecto_id, objetivo, plugin_id, nombre_hallazgo, riesgo, confianza, "
+            "descripcion, evidencia, solucion, referencia, estado_revision, creado_en"
+        )
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_zap ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM resultados_zap WHERE proyecto_id = ? "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [ResultadoZAP(**fila) for fila in filas]
+
+    def actualizar_estado_revision_zap(self, id_: int, estado_revision: str) -> None:
+        with self._conectar() as conexion:
+            conexion.execute(
+                "UPDATE resultados_zap SET estado_revision = ? WHERE id = ?",
                 (estado_revision, id_),
             )

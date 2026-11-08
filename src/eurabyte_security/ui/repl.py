@@ -33,6 +33,13 @@ _ARBOL_COMPLETADO = {
         "revisar": None,
         "reporte": None,
     },
+    "zap": {
+        "estado": None,
+        "pasivo": None,
+        "resultados": None,
+        "revisar": None,
+        "reporte": None,
+    },
     "explicar": {
         tema: None
         for tema in (
@@ -45,6 +52,7 @@ _ARBOL_COMPLETADO = {
             "interactivo",
             "web",
             "nuclei",
+            "zap",
         )
     },
     "resultados": None,

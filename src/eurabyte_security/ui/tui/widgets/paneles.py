@@ -20,10 +20,12 @@ from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados
 from eurabyte_security.commands.web import TIPOS_VALIDOS as TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web
+from eurabyte_security.commands.zap import ejecutar_zap_pasivo
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
 from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
+from eurabyte_security.integrations.zap import AdaptadorZAP
 from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
 from eurabyte_security.modules.web.modelos import Hallazgo
 from eurabyte_security.ui.consola import texto_seguro
@@ -875,6 +877,220 @@ class PanelVulnerabilidades(VerticalScroll):
         self._marcar_revision("confirmado")
 
     @on(Button.Pressed, "#nuclei-marcar-falso-positivo")
+    def _marcar_falso_positivo(self, _evento: Button.Pressed) -> None:
+        self._marcar_revision("falso_positivo")
+
+
+class PanelOWASPZAP(VerticalScroll):
+    """OWASP ZAP: analisis pasivo unicamente, dentro del alcance autorizado.
+
+    Misma politica de cancelacion y de secuencia que ``PanelVulnerabilidades``: cada
+    analisis tiene su propio numero de secuencia (solo el mas reciente puede actualizar
+    la tabla) y la cancelacion no guarda ningun hallazgo parcial (ver
+    ``commands/zap.py``). El boton "Analizar" exige, ademas, haber marcado la casilla de
+    confirmacion. Esta seccion nunca ofrece active scan, spider ni fuzzing: solo hace
+    una unica peticion GET controlada (a traves de la propia API de ZAP) para alimentar
+    su analizador pasivo.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._worker = None
+        self._secuencia = 0
+        self._guardados: list = []
+        self._id_seleccionado: int | None = None
+
+    def compose(self):
+        yield Static("OWASP ZAP (analisis pasivo)", classes="titulo-panel")
+        yield Static("", id="zap-deteccion", classes="ast-tenue")
+        yield Static("", id="zap-proyecto", classes="ast-tenue")
+        yield Static(
+            "Solo analisis pasivo: nunca active scan, spider, ajaxSpider ni fuzzing. "
+            "AST hace una unica peticion GET (via la API de ZAP) para alimentar el "
+            "analizador pasivo, y lee solo las alertas del objetivo indicado.",
+            classes="ast-caja",
+        )
+        yield Input(
+            placeholder="URL autorizada (http://IP:puerto/ruta)", id="zap-objetivo"
+        )
+        with Horizontal():
+            yield Input(placeholder="Tiempo limite en segundos (60)", id="zap-tiempo-limite")
+            yield Checkbox("Confirmo que el objetivo esta autorizado", id="zap-confirmar")
+        with Horizontal():
+            yield Button("Analizar", id="zap-analizar", variant="primary")
+            yield Button("Cancelar", id="zap-cancelar")
+        yield Static("", id="zap-mensaje", classes="ast-tenue")
+        yield DataTable(id="zap-tabla", cursor_type="row")
+        yield Static("", id="zap-detalle", classes="ast-caja")
+        with Horizontal():
+            yield Button("Marcar confirmado", id="zap-marcar-confirmado")
+            yield Button("Marcar falso positivo", id="zap-marcar-falso-positivo")
+
+    def on_mount(self) -> None:
+        self.query_one("#zap-tabla", DataTable).add_columns(
+            "Id", "Regla", "Hallazgo", "Riesgo", "Revision"
+        )
+        self.refrescar()
+
+    def refrescar(self) -> None:
+        self._refrescar_deteccion()
+        self._refrescar_proyecto()
+
+    def _refrescar_deteccion(self) -> None:
+        info = AdaptadorZAP().info()
+        estado = "Disponible" if info.disponible else "No disponible"
+        version = f" (version {texto_seguro(info.version)})" if info.version else ""
+        self.query_one("#zap-deteccion", Static).update(f"OWASP ZAP: {estado}{version}")
+
+    def _refrescar_proyecto(self) -> None:
+        etiqueta = self.query_one("#zap-proyecto", Static)
+        try:
+            proyecto = resolver_proyecto(obtener_base_datos(), None)
+            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+        except ErrorEST as exc:
+            etiqueta.update(texto_seguro(exc))
+
+    def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#zap-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    @on(Button.Pressed, "#zap-analizar")
+    def _iniciar(self, _evento: Button.Pressed) -> None:
+        self._refrescar_proyecto()
+        objetivo = self.query_one("#zap-objetivo", Input).value.strip()
+        tiempo_limite_txt = self.query_one("#zap-tiempo-limite", Input).value.strip()
+        confirmado = self.query_one("#zap-confirmar", Checkbox).value
+
+        if not objetivo:
+            self._mensaje("Indica la URL autorizada a auditar.", "ast-aviso")
+            return
+        if not confirmado:
+            self._mensaje(
+                "Confirma que el objetivo esta autorizado (casilla) antes de analizar.",
+                "ast-aviso",
+            )
+            return
+        try:
+            tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 60.0
+        except ValueError:
+            self._mensaje("El tiempo limite debe ser numerico.", "ast-error")
+            return
+
+        self._secuencia += 1
+        secuencia = self._secuencia
+        self._id_seleccionado = None
+        self.query_one("#zap-detalle", Static).update("")
+
+        self._mensaje(
+            "Ejecutando analisis pasivo de ZAP... (puedes cancelar mientras se ejecuta)",
+            "ast-aviso",
+        )
+        self._worker = self._analizar(secuencia, objetivo, tiempo_limite)
+
+    @on(Button.Pressed, "#zap-cancelar")
+    def _cancelar(self, _evento: Button.Pressed) -> None:
+        if self._worker is not None and self._worker.is_running:
+            self._worker.cancel()
+            self._mensaje(
+                "Cancelacion solicitada: no se guardara ningun hallazgo de este analisis.",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="zap-analisis", exit_on_error=False)
+    def _analizar(self, secuencia: int, objetivo: str, tiempo_limite: float) -> None:
+        worker = get_current_worker()
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            _resultado, guardados = ejecutar_zap_pasivo(
+                base_datos,
+                proyecto,
+                objetivo,
+                tiempo_limite=tiempo_limite,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEscaneoCancelado as exc:
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-aviso")
+            return
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultados, secuencia, guardados)
+
+    def _mostrar_resultados(self, secuencia: int, guardados: list) -> None:
+        if secuencia != self._secuencia:
+            return
+        self._guardados = guardados
+        self._redibujar_tabla()
+        self._mensaje(f"Analisis completo: {len(guardados)} hallazgos.", "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    def _redibujar_tabla(self) -> None:
+        tabla = self.query_one("#zap-tabla", DataTable)
+        tabla.clear()
+        for g in self._guardados:
+            tabla.add_row(
+                str(g.id), texto_seguro(g.plugin_id), texto_seguro(g.nombre_hallazgo),
+                texto_seguro(g.riesgo), texto_seguro(g.estado_revision), key=str(g.id),
+            )
+
+    @on(DataTable.RowSelected, "#zap-tabla")
+    def _fila_seleccionada(self, event: DataTable.RowSelected) -> None:
+        if event.row_key.value is None:
+            return
+        try:
+            id_seleccionado = int(event.row_key.value)
+        except ValueError:
+            return
+        hallazgo = next((g for g in self._guardados if g.id == id_seleccionado), None)
+        if hallazgo is None:
+            return
+        self._id_seleccionado = id_seleccionado
+        self.query_one("#zap-detalle", Static).update(
+            f"[bold]{texto_seguro(hallazgo.nombre_hallazgo)}[/bold]\n"
+            f"Riesgo: {texto_seguro(hallazgo.riesgo)}  |  "
+            f"Confianza: {texto_seguro(hallazgo.confianza)}\n"
+            f"Descripcion: {texto_seguro(hallazgo.descripcion)}\n"
+            f"Evidencia: {texto_seguro(hallazgo.evidencia or '-')}\n"
+            f"Solucion: {texto_seguro(hallazgo.solucion)}\n"
+            f"Referencia: {texto_seguro(hallazgo.referencia or '-')}\n"
+            f"Estado de revision: {texto_seguro(hallazgo.estado_revision)} (revisa la "
+            "evidencia antes de confirmar: podria ser un falso positivo)."
+        )
+
+    def _marcar_revision(self, estado: str) -> None:
+        if self._id_seleccionado is None:
+            self._mensaje("Selecciona primero un hallazgo en la tabla.", "ast-aviso")
+            return
+        try:
+            obtener_base_datos().actualizar_estado_revision_zap(self._id_seleccionado, estado)
+        except ErrorEST as exc:
+            self._mensaje(texto_seguro(exc), "ast-error")
+            return
+        self._guardados = [
+            g if g.id != self._id_seleccionado else replace(g, estado_revision=estado)
+            for g in self._guardados
+        ]
+        self._redibujar_tabla()
+        self._mensaje(f"Hallazgo {self._id_seleccionado} marcado como '{estado}'.", "ast-exito")
+
+    @on(Button.Pressed, "#zap-marcar-confirmado")
+    def _marcar_confirmado(self, _evento: Button.Pressed) -> None:
+        self._marcar_revision("confirmado")
+
+    @on(Button.Pressed, "#zap-marcar-falso-positivo")
     def _marcar_falso_positivo(self, _evento: Button.Pressed) -> None:
         self._marcar_revision("falso_positivo")
 

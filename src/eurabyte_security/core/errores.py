@@ -53,3 +53,7 @@ class ErrorAuditoriaWeb(ErrorEST):
     """Fallo de red al auditar un objetivo web (tiempo agotado, conexion rechazada,
     respuesta demasiado grande, redireccion fuera de alcance...).
     """
+
+
+class ErrorZAPNoDisponible(ErrorEST):
+    """La API de OWASP ZAP no responde en el endpoint configurado, o rechazo la API key."""

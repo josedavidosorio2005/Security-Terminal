@@ -12,6 +12,7 @@ claro en ningun registro.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 VALOR_REDACTADO = "<redactado>"
@@ -94,3 +95,29 @@ def redactar_url(url: str) -> str:
     )
 
     return urlunsplit((partes.scheme, netloc, partes.path, query_redactada, fragmento_redactado))
+
+
+# Busca 'palabra_sensible: valor' o 'palabra_sensible=valor' (insensible a mayusculas) en
+# texto libre (no necesariamente una URL): "Authorization: Bearer abc123" redacta
+# "Bearer abc123" completo, no solo el primer token, deteniendose en el siguiente separador
+# de campo (coma, punto y coma o salto de linea) si lo hay. Compartido por cualquier
+# integracion externa que trate su propia salida como no confiable (Nuclei, OWASP ZAP...),
+# para no duplicar la misma logica de redaccion en cada adaptador.
+_PATRON_SECRETO_EN_TEXTO = re.compile(
+    r"(?i)((?:" + "|".join(re.escape(p) for p in PALABRAS_SENSIBLES) + r")\w*\s*[:=]\s*)([^,;\n]+)"
+)
+
+
+def redactar_texto_libre(texto: str) -> str:
+    """Redacta posibles secretos en texto libre (no necesariamente una URL).
+
+    A diferencia de ``redactar_url`` (pensada para query strings/fragmentos de una URL),
+    esta funcion busca el patron ``palabra_sensible: valor`` o ``palabra_sensible=valor``
+    en cualquier texto -- por ejemplo, una cabecera ``Authorization: Bearer ...`` que una
+    herramienta externa hubiera volcado en un mensaje de error o en un campo de texto libre
+    de su salida (descripcion, evidencia...). Se aplica aunque, en el camino normal, ese
+    campo sea texto estatico de confianza: AST trata TODA la salida de un binario o servicio
+    externo como no confiable, no solo cuando se sabe de antemano que puede traer algo
+    sensible.
+    """
+    return _PATRON_SECRETO_EN_TEXTO.sub(lambda m: m.group(1) + VALOR_REDACTADO, texto)

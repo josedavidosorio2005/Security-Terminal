@@ -127,6 +127,27 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     (no solo se truncan) con el mismo mecanismo que usa la auditoria web
     (`core/redaccion.py:redactar_url`) o con un redactor de texto libre propio para los campos
     que no son una URL.
+17. **OWASP ZAP solo ofrece analisis pasivo: nunca active scan, spider, ajaxSpider ni
+    fuzzing.** `integrations/zap.py`/`modules/vulnerability/zap.py` no exponen ninguna
+    opcion para activar esas funciones; la unica peticion que llega al objetivo es la que
+    la propia API de ZAP hace a traves de `core/action/accessUrl`
+    (`followRedirects=false`), que alimenta el analizador pasivo sin explorar nada mas. El
+    endpoint de administracion de ZAP debe ser loopback HTTP **literal**
+    (`http://127.0.0.1:<puerto>`): se rechaza explicitamente `localhost` (su resolucion
+    depende del archivo de hosts del sistema, no es una garantia), cualquier host remoto y
+    cualquier esquema distinto de `http` -- AST nunca administra una instancia de ZAP
+    remota. La API key se lee de la variable de entorno `EST_ZAP_API_KEY` (nunca de un
+    archivo versionado ni de un argumento visible en el historial del shell) y nunca
+    aparece en un mensaje de error, log o informe. Las alertas se consultan filtradas por
+    el objetivo auditado (`baseurl`), nunca todas las de la sesion compartida de ZAP: una
+    misma instancia puede tener alertas de otras auditorias en marcha, y AST nunca las
+    mezcla con las propias ni borra sesiones o alertas ajenas. Toda la salida de ZAP se
+    trata como no confiable: los campos de texto libre y la URL de cada alerta se
+    redactan y se acotan en longitud, igual que la salida de Nuclei. Ver
+    [docs/OWASP_ZAP.md](OWASP_ZAP.md) para el detalle completo, incluidas las garantias
+    que este diseno **no** puede ofrecer (no es una sandbox de red a nivel de sistema
+    operativo, y una instancia de ZAP compartida sigue acumulando esa unica peticion en su
+    historial, aunque AST nunca la use para mezclar resultados).
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 
@@ -139,13 +160,16 @@ Ver [SECURITY.md](../SECURITY.md).
 - Registra el alcance exacto que te autorizaron, ni mas ni menos.
 - Guarda las evidencias (resultados, informes) en un lugar seguro y bórralas cuando ya no las
   necesites; AST no las cifra por defecto.
-- No ejecutes integraciones externas (Nmap, Nuclei y las que sigan: OWASP ZAP) ni auditorias web
-  contra objetivos fuera del alcance acordado con el cliente o la organizacion.
+- No ejecutes integraciones externas (Nmap, Nuclei, OWASP ZAP) ni auditorias web contra
+  objetivos fuera del alcance acordado con el cliente o la organizacion.
 - Al usar `--deteccion-version` con Nmap, confirma primero que esa comprobacion en concreto
   esta autorizada; no es el comportamiento por defecto.
 - Al usar `--seguir-redirecciones` en `est web`, recuerda que AST solo sigue el salto si el
   destino ya esta autorizado en el alcance; si necesitas auditar un destino nuevo, agregalo
   primero al alcance en vez de depender de que la redireccion lo cubra.
-- Un hallazgo de Nuclei puede ser un falso positivo: revisa la evidencia antes de confirmarlo
-  (`est nuclei revisar ID --estado confirmado|falso_positivo`), no lo asumas como cierto solo
-  porque el escaner lo reporto.
+- Un hallazgo de Nuclei o de OWASP ZAP puede ser un falso positivo: revisa la evidencia antes
+  de confirmarlo (`est nuclei revisar ID --estado ...` / `est zap revisar ID --estado ...`),
+  no lo asumas como cierto solo porque el escaner lo reporto.
+- Si usas OWASP ZAP con una instancia compartida con otras auditorias, recuerda que esa
+  instancia sigue siendo responsabilidad de quien la administra: AST solo controla lo que
+  el propio AST le pide, no la configuracion ni el estado previo de ZAP.
