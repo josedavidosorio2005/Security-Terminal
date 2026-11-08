@@ -66,7 +66,9 @@ def _instalar_nuclei_falso(
     monkeypatch.setattr(AdaptadorNuclei, "esta_instalado", lambda self: True)
     monkeypatch.setattr(AdaptadorNuclei, "ruta_binario", lambda self: "/usr/bin/nuclei")
 
-    def _ejecutar_binario_falso(self, argumentos, *, tiempo_limite, debe_cancelar=None):
+    def _ejecutar_binario_falso(
+        self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None
+    ):
         if argumentos == ["-h"]:
             return ResultadoProceso(
                 codigo_salida=0, stdout=ayuda, stderr="", agotado_por_tiempo=False
@@ -194,7 +196,7 @@ def test_nuclei_sin_jsonl_de_salida_no_falla_sin_hallazgos(monkeypatch):
 def test_nuclei_tiempo_agotado_lanza_error_integracion(monkeypatch):
     _instalar_nuclei_falso(monkeypatch)
 
-    def _agotado(self, argumentos, *, tiempo_limite, debe_cancelar=None):
+    def _agotado(self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None):
         if argumentos == ["-h"]:
             return _resultado_ayuda_ok()
         return ResultadoProceso(codigo_salida=-1, stdout="", stderr="", agotado_por_tiempo=True)
@@ -207,7 +209,7 @@ def test_nuclei_tiempo_agotado_lanza_error_integracion(monkeypatch):
 def test_nuclei_cancelado_lanza_error_escaneo_cancelado(monkeypatch):
     _instalar_nuclei_falso(monkeypatch)
 
-    def _cancelado(self, argumentos, *, tiempo_limite, debe_cancelar=None):
+    def _cancelado(self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None):
         if argumentos == ["-h"]:
             return _resultado_ayuda_ok()
         return ResultadoProceso(
@@ -343,7 +345,7 @@ def test_ejecutar_nuclei_dentro_de_alcance_persiste_atomicamente(tmp_path, monke
 
 
 def test_ejecutar_nuclei_cancelado_no_persiste_nada(tmp_path, monkeypatch):
-    def _cancelado(self, argumentos, *, tiempo_limite, debe_cancelar=None):
+    def _cancelado(self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None):
         if argumentos == ["-h"]:
             return _resultado_ayuda_ok()
         return ResultadoProceso(

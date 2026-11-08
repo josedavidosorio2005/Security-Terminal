@@ -16,15 +16,31 @@ plantilla es segura porque viene "firmada" o porque Nuclei la clasifica de una f
 concreta, AST solo ejecuta plantillas que:
 
 1. **Escribio AURABYTE**, no una plantilla descargada de internet.
-2. **Se vuelven a validar estructuralmente en cada ejecucion** (no solo al revisarlas
-   una vez): ver `integrations/nuclei.py:validar_plantilla_estructura()`. Se rechaza
-   cualquier plantilla que declare un bloque de protocolo distinto de `http`
-   (`dns`, `file`, `network`, `headless`, `code`, `ssl`, `workflows`, `javascript`),
-   que use un metodo distinto de `GET`, que intente seguir redirecciones
-   (`redirects: true`/`follow-redirects: true`), o que mencione Interactsh/OAST en
-   cualquier forma. Si el archivo cambiara despues de instalar AST (por error o a
-   proposito), esta comprobacion lo detecta y rechaza la ejecucion.
-3. **El usuario no puede indicar una ruta de plantilla propia.** `est nuclei analizar`
+2. **Se vuelven a validar estructuralmente en cada ejecucion, con una lista blanca
+   estricta** (no solo al revisarlas una vez, y no solo una lista negra de lo
+   prohibido): ver `integrations/nuclei.py:validar_plantilla_estructura()`. Solo se
+   acepta la forma exacta que ya tienen las 5 plantillas aprobadas -- campos de nivel
+   superior conocidos (`id`, `info`, `http`), un unico bloque `http` con metodo `GET`,
+   como maximo 4 rutas, rutas exclusivamente relativas a `{{BaseURL}}` (nunca una URL
+   absoluta a otro host ni otra variable de plantilla), y matchers de tipo `status`,
+   `word` o `regex` sin campos adicionales -- y se rechaza cualquier campo que AST no
+   reconozca, aunque no aparezca en ninguna lista negra concreta. Como defensa
+   adicional, tambien se rechaza explicitamente cualquier bloque de protocolo distinto
+   de `http` (`dns`, `file`, `network`, `headless`, `code`, `ssl`, `workflows`,
+   `javascript`) y cualquier mencion a Interactsh/OAST o a seguir redirecciones.
+3. **Cada plantilla aprobada tiene un hash SHA-256 fijado** en el catalogo
+   (`InfoPlantillaNuclei.sha256`): si el archivo instalado no coincide con ese hash
+   exacto, la ejecucion se rechaza, aunque el YAML siga siendo estructuralmente valido.
+   Actualizar ese hash es, en si mismo, una decision que exige revisar de nuevo todo el
+   contenido de la plantilla -- nunca se recalcula automaticamente. Si cualquiera de
+   estas comprobaciones falla (hash, id, estructura), AST rechaza la ejecucion con un
+   error claro en vez de asumir que la plantilla sigue siendo segura.
+4. **Nunca se le pasa a Nuclei la ruta original instalada con el paquete.** Para evitar
+   una ventana entre "se valido este archivo" y "se ejecuto este archivo" (TOCTOU), AST
+   lee el contenido una sola vez, lo valida, y escribe una copia nueva en un directorio
+   temporal exclusivo de esa ejecucion (borrado al terminar); es esa copia la que se le
+   pasa a Nuclei con `-t`, nunca el archivo original de `plantillas_nuclei/`.
+5. **El usuario no puede indicar una ruta de plantilla propia.** `est nuclei analizar`
    solo acepta identificadores del catalogo (`--plantillas id1,id2`); no existe ninguna
    opcion para pasar un archivo `.yaml` arbitrario.
 
@@ -81,18 +97,46 @@ integrations/
    version instalada reconoce todas las opciones que AST necesita pasarle
    (`-target`, `-t`, `-jsonl`, `-timeout`, `-rate-limit`, `-duc`, `-ni`, `-silent`,
    `-nc`). Si falta alguna, se rechaza la ejecucion con un mensaje claro en vez de
-   construir un comando que la version instalada no entenderia.
+   construir un comando que la version instalada no entenderia. El mismo texto de
+   ayuda se reutiliza para decidir, sin volver a invocar `nuclei -h`, cuales de las
+   opciones de aislamiento opcionales (ver mas abajo) tambien estan disponibles --
+   nunca se asume que una opcion existe sin comprobarlo antes.
 2. **Validacion de parametros**: objetivo (IPv4 literal, sin ruta -- ver
    `core/validation.py:validar_objetivo_nuclei`), al menos una plantilla del catalogo,
    tiempo limite entre 5 y 120 segundos.
-3. **Ejecucion sin shell**: `-target <ip> -t <plantilla1> -t <plantilla2> ... -jsonl
-   -o <archivo temporal> -timeout 10 -rate-limit 10 -duc -ni -silent -nc`, siempre a
-   traves de `integrations/proceso.py:ejecutar_proceso()` (sin `shell=True`, con limite
-   de tiempo y cancelacion real via `Popen.kill()`).
-4. **Lectura de resultados JSONL**: cada linea es un hallazgo independiente; una linea
-   que no es JSON valido, o a la que le faltan los campos minimos (`template-id`,
-   `info.name`), se descarta sin interrumpir el analisis del resto (se informa cuantas
-   lineas se descartaron).
+3. **Configuracion y entorno aislados**: Nuclei busca su configuracion y cache de
+   plantillas en un directorio del sistema operativo (`HOME`/`.config` en Linux/macOS,
+   `%AppData%` en Windows) y respeta variables de proxy del entorno (`HTTP_PROXY`,
+   etc.). AST invoca el proceso con un entorno propio (`_variables_entorno_aisladas()`)
+   que elimina esas variables de proxy y cualquier `NUCLEI_*`, y redirige `HOME`/
+   `XDG_CONFIG_HOME`/`APPDATA`/`USERPROFILE` a un directorio vacio y nuevo dentro del
+   directorio temporal de esa misma ejecucion -- una configuracion, proxy o perfil que
+   el usuario ya tuviera guardado en su sistema nunca se aplica silenciosamente. Si la
+   version instalada reconoce opciones adicionales de aislamiento (`-config`, `-dr`/
+   `-disable-redirects`, `-nh`, `-no-stdin`), tambien se agregan al comando; si no las
+   reconoce, el analisis sigue igual (son defensa en profundidad adicional, no la unica
+   proteccion).
+4. **Ejecucion sin shell y sin binary planting**: `-target <ip> -t <copia validada 1>
+   -t <copia validada 2> ... -jsonl -o <archivo temporal> -timeout 10 -rate-limit 10
+   -duc -ni -silent -nc`, siempre a traves de `integrations/proceso.py:ejecutar_proceso()`
+   (sin `shell=True`, con la ruta absoluta del binario ya resuelta -- ver
+   `integrations/base.py` -- con limite de tiempo y cancelacion real via `Popen.kill()`).
+   Un codigo de salida distinto de cero (error de argumentos, fallo al cargar una
+   plantilla, etc.) se trata siempre como un fallo real, nunca como "analisis exitoso
+   sin hallazgos"; no se usa ningun resultado parcial que Nuclei hubiera escrito antes
+   de fallar.
+5. **Lectura de resultados JSONL, tratada como no confiable**: cada linea es un
+   hallazgo independiente; se descarta sin interrumpir el analisis del resto cualquier
+   linea que no sea JSON valido, le falten los campos minimos (`template-id`,
+   `info.name`), supere un tamano maximo por linea, o reporte un `template-id` que no
+   sea exactamente uno de los que AST le pidio ejecutar en esa misma invocacion (nunca
+   "cualquier id del catalogo", sino solo los que de verdad se ejecutaron esta vez). La
+   salida completa tambien tiene un tamano maximo total (10 MiB); si se supera, se
+   rechaza entera y no se guarda nada. Los campos que si se guardan (nombre, severidad,
+   descripcion, evidencia) tienen una longitud maxima acotada, para que un valor
+   manipulado o inesperadamente largo no pueda romper la tabla de la CLI/TUI (que
+   ademas siempre escapa su contenido con `ui/consola.py:texto_seguro` antes de
+   mostrarlo).
 
 ## Comandos
 
@@ -171,10 +215,20 @@ desactiva explicitamente la comprobacion de actualizaciones de la propia herrami
   escribir y revisar cada plantilla nueva a mano, nunca importar un conjunto externo.
 - Las plantillas no se han validado contra un binario de Nuclei real en este entorno de
   desarrollo (ver nota en "Catalogo de plantillas aprobadas").
-- La garantia de aislamiento es a nivel de contenido de la plantilla (sin bloques de
-  protocolo no-HTTP, sin redirecciones, sin OAST), no una sandbox de red a nivel de
-  sistema operativo: sigue siendo responsabilidad del operador confirmar que el
-  objetivo esta autorizado antes de analizar.
+- La garantia de aislamiento es a nivel de contenido de la plantilla (lista blanca
+  estricta de campos y rutas, hash SHA-256 aprobado, sin bloques de protocolo no-HTTP,
+  sin redirecciones, sin OAST) y de entorno de proceso (configuracion/proxy aislados,
+  ruta absoluta del binario), no una sandbox de red a nivel de sistema operativo:
+  sigue siendo responsabilidad del operador confirmar que el objetivo esta autorizado
+  antes de analizar.
+- Las opciones de aislamiento opcionales (`-config`, `-dr`/`-disable-redirects`, `-nh`,
+  `-no-stdin`) solo se agregan si `nuclei -h` las reconoce; en una version de Nuclei
+  que no las tenga, ese refuerzo puntual no esta disponible (el aislamiento real -- el
+  entorno de proceso propio y la validacion de plantillas -- sigue aplicandose igual).
+  Ninguna de estas comprobaciones se ha podido ejecutar contra un binario de Nuclei
+  real en este entorno de desarrollo (ver tambien la nota en "Catalogo de plantillas
+  aprobadas"); antes de depender de ellas en una auditoria real, revisa con `nuclei -h`
+  y `nuclei -version` que la version instalada se comporta como se documenta aqui.
 - `est nuclei reporte` es un informe separado del de `escanear tcp`/`nmap`/auditoria
   web, igual que las demas integraciones de la Fase 3: la unificacion de todos los
   tipos de resultados en un unico informe general queda pendiente para una iteracion

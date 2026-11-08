@@ -12,7 +12,11 @@ from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.core.config import ruta_reportes
-from eurabyte_security.core.errores import ErrorFueraDeAlcance, ErrorValidacion
+from eurabyte_security.core.errores import (
+    ErrorEscaneoCancelado,
+    ErrorFueraDeAlcance,
+    ErrorValidacion,
+)
 from eurabyte_security.core.validation import validar_objetivo_nuclei
 from eurabyte_security.integrations.nuclei import (
     PLANTILLAS_APROBADAS,
@@ -73,7 +77,11 @@ def ejecutar_nuclei(
     ``commands/nmap.py``: ningun objetivo fuera del alcance autorizado llega a recibir
     una sola peticion. Si ``debe_cancelar`` indica cancelacion mientras Nuclei esta en
     curso, no se persiste ningun hallazgo (``AdaptadorNuclei.ejecutar`` lanza
-    ``ErrorEscaneoCancelado``).
+    ``ErrorEscaneoCancelado``). Se vuelve a comprobar ``debe_cancelar`` una segunda vez,
+    justo antes de la transaccion que persiste los hallazgos: una cancelacion detectada
+    entre el momento en que Nuclei termino y el momento en que se iba a guardar el
+    resultado tampoco debe dejar nada escrito (misma semantica todo-o-nada que
+    ``escanear_tcp``/``auditar_web``).
     """
     componentes = validar_objetivo_nuclei(objetivo)
     _verificar_alcance(base_datos, proyecto, componentes.host)
@@ -88,6 +96,12 @@ def ejecutar_nuclei(
 
     if not guardar_evidencia:
         return resultado, []
+
+    if debe_cancelar is not None and debe_cancelar():
+        raise ErrorEscaneoCancelado(
+            f"El analisis de Nuclei contra '{objetivo}' se cancelo antes de guardar los "
+            "resultados. No se guardo ningun hallazgo."
+        )
 
     filas = [
         (

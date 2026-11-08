@@ -263,7 +263,9 @@ async def test_panel_vulnerabilidades_marcar_falso_positivo_actualiza_tabla(monk
     # "nuclei -version" (que fallaria, ya que Nuclei no esta instalado en esta maquina).
     monkeypatch.setattr(AdaptadorNuclei, "obtener_version", lambda self: "v0.0.0-prueba")
 
-    def _ejecutar_binario_falso(self, argumentos, *, tiempo_limite, debe_cancelar=None):
+    def _ejecutar_binario_falso(
+        self, argumentos, *, tiempo_limite, debe_cancelar=None, variables_entorno=None
+    ):
         if argumentos == ["-h"]:
             return ResultadoProceso(
                 codigo_salida=0, stdout=ayuda, stderr="", agotado_por_tiempo=False

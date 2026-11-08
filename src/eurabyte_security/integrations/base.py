@@ -9,6 +9,7 @@ construir su propio comando y de interpretar su propia salida.
 
 from __future__ import annotations
 
+import os
 import shutil
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -19,6 +20,15 @@ from eurabyte_security.core.errores import ErrorHerramientaNoDisponible
 from eurabyte_security.integrations.proceso import ResultadoProceso, ejecutar_proceso
 
 TIEMPO_LIMITE_VERSION = 5.0
+
+# En Windows, shutil.which() antepone el directorio de trabajo actual a la
+# busqueda en PATH salvo que esta variable este definida (asi lo documenta
+# CPython: internamente llama a la API de Windows NeedCurrentDirectoryForExePath,
+# que respeta esta variable). Sin esto, alguien podria colocar un ejecutable
+# malicioso con el mismo nombre ("nmap.exe", etc.) en el directorio desde el
+# que se ejecuta AST y que se use ese en vez del binario real instalado en el
+# sistema ("binary planting"). No tiene efecto en Linux/macOS.
+os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,34 +50,49 @@ class AdaptadorExterno(ABC):
     argumentos_version: tuple[str, ...] = ("--version",)
 
     def ruta_binario(self) -> str | None:
+        """Resuelve la ruta absoluta del binario (o ``None`` si no esta instalado).
+
+        Se resuelve una sola vez por llamada y esa misma ruta absoluta es la
+        que se pasa a ``Popen`` en ``_ejecutar_binario``/``obtener_version``:
+        nunca se le pide al propio proceso que vuelva a buscar el nombre
+        "pelado" del comando (eso dejaria la resolucion en manos del
+        mecanismo de busqueda del sistema operativo en el momento de
+        lanzar el proceso, en vez de en la que ya validamos aqui).
+        """
         return shutil.which(self.comando)
 
     def esta_instalado(self) -> bool:
         return self.ruta_binario() is not None
 
+    def _resolver_ruta_o_fallar(self) -> str:
+        ruta = self.ruta_binario()
+        if ruta is None:
+            raise ErrorHerramientaNoDisponible(self.mensaje_no_disponible())
+        return ruta
+
     def obtener_version(self) -> str | None:
         """Ejecuta ``<comando> <argumentos_version>`` y devuelve la primera linea util."""
-        if not self.esta_instalado():
+        ruta = self.ruta_binario()
+        if ruta is None:
             return None
         resultado = ejecutar_proceso(
-            [self.comando, *self.argumentos_version], tiempo_limite=TIEMPO_LIMITE_VERSION
+            [ruta, *self.argumentos_version], tiempo_limite=TIEMPO_LIMITE_VERSION
         )
         salida = (resultado.stdout or resultado.stderr or "").strip()
         return salida.splitlines()[0].strip() if salida else None
 
     def info(self) -> InfoHerramienta:
-        instalada = self.esta_instalado()
+        ruta = self.ruta_binario()
         return InfoHerramienta(
             nombre=self.nombre,
             comando=self.comando,
-            instalada=instalada,
-            ruta=self.ruta_binario(),
-            version=self.obtener_version() if instalada else None,
+            instalada=ruta is not None,
+            ruta=ruta,
+            version=self.obtener_version() if ruta is not None else None,
         )
 
     def requerir_instalada(self) -> None:
-        if not self.esta_instalado():
-            raise ErrorHerramientaNoDisponible(self.mensaje_no_disponible())
+        self._resolver_ruta_o_fallar()
 
     def mensaje_no_disponible(self) -> str:
         return (
@@ -82,11 +107,25 @@ class AdaptadorExterno(ABC):
         *,
         tiempo_limite: float,
         debe_cancelar: Callable[[], bool] | None = None,
+        variables_entorno: dict[str, str] | None = None,
     ) -> ResultadoProceso:
-        """Punto unico de ejecucion real del binario: sin shell, con limite de tiempo."""
-        self.requerir_instalada()
+        """Punto unico de ejecucion real del binario: sin shell, con limite de tiempo.
+
+        Usa la ruta absoluta ya resuelta por ``ruta_binario()`` (no el nombre
+        "pelado" del comando), para que no haya una segunda resolucion de
+        PATH independiente al lanzar el proceso. ``variables_entorno`` es
+        opcional: por defecto el proceso hereda el entorno del propio AST sin
+        cambios; un adaptador que necesite aislar la configuracion de la
+        herramienta de un perfil de usuario preexistente (ver
+        ``integrations/nuclei.py``) puede pasar un entorno propio ya
+        construido.
+        """
+        ruta = self._resolver_ruta_o_fallar()
         return ejecutar_proceso(
-            [self.comando, *argumentos], tiempo_limite=tiempo_limite, debe_cancelar=debe_cancelar
+            [ruta, *argumentos],
+            tiempo_limite=tiempo_limite,
+            debe_cancelar=debe_cancelar,
+            variables_entorno=variables_entorno,
         )
 
     @abstractmethod
