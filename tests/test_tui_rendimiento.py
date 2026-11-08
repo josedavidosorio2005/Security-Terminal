@@ -103,8 +103,18 @@ async def test_cambiar_a_herramientas_no_bloquea_aunque_la_deteccion_tarde(monke
 async def test_arranque_de_la_app_no_espera_la_deteccion_de_herramientas(monkeypatch):
     from eurabyte_security.ui.tui import app as modulo_app
 
+    # El retraso simulado es deliberadamente grande (3s) frente al umbral (2s): montar
+    # toda la app (parsear CSS, construir el DOM inicial...) ya tiene su propio costo
+    # base, variable segun la carga de la maquina -- en un runner de CI lento se ha
+    # observado hasta ~0.9s solo por eso. Un margen tan amplio entre el retraso
+    # simulado y el umbral evita falsos positivos por ruido de la maquina, mientras
+    # sigue detectando con claridad un bloqueo real (que haria 'duracion_montaje' se
+    # acercara a los 3s completos, muy por encima del umbral).
+    RETRASO_SIMULADO_SEGUNDOS = 3.0
+    UMBRAL_MONTAJE_SEGUNDOS = 2.0
+
     def deteccion_lenta():
-        time.sleep(1.0)
+        time.sleep(RETRASO_SIMULADO_SEGUNDOS)
         return []
 
     monkeypatch.setattr(modulo_app, "detectar_herramientas", deteccion_lenta)
@@ -113,12 +123,7 @@ async def test_arranque_de_la_app_no_espera_la_deteccion_de_herramientas(monkeyp
     t0 = time.perf_counter()
     async with app.run_test(size=(120, 35)) as pilot:
         duracion_montaje = time.perf_counter() - t0
-        # Umbral mas laxo que UMBRAL_SIN_BLOQUEO_SEGUNDOS a proposito: montar toda la
-        # app (parsear CSS, construir el DOM inicial...) ya tiene su propio costo base,
-        # variable segun la carga de la maquina. La señal real de un bloqueo seria que
-        # 'duracion_montaje' se acerque al segundo completo del 'time.sleep(1.0)'
-        # simulado; un margen de 0.9s sigue siendo muy inferior a eso.
-        assert duracion_montaje < 0.9, (
+        assert duracion_montaje < UMBRAL_MONTAJE_SEGUNDOS, (
             f"Montar la app tardo {duracion_montaje:.2f}s: la deteccion inicial de "
             "herramientas deberia correr en un worker, no bloquear 'on_mount'."
         )
