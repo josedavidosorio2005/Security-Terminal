@@ -52,9 +52,7 @@ async def test_navegacion_entre_secciones_cambia_el_panel_activo():
         assert app.query_one("#switcher-central", ContentSwitcher).current == "panel-proyectos"
 
 
-@pytest.mark.parametrize(
-    "id_panel", ["panel-modulos", "panel-vulnerabilidades", "panel-aprendizaje"]
-)
+@pytest.mark.parametrize("id_panel", ["panel-modulos", "panel-aprendizaje"])
 async def test_secciones_no_implementadas_muestran_proximamente(id_panel: str):
     app = AuraByteApp()
     async with app.run_test(size=(120, 40)) as pilot:
