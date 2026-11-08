@@ -41,7 +41,11 @@ src/eurabyte_security/
 │                    que AST invoque, sino un servicio HTTP que el usuario ya tiene
 │                    corriendo; la logica real vive en modules/vulnerability/zap.py.
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
-├── storage/        Repositorio SQLite (proyectos, alcances, resultados).
+├── commands/reconocimiento.py  Orquestador de reconocimiento automatico: encadena
+│                   core/objetivo.py + Nmap + auditoria web + Nuclei + ZAP reutilizando
+│                   las funciones de commands/*.py existentes (nunca las duplica).
+├── storage/        Repositorio SQLite (proyectos, alcances, resultados, sesiones de
+│                   reconocimiento).
 └── ui/
     ├── consola.py  Consola enriquecida (Rich) compartida por la CLI.
     ├── repl.py     Terminal interactiva de linea de comandos (`est interactivo`).
@@ -182,6 +186,52 @@ proxy. Esta integracion nunca usa `active scan`, `spider`, `ajaxSpider` ni fuzzi
 peticion que llega al objetivo es la que la propia API de ZAP hace a traves de
 `core/action/accessUrl` (`followRedirects=false`), que alimenta su analizador pasivo sin
 explorar nada mas. Ver [docs/OWASP_ZAP.md](OWASP_ZAP.md) para el detalle completo.
+
+## Reconocimiento automatico: orquestador (ejemplo: `est reconocimiento ejecutar`)
+
+`commands/reconocimiento.py:ejecutar_reconocimiento_automatico()` es el motor que
+permite escribir un objetivo UNA sola vez y que AST encadene automaticamente las
+integraciones ya existentes, en vez de que el usuario repita el mismo objetivo en cada
+panel/comando. No depende de Typer, Rich ni de ningun widget de Textual: es una
+funcion pura (CLI y TUI la reutilizaran exactamente igual, el mismo patron que
+`ejecutar_nmap`/`auditar_web`/`ejecutar_nuclei`/`ejecutar_zap_pasivo`).
+
+1. **Verificacion**: `core/objetivo.py:interpretar_entrada()` separa la entrada
+   (IPv4, dominio o URL) en sus partes, y `resolver_y_autorizar()` resuelve el
+   dominio (si lo es) una sola vez y fija la IP ya autorizada contra el alcance del
+   proyecto. A partir de aqui, **ninguna etapa posterior vuelve a resolver el
+   dominio**: todas reciben la IP fijada.
+2. **Puertos**: si Nmap esta instalado, `ejecutar_nmap()` (la misma funcion que usa
+   `est nmap descubrir`) se ejecuta contra la IP fijada con el perfil elegido
+   (`rapido`, `completo` o `personalizado`, ver `core/validation.py`). Si no esta
+   instalado, la etapa se marca "omitida" (nunca "fallida"): el reconocimiento sigue
+   con las etapas que no dependen de Nmap.
+3. **Servicios HTTP/HTTPS**: cada puerto abierto que Nmap reporto con un nombre de
+   servicio que sugiere web (o, en su defecto, uno de los puertos bien conocidos)
+   se convierte en un endpoint candidato; si la entrada original ya era una URL con
+   esquema explicito, ese endpoint se intenta siempre.
+4. **Auditoria web**: cada candidato se audita con `auditar_web()` (la misma funcion
+   de `est web auditar`); los que no responden como HTTP/HTTPS valido se descartan
+   sin detener el resto.
+5. **Nuclei** y **OWASP ZAP**: solo contra los endpoints que SI respondieron en el
+   paso anterior, reutilizando `ejecutar_nuclei()`/`ejecutar_zap_pasivo()` -- misma
+   logica de omision si la herramienta no esta instalada/disponible.
+6. **Informe**: `generar_reporte()` (el informe global ya existente, ver
+   [docs/COMANDOS.md](COMANDOS.md)) se genera al final, cubriendo todo lo que se
+   guardo durante la sesion.
+
+**Objetivo = dominio**: las etapas 4-5 se OMITEN explicitamente (con el motivo
+documentado en las limitaciones de la sesion). Ninguna herramienta HTTP de AST sabe
+hoy conservar el `Host`/SNI de un dominio mientras se conecta a una IP fijada por
+separado; auditar por numero de IP un host virtual podria mostrar contenido distinto
+al que el usuario pidio, asi que se prefiere omitir y documentarlo a mostrar un
+resultado que podria no corresponder al dominio real. Solo la etapa de puertos (que
+no depende de Host/SNI) se ejecuta igualmente.
+
+Cada sesion se persiste en la tabla `sesiones_reconocimiento` (`storage/database.py`):
+guarda el objetivo, el perfil, el estado de cada etapa (`pendiente`/`ejecutando`/
+`completada`/`omitida`/`fallida`/`cancelada`, nunca un porcentaje inventado) y las
+limitaciones encontradas, separadas por proyecto y por sesion.
 
 ## Texto seguro frente al marcado Rich
 

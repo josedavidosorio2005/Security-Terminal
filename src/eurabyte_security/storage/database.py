@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -10,7 +11,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from eurabyte_security.core.config import ruta_base_datos
-from eurabyte_security.core.errores import ErrorProyectoDuplicado, ErrorProyectoNoEncontrado
+from eurabyte_security.core.errores import (
+    ErrorProyectoDuplicado,
+    ErrorProyectoNoEncontrado,
+    ErrorSesionReconocimientoNoEncontrada,
+)
 
 ESQUEMA = """
 CREATE TABLE IF NOT EXISTS proyectos (
@@ -92,6 +97,22 @@ CREATE TABLE IF NOT EXISTS resultados_zap (
     referencia TEXT,
     estado_revision TEXT NOT NULL,
     creado_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sesiones_reconocimiento (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    objetivo_original TEXT NOT NULL,
+    nombre_host TEXT,
+    ip TEXT,
+    perfil TEXT NOT NULL,
+    estado_general TEXT NOT NULL,
+    etapas_json TEXT NOT NULL,
+    limitaciones_json TEXT NOT NULL,
+    ruta_informe_html TEXT,
+    ruta_informe_json TEXT,
+    creado_en TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL
 );
 """
 
@@ -302,6 +323,33 @@ def _normalizar_zap(r: ResultadoZAP) -> ResultadoUnificado:
         evidencia=r.evidencia, recomendacion=r.solucion, referencia=r.referencia,
         creado_en=r.creado_en,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SesionReconocimiento:
+    """Sesion de reconocimiento automatico (ver ``modules/reconocimiento/orquestador.py``).
+
+    ``etapas_json`` y ``limitaciones_json`` guardan listas de diccionarios/strings ya
+    serializadas (JSON): esta capa de almacenamiento no conoce ``EtapaReconocimiento``
+    ni ninguna otra clase de ``modules/`` -- ``storage/`` nunca depende de ``modules/``,
+    solo al reves -- por lo que recibe y devuelve datos primitivos ya serializados, y es
+    responsabilidad de quien llama (el orquestador) convertirlos desde/hacia sus propias
+    dataclasses.
+    """
+
+    id: int
+    proyecto_id: int
+    objetivo_original: str
+    nombre_host: str | None
+    ip: str | None
+    perfil: str
+    estado_general: str
+    etapas_json: str
+    limitaciones_json: str
+    ruta_informe_html: str | None
+    ruta_informe_json: str | None
+    creado_en: str
+    actualizado_en: str
 
 
 class BaseDatos:
@@ -826,3 +874,109 @@ class BaseDatos:
 
         combinados.sort(key=lambda r: r.creado_en, reverse=True)
         return combinados[:limite]
+
+    # -- Sesiones de reconocimiento automatico --------------------------
+    def crear_sesion_reconocimiento(
+        self, proyecto_id: int, objetivo_original: str, perfil: str
+    ) -> SesionReconocimiento:
+        ahora = _ahora()
+        with self._conectar() as conexion:
+            cursor = conexion.execute(
+                "INSERT INTO sesiones_reconocimiento (proyecto_id, objetivo_original, "
+                "nombre_host, ip, perfil, estado_general, etapas_json, limitaciones_json, "
+                "ruta_informe_html, ruta_informe_json, creado_en, actualizado_en) "
+                "VALUES (?, ?, NULL, NULL, ?, 'ejecutando', '[]', '[]', NULL, NULL, ?, ?)",
+                (proyecto_id, objetivo_original, perfil, ahora, ahora),
+            )
+            nuevo_id = cursor.lastrowid
+        return self.obtener_sesion_reconocimiento(nuevo_id)  # type: ignore[arg-type]
+
+    def actualizar_sesion_reconocimiento(
+        self,
+        id_: int,
+        *,
+        nombre_host: str | None = None,
+        ip: str | None = None,
+        estado_general: str | None = None,
+        etapas: list[dict] | None = None,
+        limitaciones: list[str] | None = None,
+        ruta_informe_html: str | None = None,
+        ruta_informe_json: str | None = None,
+    ) -> SesionReconocimiento:
+        """Actualiza los campos indicados de una sesion; el resto se conserva tal cual.
+
+        ``etapas`` y ``limitaciones`` son listas de datos primitivos (diccionarios y
+        strings respectivamente) que se serializan aqui a JSON: el llamador (el
+        orquestador) es quien convierte sus propias dataclasses antes de llamar a esto.
+        """
+        actual = self.obtener_sesion_reconocimiento(id_)
+        conexion_nombre_host = nombre_host if nombre_host is not None else actual.nombre_host
+        conexion_ip = ip if ip is not None else actual.ip
+        conexion_estado = estado_general if estado_general is not None else actual.estado_general
+        conexion_etapas_json = json.dumps(etapas) if etapas is not None else actual.etapas_json
+        conexion_limitaciones_json = (
+            json.dumps(limitaciones) if limitaciones is not None else actual.limitaciones_json
+        )
+        conexion_ruta_html = (
+            ruta_informe_html if ruta_informe_html is not None else actual.ruta_informe_html
+        )
+        conexion_ruta_json = (
+            ruta_informe_json if ruta_informe_json is not None else actual.ruta_informe_json
+        )
+        with self._conectar() as conexion:
+            conexion.execute(
+                "UPDATE sesiones_reconocimiento SET nombre_host = ?, ip = ?, "
+                "estado_general = ?, etapas_json = ?, limitaciones_json = ?, "
+                "ruta_informe_html = ?, ruta_informe_json = ?, actualizado_en = ? "
+                "WHERE id = ?",
+                (
+                    conexion_nombre_host,
+                    conexion_ip,
+                    conexion_estado,
+                    conexion_etapas_json,
+                    conexion_limitaciones_json,
+                    conexion_ruta_html,
+                    conexion_ruta_json,
+                    _ahora(),
+                    id_,
+                ),
+            )
+        return self.obtener_sesion_reconocimiento(id_)
+
+    def obtener_sesion_reconocimiento(self, id_: int) -> SesionReconocimiento:
+        with self._conectar() as conexion:
+            fila = conexion.execute(
+                "SELECT id, proyecto_id, objetivo_original, nombre_host, ip, perfil, "
+                "estado_general, etapas_json, limitaciones_json, ruta_informe_html, "
+                "ruta_informe_json, creado_en, actualizado_en "
+                "FROM sesiones_reconocimiento WHERE id = ?",
+                (id_,),
+            ).fetchone()
+        if fila is None:
+            raise ErrorSesionReconocimientoNoEncontrada(
+                f"No existe una sesion de reconocimiento con id {id_}."
+            )
+        return SesionReconocimiento(**fila)
+
+    def listar_sesiones_reconocimiento(
+        self, proyecto_id: int | None = None, limite: int = 50
+    ) -> list[SesionReconocimiento]:
+        columnas = (
+            "id, proyecto_id, objetivo_original, nombre_host, ip, perfil, estado_general, "
+            "etapas_json, limitaciones_json, ruta_informe_html, ruta_informe_json, "
+            "creado_en, actualizado_en"
+        )
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM sesiones_reconocimiento "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    f"SELECT {columnas} FROM sesiones_reconocimiento WHERE proyecto_id = ? "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [SesionReconocimiento(**fila) for fila in filas]
