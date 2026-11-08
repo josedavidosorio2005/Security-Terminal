@@ -178,6 +178,42 @@ auditar`). Configuracion mediante las variables de entorno `EST_ZAP_URL` (por de
 `http://127.0.0.1:8080`, siempre loopback) y `EST_ZAP_API_KEY` (opcional; nunca se muestra
 en pantalla, logs ni informes).
 
+## `est reconocimiento`
+
+Orquestador de reconocimiento automatico (Fase 3): escribe el objetivo (IPv4, dominio o
+URL) una sola vez y AST encadena automaticamente Nmap, deteccion de servicios
+HTTP/HTTPS, auditoria web, Nuclei y OWASP ZAP -- reutilizando exactamente los mismos
+comandos que ya existen (`est nmap`, `est web`, `est nuclei`, `est zap`), sin duplicar su
+logica. Detalle completo del flujo en [docs/ARQUITECTURA.md](ARQUITECTURA.md).
+
+```bash
+est reconocimiento ejecutar OBJETIVO [--perfil rapido|completo|personalizado] \
+    [--puertos ESPECIFICACION] [--proyecto NOMBRE] [--tiempo-limite-nmap 120]
+est reconocimiento sesiones [--proyecto NOMBRE] [--limite 20]
+est reconocimiento estado SESION_ID
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est reconocimiento ejecutar OBJETIVO` | Ejecuta el flujo completo contra un unico objetivo. |
+| `est reconocimiento sesiones` | Lista las sesiones guardadas de un proyecto. |
+| `est reconocimiento estado SESION_ID` | Muestra el detalle de etapas/limitaciones de una sesion. |
+
+`OBJETIVO` acepta una IPv4 (`127.0.0.1`), un dominio (`ejemplo.com`) o una URL completa
+(`https://ejemplo.com`, `http://127.0.0.1:8765`) -- ver `core/objetivo.py`. Si es un
+dominio, AST lo resuelve una sola vez y fija la IP autorizada para toda la sesion (nunca
+vuelve a resolverlo); las etapas de auditoria web, Nuclei y OWASP ZAP se **omiten** en ese
+caso (ver limitaciones en la salida del comando), porque ninguna herramienta HTTP de AST
+sabe hoy conservar el `Host`/SNI del dominio mientras se conecta a una IP fijada por
+separado.
+
+Cada etapa queda en uno de seis estados reales (nunca un porcentaje inventado):
+`pendiente`, `ejecutando`, `completada`, `omitida` (la herramienta no esta
+instalada/disponible), `fallida` o `cancelada`. Los resultados de cada etapa se guardan
+exactamente igual que si se hubieran ejecutado por separado (`est resultados`, `est nuclei
+resultados`, `est zap resultados`...), y el informe final es el mismo informe global de
+`est reporte generar`.
+
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,

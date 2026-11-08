@@ -61,3 +61,7 @@ class ErrorZAPNoDisponible(ErrorEST):
 
 class ErrorResolucionDNS(ErrorEST):
     """Un dominio no se pudo resolver, o se resolvio sin ninguna direccion IPv4 util."""
+
+
+class ErrorSesionReconocimientoNoEncontrada(ErrorEST):
+    """No existe una sesion de reconocimiento automatico con el id indicado."""

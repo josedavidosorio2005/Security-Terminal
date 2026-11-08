@@ -454,6 +454,53 @@ separados por comas), no sobre cuantos puertos puede cubrir un rango.
       como `1-65535` literal (nunca expandido).
 - [x] CI verificado en Windows y Linux.
 
+### Orquestador de reconocimiento automatico (motor, completado en este PR)
+
+Primer motor que permite introducir un objetivo una sola vez y que AST encadene
+automaticamente Nmap, deteccion de servicios HTTP/HTTPS, auditoria web, Nuclei y
+OWASP ZAP -- sin depender de Typer, Rich ni de ningun widget de Textual, para que
+la interfaz visual pueda reutilizarlo igual que ya hace con
+`ejecutar_nmap`/`auditar_web`/`ejecutar_nuclei`/`ejecutar_zap_pasivo`. Detalle
+completo del flujo en [docs/ARQUITECTURA.md](ARQUITECTURA.md) y de las garantias de
+seguridad en [docs/SEGURIDAD.md](SEGURIDAD.md) (puntos 19-20).
+
+- [x] `commands/reconocimiento.py:ejecutar_reconocimiento_automatico()`: interpreta
+      y resuelve el objetivo una sola vez (`core/objetivo.py`), ejecuta Nmap con el
+      perfil elegido, infiere que puertos abiertos son candidatos HTTP/HTTPS,
+      audita automaticamente los que respondan, y ejecuta Nuclei/ZAP solo contra
+      esos endpoints verificados -- reutilizando siempre la funcion existente de
+      cada herramienta (nunca duplica su persistencia, evidencia ni verificacion
+      de alcance).
+- [x] Cada etapa queda en uno de seis estados reales (`pendiente`, `ejecutando`,
+      `completada`, `omitida`, `fallida`, `cancelada`); nunca un porcentaje
+      inventado. Una herramienta ausente omite su etapa y el reconocimiento
+      continua con las demas.
+- [x] Nueva tabla `sesiones_reconocimiento` (aditiva, sin tocar ninguna existente):
+      persiste objetivo, perfil, IP fijada, estado de cada etapa y limitaciones,
+      separadas por proyecto y por sesion.
+- [x] Objetivo = dominio: las etapas de auditoria web/Nuclei/ZAP se omiten
+      explicitamente (ninguna herramienta HTTP de AST sabe hoy conservar el
+      Host/SNI de un dominio mientras se conecta a una IP fijada por separado); la
+      etapa de puertos si se ejecuta igual, sobre la IP ya autorizada.
+- [x] CLI: `est reconocimiento ejecutar|sesiones|estado`.
+- [x] Pruebas (`tests/test_reconocimiento_orquestador.py`, `tests/test_storage.py`):
+      flujo completo contra un servidor HTTP local real (nunca un objetivo remoto),
+      Nmap descubriendo un puerto y la auditoria web reutilizandolo automaticamente,
+      objetivo fuera de alcance, entrada invalida, dominio con DNS simulado
+      (omite web/Nuclei/ZAP, si escanea puertos), perfiles invalidos, herramienta
+      ausente que no detiene las demas etapas, cancelacion a mitad de Nmap (las
+      etapas completadas se conservan, las posteriores quedan pendientes), que el
+      dominio se resuelve una sola vez por ejecucion, sesiones de distintos
+      objetivos sin mezclarse, el informe global generado al final, y los comandos
+      CLI. Ninguna requiere Nmap, Nuclei ni ZAP instalados.
+- [x] CI verificado en Windows y Linux.
+
+**Pendiente** (siguiente iteracion): este motor todavia no tiene un panel visual
+dedicado -- el panel "Reconocimiento" actual sigue siendo el formulario manual de
+Nmap. Conectar la TUI (campo de entrada unica, selector de perfil, barra de estado
+por etapas, tabla de puertos/servicios, resumen de vulnerabilidades, acceso directo
+al panel "Vulnerabilidades") es la siguiente entrega.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

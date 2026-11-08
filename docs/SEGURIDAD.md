@@ -188,6 +188,22 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     en HTML activo ni en marcado Rich interpretado. La vista unificada y el informe global
     respetan la misma separacion por proyecto que el resto de AST (filtran siempre por
     `proyecto_id`) y no modifican ni amplian el alcance autorizado de ningun analisis.
+20. **El orquestador de reconocimiento automatico nunca ejecuta nada por su cuenta: solo
+    encadena las mismas funciones ya verificadas de cada integracion.**
+    `commands/reconocimiento.py:ejecutar_reconocimiento_automatico()` llama a
+    `ejecutar_nmap()`/`auditar_web()`/`ejecutar_nuclei()`/`ejecutar_zap_pasivo()` tal
+    cual existen hoy: cada una sigue haciendo su propia verificacion de alcance,
+    persistencia atomica y redaccion. El orquestador solo decide EN QUE ORDEN
+    llamarlas y con que objetivo (siempre la IP ya fijada por
+    `core/objetivo.py`, nunca el dominio original: ver el punto 19). Nunca activa
+    `-sV` de Nmap, `active scan`/`spider`/`fuzzing` de ZAP, ni plantillas de Nuclei
+    fuera del catalogo aprobado -- las mismas restricciones que cada integracion ya
+    tenia por su cuenta se aplican exactamente igual dentro del orquestador. Si el
+    objetivo es un dominio, las etapas de auditoria web/Nuclei/ZAP se omiten en vez
+    de arriesgarse a auditar un host virtual distinto al que el usuario pidio (ver
+    el punto 19). Cada sesion queda registrada con sus propias etapas y
+    limitaciones (`storage/database.py:sesiones_reconocimiento`), separadas por
+    proyecto: nunca mezcla los resultados de dos sesiones distintas.
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 
