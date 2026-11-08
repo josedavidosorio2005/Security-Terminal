@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
-from textual.widgets import OptionList, Static
+from textual.widgets import Button, OptionList, Static
 from textual.widgets.option_list import Option
 
 from eurabyte_security import __version__
@@ -40,11 +40,21 @@ class Encabezado(Horizontal):
         yield Static(f"v{__version__}", id="encabezado-version", classes="dato")
         yield Static("", id="encabezado-proyecto", classes="dato")
         yield Static("", id="encabezado-so", classes="dato")
+        yield Button(
+            "Info >>",
+            id="encabezado-info-toggle",
+            classes="boton-info",
+        )
 
     def actualizar(self, estado: EstadoAST) -> None:
         proyecto = estado.proyecto_activo or "(sin proyecto activo)"
         self.query_one("#encabezado-proyecto", Static).update(f" | Proyecto: {proyecto} ")
         self.query_one("#encabezado-so", Static).update(f" | {estado.sistema_operativo} ")
+
+    def actualizar_boton_info(self, visible: bool) -> None:
+        """Refleja en el boton si el panel derecho esta visible o plegado."""
+        boton = self.query_one("#encabezado-info-toggle", Button)
+        boton.label = "Info <<" if visible else "Info >>"
 
 
 class BarraLateral(OptionList):

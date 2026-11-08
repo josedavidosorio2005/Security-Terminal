@@ -18,13 +18,21 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 - **Barra superior**: logo, nombre del producto, version, proyecto activo y sistema operativo.
   El logo es un escudo azul/cian con un simbolo de terminal (`>_`) dentro, sin mascotas ni
   robots. Mientras no exista el recurso grafico oficial, se muestra como texto ASCII (ver
-  `eurabyte_security/marca.py`), compatible con cualquier terminal de Windows o Linux.
-- **Barra lateral izquierda**: navegacion entre las 14 secciones (ver tabla abajo).
+  `eurabyte_security/marca.py`), compatible con cualquier terminal de Windows o Linux. En
+  terminales angostas (menos de 90 columnas) se oculta primero la version y el sistema
+  operativo, conservando siempre visible el nombre y el proyecto activo.
+- **Barra lateral izquierda**: navegacion entre las 14 secciones (ver tabla abajo). Se compacta
+  (ancho reducido) por debajo de 90 columnas para dejar mas espacio a la zona central.
 - **Zona central**: el contenido de la seccion seleccionada.
 - **Panel derecho**: ayuda contextual del comando que estes escribiendo en la Terminal, datos
-  del proyecto actual y el estado de las herramientas externas detectadas.
+  del proyecto actual y el estado de las herramientas externas detectadas. Es plegable a
+  demanda (boton "Info" en la barra superior, o la tecla `F2`), no solo una columna obligatoria:
+  se oculta automaticamente por debajo de 100 columnas, pero puede plegarse o desplegarse en
+  cualquier momento sin importar el ancho.
 - **Barra inferior**: proyecto activo, objetivos autorizados, resultados guardados y estado de
   la base de datos.
+
+![Encabezado adaptado a una terminal angosta](capturas/07-encabezado-responsivo.svg)
 
 ## Secciones de la barra lateral
 
@@ -76,6 +84,7 @@ Dentro de la seccion "Terminal" hay tres pestanas:
 |---|---|
 | `Tab` / `Shift+Tab` | Mover el foco entre campos (fuera de la Terminal). |
 | `↑` `↓` `Enter` | Navegar y seleccionar en la barra lateral y en las tablas. |
+| `F2` | Plegar o desplegar el panel contextual derecho (tambien disponible como boton "Info" en la barra superior). |
 | `Ctrl+Q` | Salir de la interfaz visual. |
 
 El raton funciona en toda la interfaz: clic en la barra lateral para navegar, clic en botones,
@@ -125,17 +134,23 @@ en [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md).
 
 ### Vulnerabilidades (Nuclei)
 
-Muestra si Nuclei esta instalado (y su version), el proyecto activo y el catalogo de
-plantillas aprobadas por AST (cada una con su severidad esperada y una descripcion corta):
-marca las que quieras ejecutar. Escribe el objetivo, un tiempo limite opcional y marca la
-casilla **"Confirmo que el objetivo esta autorizado"** -- el boton "Analizar" no hace nada
-sin esa confirmacion explicita, para que un clic accidental nunca dispare un analisis real.
-"Cancelar" detiene el proceso de Nuclei de verdad. Selecciona una fila de la tabla de
-hallazgos para ver su detalle completo (severidad, descripcion, evidencia saneada y
-recomendacion de mitigacion) y marcarla como "confirmado" o "falso positivo" -- como con
-cualquier escaner automatico, revisa la evidencia antes de confirmar un hallazgo. Igual que
-"Reconocimiento", rechaza objetivos fuera del alcance autorizado y no guarda nada si se
-cancela. Detalle completo (catalogo, limitaciones) en [docs/NUCLEI.md](NUCLEI.md).
+Muestra si Nuclei esta instalado (y su version) y el proyecto activo. El catalogo de
+plantillas aprobadas se presenta como una lista compacta (id, severidad esperada y nombre),
+sin la descripcion larga de cada una visible todo el tiempo: navega con las flechas o el
+raton para que su descripcion completa aparezca debajo, y marca su casilla (barra
+espaciadora o clic) para incluirla en el analisis. El boton "Seleccionar todas las
+aprobadas" marca el catalogo completo de una vez. Escribe el objetivo, un tiempo limite
+opcional y marca la casilla **"Confirmo que el objetivo esta autorizado"** -- el boton
+"Analizar" no hace nada sin esa confirmacion explicita, para que un clic accidental nunca
+dispare un analisis real. "Cancelar" detiene el proceso de Nuclei de verdad. Selecciona una
+fila de la tabla de hallazgos para ver su detalle completo (severidad, descripcion,
+evidencia saneada y recomendacion de mitigacion) y marcarla como "confirmado" o "falso
+positivo" -- como con cualquier escaner automatico, revisa la evidencia antes de confirmar
+un hallazgo. Igual que "Reconocimiento", rechaza objetivos fuera del alcance autorizado y no
+guarda nada si se cancela. Detalle completo (catalogo, limitaciones) en
+[docs/NUCLEI.md](NUCLEI.md).
+
+![Catalogo de plantillas compacto, con descripcion al resaltar una](capturas/08-vulnerabilidades-compacto.svg)
 
 ### OWASP ZAP
 
