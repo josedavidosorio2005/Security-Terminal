@@ -57,3 +57,7 @@ class ErrorAuditoriaWeb(ErrorEST):
 
 class ErrorZAPNoDisponible(ErrorEST):
     """La API de OWASP ZAP no responde en el endpoint configurado, o rechazo la API key."""
+
+
+class ErrorResolucionDNS(ErrorEST):
+    """Un dominio no se pudo resolver, o se resolvio sin ninguna direccion IPv4 util."""

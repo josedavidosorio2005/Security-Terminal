@@ -399,6 +399,44 @@ de la interfaz (Nmap, auditoria web, Redes no llaman a ninguna deteccion en su
 `refrescar()`); si aparece un nuevo caso, el mismo patron (`@work` + placeholder) es el
 que corresponde aplicar.
 
+### Entrada unica de objetivo: IP, dominio o URL (completado, motor sin integrar aun)
+
+Primer paso de "Reconocimiento automatico integrado": un modulo nuevo y aditivo
+(`core/objetivo.py`) que acepta una IPv4 literal, un dominio o una URL completa como
+un unico campo de entrada, con resolucion DNS y autorizacion sobre la IP resultante
+(nunca sobre el nombre). Ver el detalle completo de las salvaguardas en
+[docs/SEGURIDAD.md](SEGURIDAD.md) (punto 19).
+
+- [x] `interpretar_entrada()`: separa IPv4/dominio/URL en sus partes sin tocar la red.
+      Rechaza IPv6, credenciales embebidas, dominios mal formados y una ruta sin
+      esquema explicito (ambiguo).
+- [x] `resolver_dns()`: resuelve registros A via `socket.getaddrinfo` (delega en el
+      resolver del sistema operativo, no implementa uno propio).
+- [x] `resolver_y_autorizar()`: si el objetivo es un dominio, lo resuelve UNA sola vez
+      y exige que al menos una direccion este dentro del alcance YA registrado del
+      proyecto (listas de redes IPv4/CIDR, sin cambios); fija esa direccion en
+      `ObjetivoResuelto.ip` para evitar DNS rebinding, y nunca amplia el analisis a
+      otra direccion aunque comparta el mismo dominio.
+- [x] `core/validation.py` (`validar_objetivo`, `validar_url_web`,
+      `validar_objetivo_nuclei`) **no se modifico**: sigue aceptando solo IPv4 para
+      cada comando que ya existia; este modulo es una capacidad adicional, no un
+      reemplazo.
+- [x] Pruebas con DNS simulado (`tests/test_objetivo.py`, 26 casos): las cuatro formas
+      de entrada, rechazos (IPv6, credenciales, ruta sin esquema, dominio mal
+      formado), resolucion con una/varias direcciones, autorizacion parcial (solo una
+      de varias direcciones en el alcance), ninguna direccion autorizada, y que el
+      dominio se resuelve exactamente una vez por llamada.
+- [x] CI verificado en Windows y Linux.
+
+**Pendiente** (siguiente iteracion): este modulo todavia no esta conectado a ningun
+comando ni panel -- ni `escanear tcp`/`nmap`/`web`/`nuclei`/`zap` lo usan, ni existe
+todavia un campo de entrada unica en la interfaz visual. Esa integracion es el
+orquestador de reconocimiento automatico (motor compartido CLI/TUI, deteccion de
+servicios HTTP/HTTPS, encadenamiento con auditoria web/Nuclei/ZAP) mas el rediseno de
+los paneles "Reconocimiento" y "Vulnerabilidades", y queda fuera del alcance de este
+incremento por su tamano y sensibilidad de seguridad (es, en esencia, construir el
+flujo que usara esta pieza en produccion).
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.
