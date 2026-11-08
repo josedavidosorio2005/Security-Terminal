@@ -18,6 +18,14 @@ _ARBOL_COMPLETADO = {
     "proyecto": {"crear": None, "listar": None, "usar": None},
     "alcance": {"agregar": None, "listar": None},
     "escanear": {"tcp": None},
+    "nuclei": {
+        "version": None,
+        "plantillas": None,
+        "analizar": None,
+        "resultados": None,
+        "revisar": None,
+        "reporte": None,
+    },
     "explicar": {
         tema: None
         for tema in (
@@ -28,6 +36,7 @@ _ARBOL_COMPLETADO = {
             "resultados",
             "reporte",
             "interactivo",
+            "nuclei",
         )
     },
     "resultados": None,

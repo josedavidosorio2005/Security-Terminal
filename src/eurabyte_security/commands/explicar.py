@@ -68,6 +68,29 @@ EXPLICACIONES: dict[str, str] = {
         "- Cada analisis guarda su salida XML original como evidencia en el\n"
         "  directorio de datos de AST (carpeta 'evidencias/nmap')."
     ),
+    "nuclei": (
+        "Integracion con Nuclei (Fase 3, Paso 4): solo plantillas HTTP de bajo\n"
+        "impacto, elegidas de un catalogo aprobado por AST (nunca una ruta de\n"
+        "plantilla arbitraria). Cada plantilla es una unica peticion GET de\n"
+        "solo lectura; nunca sigue redirecciones ni usa Interactsh/OAST. Solo\n"
+        "funciona contra objetivos ya autorizados en el alcance del proyecto.\n"
+        "Requiere tener Nuclei instalado.\n\n"
+        "est nuclei version\n"
+        "est nuclei plantillas\n"
+        "est nuclei analizar OBJETIVO --plantillas id1,id2 [--proyecto NOMBRE]\n"
+        "    [--tiempo-limite 60]\n"
+        "est nuclei resultados [--proyecto NOMBRE] [--limite 50]\n"
+        "est nuclei revisar ID --estado nuevo|confirmado|falso_positivo\n"
+        "est nuclei reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]\n\n"
+        "- OBJETIVO: IP, o esquema://IP[:puerto] (sin ruta: las rutas las define\n"
+        "  cada plantilla, nunca el usuario).\n"
+        "- --plantillas: identificadores del catalogo aprobado (ver\n"
+        "  'est nuclei plantillas'); no se acepta ninguna otra plantilla.\n"
+        "- --tiempo-limite: segundos maximos de espera para Nuclei (5 a 120).\n"
+        "- Ningun hallazgo guarda el request/response completo de Nuclei ni\n"
+        "  cookies de sesion: solo un resumen saneado (plantilla, severidad,\n"
+        "  descripcion y donde se detecto)."
+    ),
 }
 
 def explicar_cmd(

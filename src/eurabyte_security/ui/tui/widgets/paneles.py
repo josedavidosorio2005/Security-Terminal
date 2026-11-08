@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from textual import on, work
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Checkbox, DataTable, Input, Select, Static
+from textual.widgets import Button, Checkbox, DataTable, Input, Select, SelectionList, Static
 from textual.worker import get_current_worker
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
@@ -12,12 +14,14 @@ from eurabyte_security.commands.alcance import agregar_alcance, listar_alcance
 from eurabyte_security.commands.escanear import escanear_tcp
 from eurabyte_security.commands.explicar import EXPLICACIONES
 from eurabyte_security.commands.nmap import ejecutar_nmap
+from eurabyte_security.commands.nuclei import ejecutar_nuclei
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
 from eurabyte_security.integrations.deteccion import detectar_herramientas
+from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
 from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
 from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
@@ -436,6 +440,229 @@ class PanelReconocimiento(Vertical):
             mensaje += f" Evidencia: {texto_seguro(ruta_xml)}"
         self._mensaje(mensaje, "ast-exito")
         self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+
+class PanelVulnerabilidades(VerticalScroll):
+    """Nuclei: plantillas HTTP aprobadas de bajo impacto, dentro del alcance autorizado.
+
+    Misma politica de cancelacion y de secuencia que ``PanelReconocimiento``: cada
+    analisis tiene su propio numero de secuencia (solo el mas reciente puede actualizar
+    la tabla) y la cancelacion detiene el proceso de Nuclei de verdad sin guardar ningun
+    hallazgo parcial (ver ``commands/nuclei.py``). El boton "Analizar" exige, ademas,
+    haber marcado la casilla de confirmacion: es la "confirmacion antes de iniciar" que
+    pide el panel, para que un clic accidental no dispare un analisis real.
+    """
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._worker = None
+        self._secuencia = 0
+        self._guardados: list = []
+        self._id_seleccionado: int | None = None
+
+    def compose(self):
+        yield Static("Vulnerabilidades (Nuclei)", classes="titulo-panel")
+        yield Static("", id="nuclei-deteccion", classes="ast-tenue")
+        yield Static("", id="nuclei-proyecto", classes="ast-tenue")
+        yield Static(
+            "\n".join(
+                f"- {info.id_} ({info.severidad_esperada}): {info.descripcion}"
+                for info in PLANTILLAS_APROBADAS.values()
+            ),
+            classes="ast-caja",
+        )
+        yield SelectionList(
+            *[
+                (f"{info.id_} - {info.nombre}", info.id_)
+                for info in PLANTILLAS_APROBADAS.values()
+            ],
+            id="nuclei-plantillas",
+        )
+        yield Input(
+            placeholder="Objetivo autorizado (IP o esquema://IP:puerto)", id="nuclei-objetivo"
+        )
+        with Horizontal():
+            yield Input(placeholder="Tiempo limite en segundos (60)", id="nuclei-tiempo-limite")
+            yield Checkbox("Confirmo que el objetivo esta autorizado", id="nuclei-confirmar")
+        with Horizontal():
+            yield Button("Analizar", id="nuclei-analizar", variant="primary")
+            yield Button("Cancelar", id="nuclei-cancelar")
+        yield Static("", id="nuclei-mensaje", classes="ast-tenue")
+        yield DataTable(id="nuclei-tabla", cursor_type="row")
+        yield Static("", id="nuclei-detalle", classes="ast-caja")
+        with Horizontal():
+            yield Button("Marcar confirmado", id="nuclei-marcar-confirmado")
+            yield Button("Marcar falso positivo", id="nuclei-marcar-falso-positivo")
+
+    def on_mount(self) -> None:
+        self.query_one("#nuclei-tabla", DataTable).add_columns(
+            "Id", "Plantilla", "Hallazgo", "Severidad", "Revision"
+        )
+        self.refrescar()
+
+    def refrescar(self) -> None:
+        self._refrescar_deteccion()
+        self._refrescar_proyecto()
+
+    def _refrescar_deteccion(self) -> None:
+        info = AdaptadorNuclei().info()
+        estado = "Instalada" if info.instalada else "No instalada"
+        version = f" (version {texto_seguro(info.version)})" if info.version else ""
+        self.query_one("#nuclei-deteccion", Static).update(f"Nuclei: {estado}{version}")
+
+    def _refrescar_proyecto(self) -> None:
+        etiqueta = self.query_one("#nuclei-proyecto", Static)
+        try:
+            proyecto = resolver_proyecto(obtener_base_datos(), None)
+            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+        except ErrorEST as exc:
+            etiqueta.update(texto_seguro(exc))
+
+    def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#nuclei-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    @on(Button.Pressed, "#nuclei-analizar")
+    def _iniciar(self, _evento: Button.Pressed) -> None:
+        self._refrescar_proyecto()
+        objetivo = self.query_one("#nuclei-objetivo", Input).value.strip()
+        plantillas_ids = list(self.query_one("#nuclei-plantillas", SelectionList).selected)
+        tiempo_limite_txt = self.query_one("#nuclei-tiempo-limite", Input).value.strip()
+        confirmado = self.query_one("#nuclei-confirmar", Checkbox).value
+
+        if not plantillas_ids:
+            self._mensaje("Selecciona al menos una plantilla aprobada.", "ast-aviso")
+            return
+        if not confirmado:
+            self._mensaje(
+                "Confirma que el objetivo esta autorizado (casilla) antes de analizar.",
+                "ast-aviso",
+            )
+            return
+        try:
+            tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 60.0
+        except ValueError:
+            self._mensaje("El tiempo limite debe ser numerico.", "ast-error")
+            return
+
+        self._secuencia += 1
+        secuencia = self._secuencia
+        self._id_seleccionado = None
+        self.query_one("#nuclei-detalle", Static).update("")
+
+        self._mensaje("Ejecutando Nuclei... (puedes cancelar mientras se ejecuta)", "ast-aviso")
+        self._worker = self._analizar(secuencia, objetivo, plantillas_ids, tiempo_limite)
+
+    @on(Button.Pressed, "#nuclei-cancelar")
+    def _cancelar(self, _evento: Button.Pressed) -> None:
+        if self._worker is not None and self._worker.is_running:
+            self._worker.cancel()
+            self._mensaje(
+                "Cancelacion solicitada: no se guardara ningun hallazgo de este "
+                "analisis (el proceso de Nuclei se detiene).",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="nuclei-analisis", exit_on_error=False)
+    def _analizar(
+        self, secuencia: int, objetivo: str, plantillas_ids: list[str], tiempo_limite: float
+    ) -> None:
+        worker = get_current_worker()
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            _resultado, guardados = ejecutar_nuclei(
+                base_datos,
+                proyecto,
+                objetivo,
+                plantillas_ids,
+                tiempo_limite=tiempo_limite,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEscaneoCancelado as exc:
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-aviso")
+            return
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultados, secuencia, guardados)
+
+    def _mostrar_resultados(self, secuencia: int, guardados: list) -> None:
+        if secuencia != self._secuencia:
+            return
+        self._guardados = guardados
+        self._redibujar_tabla()
+        self._mensaje(f"Analisis completo: {len(guardados)} hallazgos.", "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    def _redibujar_tabla(self) -> None:
+        tabla = self.query_one("#nuclei-tabla", DataTable)
+        tabla.clear()
+        for g in self._guardados:
+            tabla.add_row(
+                str(g.id), texto_seguro(g.plantilla_id), texto_seguro(g.nombre_hallazgo),
+                texto_seguro(g.severidad), texto_seguro(g.estado_revision), key=str(g.id),
+            )
+
+    @on(DataTable.RowSelected, "#nuclei-tabla")
+    def _fila_seleccionada(self, event: DataTable.RowSelected) -> None:
+        if event.row_key.value is None:
+            return
+        try:
+            id_seleccionado = int(event.row_key.value)
+        except ValueError:
+            return
+        hallazgo = next((g for g in self._guardados if g.id == id_seleccionado), None)
+        if hallazgo is None:
+            return
+        self._id_seleccionado = id_seleccionado
+        info = PLANTILLAS_APROBADAS.get(hallazgo.plantilla_id)
+        recomendacion = info.recomendacion if info is not None else "-"
+        self.query_one("#nuclei-detalle", Static).update(
+            f"[bold]{texto_seguro(hallazgo.nombre_hallazgo)}[/bold]\n"
+            f"Severidad: {texto_seguro(hallazgo.severidad)}\n"
+            f"Descripcion: {texto_seguro(hallazgo.descripcion)}\n"
+            f"Evidencia: {texto_seguro(hallazgo.evidencia or '-')}\n"
+            f"Recomendacion: {texto_seguro(recomendacion)}\n"
+            f"Estado de revision: {texto_seguro(hallazgo.estado_revision)} (revisa la "
+            "evidencia antes de confirmar: podria ser un falso positivo)."
+        )
+
+    def _marcar_revision(self, estado: str) -> None:
+        if self._id_seleccionado is None:
+            self._mensaje("Selecciona primero un hallazgo en la tabla.", "ast-aviso")
+            return
+        try:
+            obtener_base_datos().actualizar_estado_revision_nuclei(self._id_seleccionado, estado)
+        except ErrorEST as exc:
+            self._mensaje(texto_seguro(exc), "ast-error")
+            return
+        self._guardados = [
+            g if g.id != self._id_seleccionado else replace(g, estado_revision=estado)
+            for g in self._guardados
+        ]
+        self._redibujar_tabla()
+        self._mensaje(f"Hallazgo {self._id_seleccionado} marcado como '{estado}'.", "ast-exito")
+
+    @on(Button.Pressed, "#nuclei-marcar-confirmado")
+    def _marcar_confirmado(self, _evento: Button.Pressed) -> None:
+        self._marcar_revision("confirmado")
+
+    @on(Button.Pressed, "#nuclei-marcar-falso-positivo")
+    def _marcar_falso_positivo(self, _evento: Button.Pressed) -> None:
+        self._marcar_revision("falso_positivo")
 
 
 class PanelResultados(Vertical):

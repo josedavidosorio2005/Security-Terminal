@@ -15,14 +15,14 @@ from dataclasses import dataclass
 
 from eurabyte_security.integrations.base import AdaptadorExterno
 from eurabyte_security.integrations.nmap import AdaptadorNmap
+from eurabyte_security.integrations.nuclei import AdaptadorNuclei
 
 HERRAMIENTAS_SOLO_DETECCION: tuple[tuple[str, str], ...] = (
-    ("Nuclei", "nuclei"),
     ("OWASP ZAP", "zap.sh"),
     ("tshark", "tshark"),
 )
 
-_ADAPTADORES: tuple[AdaptadorExterno, ...] = (AdaptadorNmap(),)
+_ADAPTADORES: tuple[AdaptadorExterno, ...] = (AdaptadorNmap(), AdaptadorNuclei())
 
 
 @dataclass(frozen=True, slots=True)

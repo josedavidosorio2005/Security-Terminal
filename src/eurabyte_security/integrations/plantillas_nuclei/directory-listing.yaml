@@ -1,0 +1,27 @@
+id: directory-listing
+
+info:
+  name: Listado de directorio habilitado
+  author: AURABYTE
+  severity: low
+  description: >
+    Comprueba si el servidor devuelve un listado de archivos (en vez de una
+    pagina de indice o un error) en la raiz del sitio. Una sola peticion
+    GET de solo lectura, sin seguir redirecciones.
+  tags: ast-bajo-impacto,misconfig
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "Index of /"
+          - "Directory Listing For"
+        condition: or
