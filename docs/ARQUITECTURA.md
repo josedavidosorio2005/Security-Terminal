@@ -215,4 +215,9 @@ Toda la informacion vive en SQLite, en un unico archivo bajo el directorio de da
 (`~/.eurabyte_security/est.db` por defecto, o `$EST_HOME/est.db` si se define esa variable de
 entorno). El esquema tiene las tablas `proyectos`, `alcances`, `resultados` (escaneo TCP),
 `resultados_nmap`, `resultados_web`, `resultados_nuclei` y `resultados_zap` (ver
-`storage/database.py`).
+`storage/database.py`). Cada herramienta sigue siendo propietaria de su propia tabla y de su
+propio metodo `agregar_resultados*`/`listar_resultados*`: `BaseDatos.listar_resultados_unificados()`
+no crea ninguna tabla nueva, es una proyeccion de solo lectura que combina las cinco en
+`ResultadoUnificado` (ver `commands/resultados.py` y `commands/reporte.py`, que la usan para
+`est resultados` y el informe global de `est reporte generar` respectivamente, documentado en
+[docs/COMANDOS.md](COMANDOS.md) y [docs/SEGURIDAD.md](SEGURIDAD.md)).

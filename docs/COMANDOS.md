@@ -181,15 +181,40 @@ est explicar tcp
 
 ## `est resultados`
 
-Muestra los resultados de escaneos guardados.
+Muestra los resultados y hallazgos guardados de un proyecto, combinando las **cinco**
+herramientas (`escanear tcp`, `nmap`, `web`, `nuclei`, `zap`) en una sola vista. Es una
+consulta de solo lectura: reutiliza las tablas de cada herramienta sin modificarlas.
 
 ```bash
-est resultados [--proyecto NOMBRE] [--limite 50]
+est resultados [--proyecto NOMBRE] [--fuente tcp,nmap,web,nuclei,zap] \
+    [--severidad alta|media|baja|info] [--estado ESTADO] \
+    [--desde FECHA_ISO] [--hasta FECHA_ISO] [--limite 50]
 ```
+
+| Parametro | Descripcion |
+|---|---|
+| `--fuente` | Una o varias herramientas, separadas por comas (por defecto, todas). |
+| `--severidad` | Agrupa severidades equivalentes entre herramientas (`alta` incluye `high`/`critical`, etc.; ver [docs/SEGURIDAD.md](SEGURIDAD.md)). No aplica a `tcp`/`nmap`: ver la nota mas abajo. |
+| `--estado` | Compara contra el estado del resultado (`abierto`/`cerrado`/`error`) o, para Nuclei/ZAP, contra el estado de revision (`nuevo`/`confirmado`/`falso_positivo`). |
+| `--desde` / `--hasta` | Filtran por fecha/hora (ISO-8601) de creacion del registro, inclusive. |
+
+**Resultados de red vs. hallazgos de vulnerabilidad**: `tcp` y `nmap` reportan
+conectividad/puertos (abierto, cerrado, filtrado) y **nunca** llevan una severidad -- un
+puerto abierto no es, por si mismo, una vulnerabilidad. `web`, `nuclei` y `zap` reportan
+hallazgos de auditoria/vulnerabilidad, con severidad/riesgo propio de cada herramienta.
+AST nunca fusiona ni deduplica hallazgos de distintas herramientas por compartir titulo:
+cada fila proviene de un unico registro de una unica herramienta.
+
+Los comandos especificos de cada herramienta (`est nuclei resultados`, `est zap
+resultados`) siguen funcionando igual que antes, con su propio detalle completo
+(plantilla/regla, evidencia, etc.) que esta vista unificada resume.
 
 ## `est reporte generar`
 
-Genera un informe a partir de los resultados guardados de un proyecto.
+Genera el informe **global** de la auditoria: combina las cinco herramientas en un unico
+HTML o JSON (portada, resumen ejecutivo, objetivos/alcance, resultados de red, hallazgos
+de vulnerabilidad ordenados por severidad, limitaciones tecnicas). Aplica su propia
+verificacion de redaccion antes de exportar (ver [docs/SEGURIDAD.md](SEGURIDAD.md)).
 
 ```bash
 est reporte generar --formato html|json [--proyecto NOMBRE] [--salida RUTA]
@@ -197,4 +222,6 @@ est reporte generar --formato html|json [--proyecto NOMBRE] [--salida RUTA]
 
 Si no se indica `--salida`, el informe se guarda en el directorio de datos de EST
 (`~/.eurabyte_security/reportes/`, o `$EST_HOME/reportes/`) con un nombre que incluye el
-proyecto y la fecha/hora.
+proyecto y la fecha/hora. Los informes especificos de cada herramienta (`est nuclei
+reporte`, `est zap reporte`, `est web reporte`) siguen disponibles sin cambios, para un
+detalle centrado en una sola herramienta.

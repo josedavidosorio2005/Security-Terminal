@@ -187,6 +187,123 @@ class ResultadoZAP:
     creado_en: str
 
 
+# Identificadores estables de las cinco fuentes de resultados existentes. Se usan tanto
+# para filtrar la vista unificada (``BaseDatos.listar_resultados_unificados``) como para
+# que otras capas (CLI, informes) sepan que valores de '--fuente' son validos, sin tener
+# que repetir esta lista en cada modulo.
+FUENTES_RESULTADOS: tuple[str, ...] = ("tcp", "nmap", "web", "nuclei", "zap")
+
+# Agrupa severidades equivalentes de distintas herramientas SOLO para poder filtrar y
+# ordenar la vista unificada (p. ej. comparar 'alta' de la auditoria web con 'high' de
+# Nuclei o 'critical' de ZAP). Nunca se usa para reescribir el valor guardado en el
+# registro original de ninguna tabla: cada fuente conserva su propia escala tal cual la
+# reporto la herramienta.
+_GRUPOS_SEVERIDAD: dict[str, frozenset[str]] = {
+    "info": frozenset({"info", "informational"}),
+    "baja": frozenset({"baja", "low"}),
+    "media": frozenset({"media", "medium"}),
+    "alta": frozenset({"alta", "high", "critical"}),
+}
+
+
+def agrupar_severidad(valor: str | None) -> str | None:
+    """Normaliza una severidad/riesgo propio de una herramienta a un grupo comun.
+
+    Devuelve ``None`` sin tocarlo (una severidad ausente sigue ausente: nunca se inventa
+    una). Un valor que no coincide con ningun grupo conocido se devuelve en minusculas,
+    tal cual, para que todavia se pueda comparar por igualdad.
+    """
+    if valor is None:
+        return None
+    valor_bajo = valor.lower()
+    for grupo, miembros in _GRUPOS_SEVERIDAD.items():
+        if valor_bajo in miembros:
+            return grupo
+    return valor_bajo
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoUnificado:
+    """Vista normalizada de un resultado/hallazgo, cualquiera sea su herramienta de origen.
+
+    No sustituye a las tablas por herramienta (``resultados``, ``resultados_nmap``,
+    ``resultados_web``, ``resultados_nuclei``, ``resultados_zap``): es una proyeccion de
+    solo lectura construida a partir de ellas (ver
+    ``BaseDatos.listar_resultados_unificados``), que conserva ``fuente`` + ``id_origen``
+    para poder rastrear cada fila hasta su registro original.
+
+    ``severidad`` es intencionalmente ``None`` para 'tcp' y 'nmap': un puerto abierto o
+    cerrado es informacion de conectividad/reconocimiento, no una vulnerabilidad, y AST
+    nunca le asigna una severidad ficticia. ``estado`` (abierto/cerrado/error para
+    tcp/nmap, o el estado de un hallazgo de auditoria web) y ``estado_revision``
+    (nuevo/confirmado/falso_positivo, solo presente en Nuclei y ZAP) son conceptos
+    distintos que nunca se mezclan en un unico campo.
+    """
+
+    fuente: str
+    id_origen: int
+    proyecto_id: int
+    objetivo: str
+    tipo: str
+    nombre: str
+    descripcion: str | None
+    severidad: str | None
+    estado: str | None
+    estado_revision: str | None
+    evidencia: str | None
+    recomendacion: str | None
+    referencia: str | None
+    creado_en: str
+
+
+def _normalizar_tcp(r: Resultado) -> ResultadoUnificado:
+    return ResultadoUnificado(
+        fuente="tcp", id_origen=r.id, proyecto_id=r.proyecto_id, objetivo=r.objetivo,
+        tipo="puerto", nombre=f"Puerto {r.puerto}", descripcion=None,
+        severidad=None, estado=r.estado, estado_revision=None,
+        evidencia=None, recomendacion=None, referencia=None, creado_en=r.creado_en,
+    )
+
+
+def _normalizar_nmap(r: ResultadoNmap) -> ResultadoUnificado:
+    detalle = " ".join(parte for parte in (r.servicio, r.version) if parte) or None
+    return ResultadoUnificado(
+        fuente="nmap", id_origen=r.id, proyecto_id=r.proyecto_id, objetivo=r.objetivo,
+        tipo="puerto", nombre=f"Puerto {r.puerto}/{r.protocolo}", descripcion=detalle,
+        severidad=None, estado=r.estado, estado_revision=None,
+        evidencia=None, recomendacion=None, referencia=None, creado_en=r.creado_en,
+    )
+
+
+def _normalizar_web(r: ResultadoWeb) -> ResultadoUnificado:
+    return ResultadoUnificado(
+        fuente="web", id_origen=r.id, proyecto_id=r.proyecto_id, objetivo=r.objetivo,
+        tipo=r.categoria, nombre=r.nombre_hallazgo, descripcion=None,
+        severidad=r.severidad, estado=r.estado, estado_revision=None,
+        evidencia=r.valor_detectado, recomendacion=r.recomendacion, referencia=r.referencia,
+        creado_en=r.creado_en,
+    )
+
+
+def _normalizar_nuclei(r: ResultadoNuclei) -> ResultadoUnificado:
+    return ResultadoUnificado(
+        fuente="nuclei", id_origen=r.id, proyecto_id=r.proyecto_id, objetivo=r.objetivo,
+        tipo=f"plantilla:{r.plantilla_id}", nombre=r.nombre_hallazgo, descripcion=r.descripcion,
+        severidad=r.severidad, estado=None, estado_revision=r.estado_revision,
+        evidencia=r.evidencia, recomendacion=None, referencia=None, creado_en=r.creado_en,
+    )
+
+
+def _normalizar_zap(r: ResultadoZAP) -> ResultadoUnificado:
+    return ResultadoUnificado(
+        fuente="zap", id_origen=r.id, proyecto_id=r.proyecto_id, objetivo=r.objetivo,
+        tipo=f"regla:{r.plugin_id}", nombre=r.nombre_hallazgo, descripcion=r.descripcion,
+        severidad=r.riesgo, estado=None, estado_revision=r.estado_revision,
+        evidencia=r.evidencia, recomendacion=r.solucion, referencia=r.referencia,
+        creado_en=r.creado_en,
+    )
+
+
 class BaseDatos:
     """Repositorio de acceso a los datos persistentes de EST."""
 
@@ -625,3 +742,87 @@ class BaseDatos:
                 "UPDATE resultados_zap SET estado_revision = ? WHERE id = ?",
                 (estado_revision, id_),
             )
+
+    # -- Vista unificada de resultados ----------------------------------
+    def listar_resultados_unificados(
+        self,
+        proyecto_id: int | None = None,
+        *,
+        fuentes: frozenset[str] | None = None,
+        severidad: str | None = None,
+        estado: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
+        limite: int = 200,
+    ) -> list[ResultadoUnificado]:
+        """Combina los resultados de las cinco tablas existentes en una sola vista.
+
+        No crea ninguna tabla nueva ni modifica las existentes: cada fuente conserva su
+        tabla y sus propios metodos ``agregar_resultados*``/``listar_resultados*`` (las
+        consultas por herramienta, p. ej. ``est nuclei resultados``/``est zap
+        resultados``, siguen usando esos metodos directamente y no pasan por este). Esta
+        vista es de solo lectura: pide a cada fuente seleccionada sus filas mas
+        recientes, las normaliza a :class:`ResultadoUnificado` y fusiona/ordena/filtra el
+        resultado en Python (SQLite no tiene una sola tabla de la que hacer ``UNION``,
+        ya que las columnas de cada fuente son distintas por diseno).
+
+        ``severidad`` y ``estado`` filtran por grupo/igualdad insensible a mayusculas
+        (ver :func:`agrupar_severidad`) para poder comparar, p. ej., 'alta' (auditoria
+        web) con 'high' (Nuclei) o 'critical' (ZAP) sin renombrar el valor original de
+        ningun registro. ``estado`` compara contra ``estado`` O ``estado_revision``
+        (son mutuamente excluyentes por fuente: nunca ambos a la vez en la misma fila).
+        ``desde``/``hasta`` comparan ``creado_en`` como texto ISO-8601 (comparacion
+        lexicografica correcta para ese formato).
+        """
+        fuentes_activas = fuentes if fuentes is not None else frozenset(FUENTES_RESULTADOS)
+        # Se pide un margen mayor que 'limite' a cada fuente porque los filtros se
+        # aplican DESPUES de fusionar: si se pidiera solo 'limite' filas por fuente, un
+        # filtro restrictivo podria descartar casi todas y devolver menos resultados de
+        # los que en realidad existen dentro de la ventana solicitada.
+        limite_por_fuente = max(limite, 500)
+
+        combinados: list[ResultadoUnificado] = []
+        if "tcp" in fuentes_activas:
+            combinados.extend(
+                _normalizar_tcp(r)
+                for r in self.listar_resultados(proyecto_id, limite=limite_por_fuente)
+            )
+        if "nmap" in fuentes_activas:
+            combinados.extend(
+                _normalizar_nmap(r)
+                for r in self.listar_resultados_nmap(proyecto_id, limite=limite_por_fuente)
+            )
+        if "web" in fuentes_activas:
+            combinados.extend(
+                _normalizar_web(r)
+                for r in self.listar_resultados_web(proyecto_id, limite=limite_por_fuente)
+            )
+        if "nuclei" in fuentes_activas:
+            combinados.extend(
+                _normalizar_nuclei(r)
+                for r in self.listar_resultados_nuclei(proyecto_id, limite=limite_por_fuente)
+            )
+        if "zap" in fuentes_activas:
+            combinados.extend(
+                _normalizar_zap(r)
+                for r in self.listar_resultados_zap(proyecto_id, limite=limite_por_fuente)
+            )
+
+        if severidad is not None:
+            grupo_buscado = agrupar_severidad(severidad)
+            combinados = [r for r in combinados if agrupar_severidad(r.severidad) == grupo_buscado]
+        if estado is not None:
+            estado_bajo = estado.lower()
+            combinados = [
+                r
+                for r in combinados
+                if (r.estado or "").lower() == estado_bajo
+                or (r.estado_revision or "").lower() == estado_bajo
+            ]
+        if desde is not None:
+            combinados = [r for r in combinados if r.creado_en >= desde]
+        if hasta is not None:
+            combinados = [r for r in combinados if r.creado_en <= hasta]
+
+        combinados.sort(key=lambda r: r.creado_en, reverse=True)
+        return combinados[:limite]

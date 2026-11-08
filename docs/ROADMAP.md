@@ -97,9 +97,9 @@ La Fase 3 se entrega de forma incremental, un modulo por pull request. Este PR c
 - [x] CI verificado en Windows y Linux.
 
 **Limitaciones conocidas** (ver tambien [docs/INTEGRACIONES.md](INTEGRACIONES.md)): los
-resultados de Nmap tienen su propia tabla (`resultados_nmap`) y todavia no aparecen en
-`est resultados` ni en `est reporte generar` (solo los de `escanear tcp`); eso queda para una
-iteracion posterior.
+resultados de Nmap tienen su propia tabla (`resultados_nmap`) con su propio informe
+dedicado; tambien aparecen en la vista unificada de `est resultados` y en el informe
+global de `est reporte generar` (ver "Consolidacion de resultados y reportes" mas abajo).
 
 ### Paso 3 - Auditoria web no intrusiva (completado en PR independiente)
 
@@ -222,9 +222,11 @@ TLS), por diseno (ver [docs/AUDITORIA_WEB.md](AUDITORIA_WEB.md)).
 
 **Limitaciones conocidas** (ver tambien [docs/NUCLEI.md](NUCLEI.md)): el catalogo aprobado es
 deliberadamente pequeno y no se ha podido validar contra un binario de Nuclei real en este
-entorno de desarrollo; los resultados de Nuclei tienen su propia tabla (`resultados_nuclei`) y
-todavia no aparecen en `est resultados` ni en `est reporte generar`; la garantia de aislamiento
-es sobre el contenido de la plantilla, no una sandbox de red a nivel de sistema operativo.
+entorno de desarrollo; los resultados de Nuclei tienen su propia tabla (`resultados_nuclei`),
+su propio informe dedicado y tambien aparecen en la vista unificada de `est resultados` y en
+el informe global (ver "Consolidacion de resultados y reportes" mas abajo); la garantia de
+aislamiento es sobre el contenido de la plantilla, no una sandbox de red a nivel de sistema
+operativo.
 
 **Revision de seguridad posterior de la misma PR**: lista blanca estricta de estructura de
 plantillas (campos conocidos, rutas exclusivamente relativas a `{{BaseURL}}`, limites de
@@ -283,16 +285,53 @@ guardarse o mostrarse. Se replico ademas la correccion de binary planting de la 
 
 **Limitaciones conocidas** (ver tambien [docs/OWASP_ZAP.md](OWASP_ZAP.md)): el analisis
 pasivo no se ha podido validar contra una instancia de ZAP real en este entorno de
-desarrollo; los resultados de ZAP tienen su propia tabla (`resultados_zap`) y todavia no
-aparecen en `est resultados` ni en `est reporte generar`; la garantia de aislamiento es sobre
-el contenido de la peticion (solo GET, sin redirecciones, filtrado por objetivo), no una
-sandbox de red a nivel de sistema operativo; una instancia de ZAP compartida con otras
-auditorias sigue acumulando esa unica peticion GET en su historial (visible via otras
-llamadas a su API), aunque AST nunca la mezcle en sus propios resultados.
+desarrollo; los resultados de ZAP tienen su propia tabla (`resultados_zap`), su propio
+informe dedicado y tambien aparecen en la vista unificada de `est resultados` y en el
+informe global (ver "Consolidacion de resultados y reportes" mas abajo); la garantia de
+aislamiento es sobre el contenido de la peticion (solo GET, sin redirecciones, filtrado
+por objetivo), no una sandbox de red a nivel de sistema operativo; una instancia de ZAP
+compartida con otras auditorias sigue acumulando esa unica peticion GET en su historial
+(visible via otras llamadas a su API), aunque AST nunca la mezcle en sus propios
+resultados.
 
-Pendiente para una iteracion posterior: unificar los resultados de `escanear tcp`, `nmap`,
-`web`, `nuclei` y `zap` en un unico listado/informe general (hoy cada uno tiene su propia
-tabla e informe).
+### Consolidacion de resultados y reportes (completado en este PR)
+
+Unifica, sin migrar ni borrar ninguna tabla existente, los resultados/hallazgos de las
+cinco herramientas (`escanear tcp`, `nmap`, `web`, `nuclei`, `zap`) en una sola vista de
+consulta y en un informe global.
+
+- [x] `BaseDatos.listar_resultados_unificados()`: combina las cinco tablas existentes en
+      una vista de solo lectura (`ResultadoUnificado`), sin crear ni alterar ninguna
+      tabla. `tcp`/`nmap` nunca llevan una severidad fabricada (son resultados de
+      conectividad, no vulnerabilidades); `web`/`nuclei`/`zap` conservan su severidad y,
+      cuando existe, su estado de revision (`nuevo`/`confirmado`/`falso_positivo`).
+- [x] `est resultados` consulta las cinco herramientas con filtros por proyecto,
+      herramienta (`--fuente`), severidad agrupada entre herramientas (`--severidad`),
+      estado/estado de revision (`--estado`) y fecha (`--desde`/`--hasta`), con limite y
+      orden estable (mas reciente primero). `est nuclei resultados`/`est zap resultados`
+      (y los informes especificos de cada herramienta) siguen funcionando sin cambios.
+- [x] `est reporte generar` produce ahora el informe **global** (HTML/JSON): portada,
+      resumen ejecutivo, objetivos/alcance autorizado, resultados de red y reconocimiento
+      en una tabla separada de los hallazgos de vulnerabilidad (ordenados por severidad),
+      limitaciones tecnicas y una nota metodologica explicita: AST nunca fusiona ni
+      deduplica hallazgos de distintas herramientas por compartir titulo (cada fila
+      conserva su `fuente` e `id_origen`). Reutiliza el mismo esqueleto HTML/CSS que los
+      informes por herramienta (`modules/reporting/generador.py`), sin duplicarlo.
+- [x] El informe global aplica una segunda pasada de redaccion (`core/redaccion.py`)
+      sobre todo campo de texto libre antes de exportar, independiente de la que ya
+      aplica cada herramienta al guardar.
+- [x] Interfaz visual: el panel "Resultados" filtra por herramienta y muestra el detalle
+      de cualquier hallazgo de las cinco fuentes (solo lectura: marcar
+      confirmado/falso positivo sigue siendo exclusivo de los paneles "Vulnerabilidades"
+      y "OWASP ZAP"); el panel "Reportes" genera el informe global.
+- [x] Pruebas con datos simulados (`tests/test_resultados_unificados.py`,
+      `tests/test_tui_resultados_reportes.py`): unificacion de las cinco fuentes, no
+      fabricacion de severidad en tcp/nmap, filtros (fuente/severidad/estado/fecha) y
+      orden, separacion entre proyectos, persistencia de los datos previos, hallazgos con
+      el mismo titulo en herramientas distintas sin fusionarse, redaccion de secretos,
+      escape de HTML hostil, informes JSON/HTML, CLI, interfaz visual y compatibilidad
+      con los comandos existentes. Ninguna requiere Nmap, Nuclei ni ZAP instalados.
+- [x] CI verificado en Windows y Linux.
 
 ## Fase 4 - Asistente inteligente
 

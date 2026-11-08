@@ -17,7 +17,7 @@ from eurabyte_security.commands.nmap import ejecutar_nmap
 from eurabyte_security.commands.nuclei import ejecutar_nuclei
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte
-from eurabyte_security.commands.resultados import obtener_resultados
+from eurabyte_security.commands.resultados import obtener_resultados_unificados
 from eurabyte_security.commands.web import TIPOS_VALIDOS as TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web
 from eurabyte_security.commands.zap import ejecutar_zap_pasivo
@@ -1095,33 +1095,89 @@ class PanelOWASPZAP(VerticalScroll):
         self._marcar_revision("falso_positivo")
 
 
-class PanelResultados(Vertical):
-    """Resultados guardados del proyecto activo."""
+class PanelResultados(VerticalScroll):
+    """Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas.
+
+    Es una vista de solo lectura/filtrado: para marcar un hallazgo de Nuclei u OWASP ZAP
+    como confirmado o falso positivo se usan sus paneles dedicados ('Vulnerabilidades',
+    'OWASP ZAP'), que son los que escriben ese estado de revision. Reutiliza
+    ``commands/resultados.py:obtener_resultados_unificados`` (y, por lo tanto,
+    ``BaseDatos.listar_resultados_unificados``): nunca consulta las tablas directamente.
+    """
+
+    _ETIQUETAS_FUENTE = {
+        "tcp": "TCP", "nmap": "Nmap", "web": "Web", "nuclei": "Nuclei", "zap": "OWASP ZAP",
+    }
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._resultados: list = []
 
     def compose(self):
-        yield Static("Resultados guardados", classes="titulo-panel")
-        yield Button("Actualizar", id="res-refrescar")
-        yield DataTable(id="res-tabla")
+        yield Static("Resultados guardados (todas las herramientas)", classes="titulo-panel")
+        yield Static("", id="res-proyecto", classes="ast-tenue")
+        with Horizontal():
+            yield Select(
+                [
+                    ("Todas las herramientas", "todas"),
+                    ("TCP", "tcp"),
+                    ("Nmap", "nmap"),
+                    ("Web", "web"),
+                    ("Nuclei", "nuclei"),
+                    ("OWASP ZAP", "zap"),
+                ],
+                value="todas",
+                allow_blank=False,
+                id="res-fuente",
+            )
+            yield Button("Actualizar", id="res-refrescar")
+        yield DataTable(id="res-tabla", cursor_type="row")
+        yield Static("", id="res-detalle", classes="ast-caja")
         yield Static("", id="res-mensaje", classes="ast-tenue")
 
     def on_mount(self) -> None:
-        self.query_one("#res-tabla", DataTable).add_columns("Objetivo", "Puerto", "Estado", "Fecha")
+        self.query_one("#res-tabla", DataTable).add_columns(
+            "Fuente", "Objetivo", "Hallazgo", "Severidad", "Estado", "Revision", "Fecha"
+        )
         self.refrescar()
 
+    def _refrescar_proyecto(self) -> str | None:
+        etiqueta = self.query_one("#res-proyecto", Static)
+        try:
+            proyecto = resolver_proyecto(obtener_base_datos(), None)
+            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+            return proyecto.nombre
+        except ErrorEST as exc:
+            etiqueta.update(texto_seguro(exc))
+            return None
+
     def refrescar(self) -> None:
+        self._refrescar_proyecto()
         tabla = self.query_one("#res-tabla", DataTable)
         tabla.clear()
+        self.query_one("#res-detalle", Static).update("")
         msg = self.query_one("#res-mensaje", Static)
+        fuente_valor = self.query_one("#res-fuente", Select).value
         try:
             base_datos = obtener_base_datos()
             proyecto = resolver_proyecto(base_datos, None)
-            resultados = obtener_resultados(base_datos, proyecto, limite=200)
-            for resultado in resultados:
+            fuentes = (
+                None if fuente_valor in (None, "todas") else frozenset({str(fuente_valor)})
+            )
+            resultados = obtener_resultados_unificados(
+                base_datos, proyecto, fuentes=fuentes, limite=200
+            )
+            self._resultados = resultados
+            for r in resultados:
                 tabla.add_row(
-                    resultado.objetivo,
-                    str(resultado.puerto),
-                    resultado.estado,
-                    resultado.creado_en,
+                    self._ETIQUETAS_FUENTE.get(r.fuente, r.fuente),
+                    texto_seguro(r.objetivo),
+                    texto_seguro(r.nombre),
+                    texto_seguro(r.severidad) if r.severidad else "-",
+                    texto_seguro(r.estado) if r.estado else "-",
+                    texto_seguro(r.estado_revision) if r.estado_revision else "-",
+                    r.creado_en,
+                    key=f"{r.fuente}:{r.id_origen}",
                 )
             msg.update(
                 ""
@@ -1140,12 +1196,47 @@ class PanelResultados(Vertical):
     def _refrescar_click(self, _evento: Button.Pressed) -> None:
         self.refrescar()
 
+    @on(Select.Changed, "#res-fuente")
+    def _fuente_cambiada(self, _evento: Select.Changed) -> None:
+        self.refrescar()
+
+    @on(DataTable.RowSelected, "#res-tabla")
+    def _fila_seleccionada(self, event: DataTable.RowSelected) -> None:
+        if event.row_key.value is None:
+            return
+        fuente, _separador, id_txt = str(event.row_key.value).partition(":")
+        try:
+            id_origen = int(id_txt)
+        except ValueError:
+            return
+        r = next(
+            (x for x in self._resultados if x.fuente == fuente and x.id_origen == id_origen),
+            None,
+        )
+        if r is None:
+            return
+        self.query_one("#res-detalle", Static).update(
+            f"[bold]{texto_seguro(r.nombre)}[/bold] "
+            f"({self._ETIQUETAS_FUENTE.get(r.fuente, r.fuente)})\n"
+            f"Tipo: {texto_seguro(r.tipo)}\n"
+            f"Descripcion: {texto_seguro(r.descripcion or '-')}\n"
+            f"Evidencia: {texto_seguro(r.evidencia or '-')}\n"
+            f"Recomendacion: {texto_seguro(r.recomendacion or '-')}\n"
+            f"Referencia: {texto_seguro(r.referencia or '-')}"
+        )
+
 
 class PanelReportes(Vertical):
-    """Generacion de informes HTML/JSON del proyecto activo."""
+    """Generacion del informe global (todas las herramientas) del proyecto activo."""
 
     def compose(self):
-        yield Static("Generar informe", classes="titulo-panel")
+        yield Static("Generar informe global", classes="titulo-panel")
+        yield Static(
+            "Combina TCP, Nmap, auditoria web, Nuclei y OWASP ZAP en un unico informe. "
+            "Los informes especificos de cada herramienta siguen disponibles en sus "
+            "propios paneles/comandos.",
+            classes="ast-caja",
+        )
         with Horizontal():
             yield Select(
                 [("HTML", "html"), ("JSON", "json")],
@@ -1164,7 +1255,7 @@ class PanelReportes(Vertical):
             base_datos = obtener_base_datos()
             proyecto = resolver_proyecto(base_datos, None)
             ruta = generar_reporte(base_datos, proyecto, str(formato))
-            msg.update(f"Informe generado en: {texto_seguro(ruta)}")
+            msg.update(f"Informe global generado en: {texto_seguro(ruta)}")
             msg.set_classes("ast-exito")
             self.app.refrescar_estado()  # type: ignore[attr-defined]
         except ErrorEST as exc:
