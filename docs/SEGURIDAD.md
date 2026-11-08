@@ -148,6 +148,23 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     que este diseno **no** puede ofrecer (no es una sandbox de red a nivel de sistema
     operativo, y una instancia de ZAP compartida sigue acumulando esa unica peticion en su
     historial, aunque AST nunca la use para mezclar resultados).
+19. **Un dominio nunca se autoriza a si mismo: se autoriza la direccion IP a la que
+    resuelve, y solo esa direccion se usa.** `core/objetivo.py` anade la capacidad de
+    aceptar un dominio (ademas de una IPv4 literal) como objetivo de entrada unica,
+    sin relajar ningun validador existente (`core/validation.py` sigue aceptando solo
+    IPv4 para cada comando ya existente). `resolver_y_autorizar()` resuelve el dominio
+    una sola vez (`resolver_dns()`, que delega en `socket.getaddrinfo` del sistema, sin
+    cache ni resolucion propia) y exige que AL MENOS UNA de las direcciones devueltas
+    este dentro de las redes YA registradas en el alcance del proyecto (nunca al
+    reves: el alcance sigue siendo una lista de redes IPv4/CIDR, nunca una lista de
+    nombres). La primera direccion autorizada se FIJA en `ObjetivoResuelto.ip` para
+    toda la operacion: ninguna funcion de este modulo vuelve a resolver el mismo
+    dominio despues, lo que evita DNS rebinding (que el nombre apunte a una IP
+    distinta entre el momento en que se autoriza y el momento en que de verdad se usa).
+    Si el dominio resuelve a varias direcciones y solo una esta autorizada, AST usa
+    unicamente esa: nunca amplia el analisis a las demas aunque compartan el mismo
+    nombre. El nombre de host original se conserva por separado (para el `Host`/SNI
+    de una peticion HTTP/TLS posterior), nunca para volver a resolverlo.
 18. **La vista unificada de resultados y el informe global nunca fabrican una severidad ni
     fusionan hallazgos entre herramientas.** `storage/database.py:BaseDatos.listar_resultados_unificados()`
     combina las cinco tablas existentes (`resultados`, `resultados_nmap`, `resultados_web`,
