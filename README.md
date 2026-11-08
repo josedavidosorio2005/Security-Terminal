@@ -108,8 +108,9 @@ est web auditar http://127.0.0.1/                  # Fase 3, auditoria web no in
 est nuclei analizar 127.0.0.1 --plantillas exposed-env-file  # Fase 3, requiere Nuclei instalado
 est zap pasivo http://127.0.0.1/                   # Fase 3, requiere ZAP ya corriendo
 est explicar tcp
-est resultados
-est reporte generar --formato html
+est resultados                                     # vista unificada: las cinco herramientas
+est resultados --fuente nuclei --severidad alta
+est reporte generar --formato html                 # informe global (las cinco herramientas)
 ```
 
 Referencia completa de comandos en [docs/COMANDOS.md](docs/COMANDOS.md).

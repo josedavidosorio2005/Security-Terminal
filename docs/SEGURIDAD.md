@@ -148,6 +148,29 @@ use, por error o a proposito, contra un sistema que no tiene autorizacion para a
     que este diseno **no** puede ofrecer (no es una sandbox de red a nivel de sistema
     operativo, y una instancia de ZAP compartida sigue acumulando esa unica peticion en su
     historial, aunque AST nunca la use para mezclar resultados).
+18. **La vista unificada de resultados y el informe global nunca fabrican una severidad ni
+    fusionan hallazgos entre herramientas.** `storage/database.py:BaseDatos.listar_resultados_unificados()`
+    combina las cinco tablas existentes (`resultados`, `resultados_nmap`, `resultados_web`,
+    `resultados_nuclei`, `resultados_zap`) en una proyeccion de solo lectura, sin crear ni
+    migrar ninguna tabla: `tcp` y `nmap` son resultados de conectividad/reconocimiento (un
+    puerto abierto o cerrado), no vulnerabilidades, y su campo `severidad` es siempre `None`
+    en la vista unificada y en el informe global -- nunca se les asigna una severidad
+    inventada para que "encajen" junto a los hallazgos de `web`/`nuclei`/`zap`. `--severidad`
+    solo agrupa escalas equivalentes entre herramientas para filtrar/ordenar (p. ej. 'alta'
+    incluye 'high' y 'critical'); nunca reescribe el valor original de ningun registro.
+    Ningun hallazgo se elimina ni se da por duplicado solo porque comparta titulo con otro de
+    una herramienta distinta: cada fila del informe global conserva su `fuente` y su
+    `id_origen`, trazables hasta el registro original de su propia tabla. El informe global
+    aplica, ademas, una **segunda pasada** de redaccion
+    (`modules/reporting/generador.py:_redactar_resultado_unificado`, reutilizando
+    `core/redaccion.py:redactar_texto_libre`) sobre todo campo de texto libre (objetivo,
+    nombre, descripcion, evidencia, recomendacion, referencia) antes de exportarlo, ademas de
+    la que ya aplica cada herramienta al guardar sus propios resultados; y escapa siempre el
+    contenido con `html.escape()` (HTML) o `ui/consola.py:texto_seguro()` (Rich/TUI), de modo
+    que un `nombre_hallazgo` hostil reportado por una herramienta externa nunca se convierte
+    en HTML activo ni en marcado Rich interpretado. La vista unificada y el informe global
+    respetan la misma separacion por proyecto que el resto de AST (filtran siempre por
+    `proyecto_id`) y no modifican ni amplian el alcance autorizado de ningun analisis.
 
 ## Que hacer si encuentras una vulnerabilidad en AST
 

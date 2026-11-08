@@ -62,7 +62,11 @@ def test_reporte_json(runner, tmp_path):
 
     datos = json.loads(salida.read_text(encoding="utf-8"))
     assert datos["proyecto"] == "laboratorio"
+    # 'reporte generar' produce el informe GLOBAL (todas las herramientas): con solo un
+    # escaneo TCP guardado, debe haber exactamente un resultado, de fuente 'tcp'.
     assert datos["total_resultados"] == 1
+    assert datos["resultados"][0]["fuente"] == "tcp"
+    assert datos["resultados"][0]["severidad"] is None
 
 
 def test_reporte_html(runner, tmp_path):
@@ -79,7 +83,7 @@ def test_reporte_html(runner, tmp_path):
     assert resultado.exit_code == 0
     contenido = salida.read_text(encoding="utf-8")
     assert "<html" in contenido
-    assert str(puerto) in contenido
+    assert f"Puerto {puerto}" in contenido
 
 
 def test_reporte_formato_invalido_falla(runner):

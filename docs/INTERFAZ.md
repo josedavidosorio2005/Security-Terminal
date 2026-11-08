@@ -41,8 +41,8 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
-| Resultados | Implementada | Tabla de resultados guardados del proyecto activo. |
-| Reportes | Implementada | Genera informes HTML o JSON del proyecto activo. |
+| Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
+| Reportes | Implementada | Genera el informe global (HTML o JSON) del proyecto activo, combinando las cinco herramientas. |
 | Aprendizaje | Proximamente (Fase 5) | Reservado para laboratorios y contenido educativo. |
 | Configuracion | Implementada | Muestra las rutas de datos y permite cambiar el proyecto activo. |
 
@@ -55,7 +55,8 @@ Dentro de la seccion "Terminal" hay tres pestanas:
 
 1. **Terminal AST**: una linea de comandos real, con los mismos comandos que `est interactivo`
    (`proyecto`, `alcance`, `escanear tcp`, `explicar`, `resultados`, `reporte`, `ayuda`).
-2. **Resultados**: la misma tabla de resultados que la seccion "Resultados" de la barra lateral.
+2. **Resultados**: el mismo panel unificado (las cinco herramientas) que la seccion
+   "Resultados" de la barra lateral.
 3. **Ayuda**: la documentacion de todos los comandos, siempre visible y desplazable.
 
 ![Terminal AST ejecutando un escaneo](capturas/04-terminal.svg)
@@ -157,10 +158,24 @@ ZAP responde en el endpoint configurado, con la version detectada para Nmap, Nuc
 AST **nunca ejecuta un analisis automaticamente** desde este panel: solo comprueba
 presencia/version/disponibilidad, de solo lectura.
 
+### Resultados
+
+Consulta los resultados/hallazgos guardados del proyecto activo, combinando las cinco
+herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP). Elige una herramienta en el selector
+(o "Todas las herramientas") y pulsa "Actualizar"; selecciona una fila para ver su
+descripcion, evidencia, recomendacion y referencia completas. Es solo lectura: para
+marcar un hallazgo de Nuclei u OWASP ZAP como confirmado o falso positivo, usa sus
+paneles dedicados ("Vulnerabilidades", "OWASP ZAP"). Los resultados de TCP y Nmap nunca
+muestran una severidad (son informacion de conectividad/puertos, no vulnerabilidades).
+
 ### Reportes
 
-Elige el formato (HTML o JSON) y pulsa "Generar". El informe se guarda en el directorio de
-datos de AST y la ruta exacta aparece en pantalla.
+Elige el formato (HTML o JSON) y pulsa "Generar". El informe **global** combina las
+cinco herramientas (resumen ejecutivo, objetivos/alcance, resultados de red y hallazgos
+de vulnerabilidad ordenados por severidad, limitaciones tecnicas). Se guarda en el
+directorio de datos de AST y la ruta exacta aparece en pantalla. Los informes
+especificos de cada herramienta siguen disponibles desde sus propios comandos (`est
+nuclei reporte`, `est zap reporte`, `est web reporte`).
 
 ### Configuracion
 
@@ -235,9 +250,10 @@ seguia en curso):
   implementadas).
 - El escudo de marca (barra superior y panel de Inicio) es una alternativa en texto ASCII
   mientras no exista el recurso grafico oficial (ver `eurabyte_security/marca.py`).
-- Los resultados de Nmap, Nuclei y OWASP ZAP todavia no aparecen en `est resultados` ni en
-  `est reporte generar` (solo los de `escanear tcp`); se consultan por ahora solo en el
-  propio panel/comando de cada uno. Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md),
-  [docs/NUCLEI.md](NUCLEI.md) y [docs/OWASP_ZAP.md](OWASP_ZAP.md).
+- El panel "Resultados" es de solo lectura/filtrado: marcar un hallazgo de Nuclei u OWASP
+  ZAP como confirmado o falso positivo sigue haciendose desde sus paneles dedicados
+  ("Vulnerabilidades", "OWASP ZAP"). Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md),
+  [docs/NUCLEI.md](NUCLEI.md) y [docs/OWASP_ZAP.md](OWASP_ZAP.md) para el detalle
+  especifico de cada herramienta.
 - El analisis pasivo de OWASP ZAP no se ha podido validar contra una instancia de ZAP real
   en este entorno de desarrollo (ver limitaciones en [docs/OWASP_ZAP.md](OWASP_ZAP.md)).

@@ -25,7 +25,9 @@ from eurabyte_security.commands.proyecto import crear_proyecto as _crear_proyect
 from eurabyte_security.commands.proyecto import listar_proyectos as _listar_proyectos
 from eurabyte_security.commands.proyecto import usar_proyecto as _usar_proyecto
 from eurabyte_security.commands.reporte import generar_reporte as _generar_reporte
-from eurabyte_security.commands.resultados import obtener_resultados as _obtener_resultados
+from eurabyte_security.commands.resultados import (
+    obtener_resultados_unificados as _obtener_resultados_unificados,
+)
 from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.commands.zap import ejecutar_zap_pasivo as _ejecutar_zap_pasivo
@@ -33,6 +35,7 @@ from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
 from eurabyte_security.core.redaccion import redactar_url as _redactar_url
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS as _PLANTILLAS_NUCLEI
 from eurabyte_security.integrations.zap import AdaptadorZAP as _AdaptadorZAP
+from eurabyte_security.storage.database import agrupar_severidad as _agrupar_severidad
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
 
@@ -52,6 +55,9 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
 
 _ESTILOS_ESTADO = {"abierto": "bold green", "cerrado": "grey70", "error": "bold red"}
 _ESTILOS_SEVERIDAD = {"info": "grey70", "baja": "cyan", "media": "yellow", "alta": "bold red"}
+_ETIQUETAS_FUENTE_RESULTADOS = {
+    "tcp": "TCP", "nmap": "Nmap", "web": "Web", "nuclei": "Nuclei", "zap": "OWASP ZAP",
+}
 _ESTILOS_SEVERIDAD_NUCLEI = {
     "info": "grey70", "low": "cyan", "medium": "yellow", "high": "bold red",
     "critical": "bold red", "unknown": "grey70",
@@ -100,6 +106,34 @@ def _tabla_resultados(resultados, titulo: str) -> Table:
             str(resultado.puerto),
             f"[{estilo}]{resultado.estado}[/{estilo}]",
             resultado.creado_en,
+        )
+    return tabla
+
+
+def _tabla_resultados_unificados(resultados, titulo: str) -> Table:
+    tabla = Table(title=titulo)
+    tabla.add_column("Fuente")
+    tabla.add_column("Objetivo")
+    tabla.add_column("Hallazgo")
+    tabla.add_column("Severidad")
+    tabla.add_column("Estado")
+    tabla.add_column("Revision")
+    tabla.add_column("Fecha")
+    for r in resultados:
+        grupo = _agrupar_severidad(r.severidad) or ""
+        estilo = _ESTILOS_SEVERIDAD.get(grupo, "")
+        severidad_texto = (
+            f"[{estilo}]{r.severidad}[/{estilo}]" if r.severidad and estilo
+            else (r.severidad or "-")
+        )
+        tabla.add_row(
+            _ETIQUETAS_FUENTE_RESULTADOS.get(r.fuente, r.fuente),
+            r.objetivo,
+            r.nombre,
+            severidad_texto,
+            r.estado or "-",
+            r.estado_revision or "-",
+            r.creado_en,
         )
     return tabla
 
@@ -483,17 +517,38 @@ class MotorComandos:
     # -- resultados --------------------------------------------------
     def _resultados(self, resto: list[str]) -> ResultadoComando:
         proyecto_nombre, resto = _extraer_opcion(resto, "--proyecto")
+        fuente_txt, resto = _extraer_opcion(resto, "--fuente")
+        severidad, resto = _extraer_opcion(resto, "--severidad")
+        estado_txt, resto = _extraer_opcion(resto, "--estado")
+        desde, resto = _extraer_opcion(resto, "--desde")
+        hasta, resto = _extraer_opcion(resto, "--hasta")
         limite_txt, _resto = _extraer_opcion(resto, "--limite")
         try:
             limite = int(limite_txt) if limite_txt else 50
         except ValueError:
             return ResultadoComando(False, "--limite debe ser un numero entero.")
 
+        fuentes = None
+        if fuente_txt:
+            fuentes = frozenset(f.strip().lower() for f in fuente_txt.split(",") if f.strip())
+
         base_datos = obtener_base_datos()
         proyecto = resolver_proyecto(base_datos, proyecto_nombre)
-        resultados = _obtener_resultados(base_datos, proyecto, limite=limite)
+        try:
+            resultados = _obtener_resultados_unificados(
+                base_datos,
+                proyecto,
+                fuentes=fuentes,
+                severidad=severidad,
+                estado=estado_txt,
+                desde=desde,
+                hasta=hasta,
+                limite=limite,
+            )
+        except ErrorValidacion as exc:
+            return ResultadoComando(False, str(exc))
         titulo = f"Resultados - {proyecto.nombre}"
-        return ResultadoComando(True, _tabla_resultados(resultados, titulo))
+        return ResultadoComando(True, _tabla_resultados_unificados(resultados, titulo))
 
     # -- reporte -----------------------------------------------------
     def _reporte(self, resto: list[str]) -> ResultadoComando:

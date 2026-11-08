@@ -3,16 +3,36 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from html import escape
 
+from eurabyte_security.core.redaccion import redactar_texto_libre
 from eurabyte_security.storage.database import (
+    FUENTES_RESULTADOS,
     Resultado,
     ResultadoNuclei,
+    ResultadoUnificado,
     ResultadoWeb,
     ResultadoZAP,
+    agrupar_severidad,
 )
+
+_ETIQUETAS_FUENTE = {
+    "tcp": "TCP",
+    "nmap": "Nmap",
+    "web": "Auditoria web",
+    "nuclei": "Nuclei",
+    "zap": "OWASP ZAP",
+}
+
+# Fuentes que reportan conectividad/reconocimiento (puertos), no vulnerabilidades: el
+# informe global las muestra en una tabla aparte para no mezclar ambos conceptos (ver
+# ``ResultadoUnificado``).
+_FUENTES_RED = frozenset({"tcp", "nmap"})
+_FUENTES_VULNERABILIDAD = frozenset(FUENTES_RESULTADOS) - _FUENTES_RED
+
+_ORDEN_GRUPO_SEVERIDAD = {"alta": 3, "media": 2, "baja": 1, "info": 0}
 
 
 @dataclass(frozen=True, slots=True)
@@ -308,3 +328,249 @@ def generar_html_zap(datos: DatosInformeZAP) -> str:
         f"Total de hallazgos: {len(datos.hallazgos)}"
     )
     return _pagina_html(f"Informe OWASP ZAP AST - {datos.proyecto}", resumen, cuerpo_tabla)
+
+
+@dataclass(frozen=True, slots=True)
+class DatosInformeGlobal:
+    """Datos de entrada del informe global: una auditoria completa, no una herramienta."""
+
+    proyecto: str
+    generado_en: str
+    resultados: list[ResultadoUnificado]
+    herramientas: tuple[str, ...]
+    alcance: tuple[str, ...]
+
+
+def _redactar_resultado_unificado(r: ResultadoUnificado) -> ResultadoUnificado:
+    """Segunda pasada de redaccion, propia del informe global, antes de exportarlo.
+
+    Cada herramienta ya redacta lo que persiste en su propia tabla (ver
+    ``commands/web.py:auditar_web`` y ``commands/zap.py:ejecutar_zap_pasivo``), pero un
+    informe exportado sale de AST hacia fuera (se comparte, se adjunta a un correo...),
+    asi que esta funcion vuelve a tratar como no confiable TODO campo de texto libre que
+    pueda venir de una herramienta externa, igual que ``core/redaccion.py`` ya hace para
+    la salida cruda de Nuclei/ZAP, en vez de confiar unicamente en lo que se redacto al
+    guardar.
+    """
+    return replace(
+        r,
+        objetivo=redactar_texto_libre(r.objetivo),
+        nombre=redactar_texto_libre(r.nombre),
+        descripcion=redactar_texto_libre(r.descripcion) if r.descripcion else r.descripcion,
+        evidencia=redactar_texto_libre(r.evidencia) if r.evidencia else r.evidencia,
+        recomendacion=(
+            redactar_texto_libre(r.recomendacion) if r.recomendacion else r.recomendacion
+        ),
+        referencia=redactar_texto_libre(r.referencia) if r.referencia else r.referencia,
+    )
+
+
+def construir_datos_informe_global(
+    proyecto: str,
+    resultados: list[ResultadoUnificado],
+    *,
+    herramientas: tuple[str, ...] = FUENTES_RESULTADOS,
+    alcance: tuple[str, ...] = (),
+) -> DatosInformeGlobal:
+    return DatosInformeGlobal(
+        proyecto=proyecto,
+        generado_en=datetime.now(UTC).isoformat(),
+        resultados=[_redactar_resultado_unificado(r) for r in resultados],
+        herramientas=herramientas,
+        alcance=alcance,
+    )
+
+
+def _resumen_por_fuente(resultados: list[ResultadoUnificado]) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for r in resultados:
+        conteo[r.fuente] = conteo.get(r.fuente, 0) + 1
+    return conteo
+
+
+def _resumen_por_severidad(resultados: list[ResultadoUnificado]) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for r in resultados:
+        if r.fuente not in _FUENTES_VULNERABILIDAD:
+            continue
+        grupo = agrupar_severidad(r.severidad) or "sin_clasificar"
+        conteo[grupo] = conteo.get(grupo, 0) + 1
+    return conteo
+
+
+def _resumen_por_revision(resultados: list[ResultadoUnificado]) -> dict[str, int]:
+    conteo: dict[str, int] = {}
+    for r in resultados:
+        if r.estado_revision is None:
+            continue
+        conteo[r.estado_revision] = conteo.get(r.estado_revision, 0) + 1
+    return conteo
+
+
+def generar_json_global(datos: DatosInformeGlobal) -> str:
+    cuerpo = {
+        "proyecto": datos.proyecto,
+        "generado_en": datos.generado_en,
+        "herramientas_utilizadas": list(datos.herramientas),
+        "alcance_autorizado": list(datos.alcance),
+        "total_resultados": len(datos.resultados),
+        "resumen_por_herramienta": _resumen_por_fuente(datos.resultados),
+        "resumen_por_severidad": _resumen_por_severidad(datos.resultados),
+        "resumen_por_estado_revision": _resumen_por_revision(datos.resultados),
+        "nota_metodologica": (
+            "Cada registro proviene de una unica herramienta (campo 'fuente') y conserva "
+            "su id de origen ('id_origen'): AST no fusiona ni deduplica hallazgos de "
+            "distintas herramientas por compartir titulo. 'tcp' y 'nmap' son resultados "
+            "de conectividad/puertos (nunca llevan severidad); 'web', 'nuclei' y 'zap' "
+            "son hallazgos de auditoria/vulnerabilidad."
+        ),
+        "resultados": [
+            {
+                "fuente": r.fuente,
+                "id_origen": r.id_origen,
+                "objetivo": r.objetivo,
+                "tipo": r.tipo,
+                "nombre": r.nombre,
+                "descripcion": r.descripcion,
+                "severidad": r.severidad,
+                "estado": r.estado,
+                "estado_revision": r.estado_revision,
+                "evidencia": r.evidencia,
+                "recomendacion": r.recomendacion,
+                "referencia": r.referencia,
+                "creado_en": r.creado_en,
+            }
+            for r in datos.resultados
+        ],
+    }
+    return json.dumps(cuerpo, ensure_ascii=False, indent=2)
+
+
+def _fila_red(r: ResultadoUnificado) -> str:
+    return (
+        f"<tr><td>{escape(_ETIQUETAS_FUENTE.get(r.fuente, r.fuente))}</td>"
+        f"<td>{escape(r.objetivo)}</td><td>{escape(r.nombre)}</td>"
+        f"<td class=\"{escape(r.estado or '')}\">{escape(r.estado or '-')}</td>"
+        f"<td>{escape(r.descripcion or '-')}</td><td>{escape(r.creado_en)}</td></tr>"
+    )
+
+
+def _fila_vulnerabilidad(r: ResultadoUnificado) -> str:
+    grupo = agrupar_severidad(r.severidad) or "unknown"
+    return (
+        f"<tr><td>{escape(_ETIQUETAS_FUENTE.get(r.fuente, r.fuente))}</td>"
+        f"<td>{escape(r.objetivo)}</td><td>{escape(r.tipo)}</td>"
+        f"<td>{escape(r.nombre)}</td>"
+        f"<td class=\"severidad-{escape(grupo)}\">{escape(r.severidad or '-')}</td>"
+        f"<td>{escape(r.estado_revision or 'N/A')}</td>"
+        f"<td>{escape(r.descripcion or '-')}</td>"
+        f"<td>{escape(r.evidencia or '-')}</td>"
+        f"<td>{escape(r.recomendacion or '-')}</td>"
+        f"<td>{escape(r.creado_en)}</td></tr>"
+    )
+
+
+def generar_html_global(datos: DatosInformeGlobal) -> str:
+    resultados_red = [r for r in datos.resultados if r.fuente in _FUENTES_RED]
+    resultados_vuln = sorted(
+        (r for r in datos.resultados if r.fuente in _FUENTES_VULNERABILIDAD),
+        key=lambda r: (
+            _ORDEN_GRUPO_SEVERIDAD.get(agrupar_severidad(r.severidad) or "", -1),
+            r.creado_en,
+        ),
+        reverse=True,
+    )
+
+    filas_red = "\n".join(_fila_red(r) for r in resultados_red)
+    if not filas_red:
+        filas_red = "<tr><td colspan=\"6\">No hay resultados de red/puertos registrados.</td></tr>"
+
+    filas_vuln = "\n".join(_fila_vulnerabilidad(r) for r in resultados_vuln)
+    if not filas_vuln:
+        filas_vuln = (
+            "<tr><td colspan=\"9\">No hay hallazgos de vulnerabilidad registrados.</td></tr>"
+        )
+
+    resumen_severidad = _resumen_por_severidad(datos.resultados)
+    resumen_fuente = _resumen_por_fuente(datos.resultados)
+    resumen_revision = _resumen_por_revision(datos.resultados)
+
+    objetivos = sorted({r.objetivo for r in datos.resultados})
+    objetivos_html = "".join(f"<li>{escape(o)}</li>" for o in objetivos) or "<li>(ninguno)</li>"
+    alcance_html = (
+        "".join(f"<li>{escape(red)}</li>" for red in datos.alcance) or "<li>(sin registrar)</li>"
+    )
+    herramientas_html = ", ".join(
+        escape(_ETIQUETAS_FUENTE.get(h, h)) for h in datos.herramientas
+    ) or "(ninguna)"
+    resumen_fuente_html = ", ".join(
+        f"{escape(_ETIQUETAS_FUENTE.get(f, f))}: {n}" for f, n in sorted(resumen_fuente.items())
+    ) or "(sin datos)"
+    resumen_severidad_html = ", ".join(
+        f"{escape(g)}: {n}" for g, n in sorted(resumen_severidad.items())
+    ) or "(sin hallazgos de vulnerabilidad)"
+    resumen_revision_html = ", ".join(
+        f"{escape(e)}: {n}" for e, n in sorted(resumen_revision.items())
+    ) or "(ninguno con flujo de revision)"
+
+    cuerpo_tabla = f"""
+<h2>Resumen ejecutivo</h2>
+<ul>
+<li>Total de registros: {len(datos.resultados)}</li>
+<li>Por herramienta: {resumen_fuente_html}</li>
+<li>Hallazgos de vulnerabilidad por severidad: {resumen_severidad_html}</li>
+<li>Hallazgos por estado de revision (Nuclei/ZAP): {resumen_revision_html}</li>
+</ul>
+
+<h2>Objetivos y alcance</h2>
+<p>Herramientas utilizadas en esta auditoria: {herramientas_html}.</p>
+<p>Alcance autorizado del proyecto:</p>
+<ul>{alcance_html}</ul>
+<p>Objetivos con resultados guardados:</p>
+<ul>{objetivos_html}</ul>
+
+<h2>Resultados de red y reconocimiento (TCP, Nmap)</h2>
+<p class="resumen">Informacion de conectividad/puertos. No son vulnerabilidades y nunca
+llevan una severidad asignada.</p>
+<table>
+<thead><tr><th>Herramienta</th><th>Objetivo</th><th>Hallazgo</th><th>Estado</th>
+<th>Detalle</th><th>Fecha</th></tr></thead>
+<tbody>
+{filas_red}
+</tbody>
+</table>
+
+<h2>Hallazgos de vulnerabilidad (auditoria web, Nuclei, OWASP ZAP)</h2>
+<p class="resumen">Ordenados por severidad (de alta a informativa). La columna "Revision"
+distingue hallazgos nuevos, confirmados y falsos positivos cuando la herramienta ofrece
+ese flujo (Nuclei, ZAP); 'N/A' indica que la herramienta de origen no lo tiene.</p>
+<table>
+<thead><tr><th>Herramienta</th><th>Objetivo</th><th>Tipo</th><th>Hallazgo</th>
+<th>Severidad</th><th>Revision</th><th>Descripcion</th><th>Evidencia</th>
+<th>Recomendacion</th><th>Fecha</th></tr></thead>
+<tbody>
+{filas_vuln}
+</tbody>
+</table>
+
+<h2>Limitaciones tecnicas</h2>
+<ul>
+<li>Este informe refleja unicamente lo detectado en el momento de cada analisis: no
+implica monitoreo continuo ni garantiza que no existan otras debilidades.</li>
+<li>Ningun modulo de AST realiza explotacion activa: Nmap limita su deteccion a puertos
+y servicios, la auditoria web es pasiva (cabeceras/TLS/cookies), Nuclei solo ejecuta
+plantillas aprobadas de bajo impacto, y OWASP ZAP se usa unicamente en modo pasivo.</li>
+<li>AST no agrupa, fusiona ni deduplica hallazgos entre herramientas distintas aunque
+compartan titulo: cada fila de este informe corresponde a un unico registro de una unica
+herramienta (ver 'fuente' e 'id_origen' en la version JSON de este mismo informe).</li>
+<li>La evidencia y los campos de texto libre se redactan automaticamente para ocultar
+posibles secretos (tokens, contrasenas, cabeceras de autenticacion); esa redaccion puede
+ocultar informacion relevante ademas de la sensible, por diseno.</li>
+</ul>
+"""
+    resumen = (
+        f"Proyecto: <strong>{escape(datos.proyecto)}</strong> &middot; "
+        f"Generado: {escape(datos.generado_en)} &middot; "
+        f"Total de registros: {len(datos.resultados)}"
+    )
+    return _pagina_html(f"Informe global AST - {datos.proyecto}", resumen, cuerpo_tabla)
