@@ -439,7 +439,7 @@ class MotorComandos:
             resultado, _guardados = _ejecutar_zap_pasivo(
                 base_datos, proyecto, args[0], tiempo_limite=tiempo_limite
             )
-            tabla = Table(title=f"OWASP ZAP - {args[0]}")
+            tabla = Table(title=f"OWASP ZAP - {_redactar_url(args[0])}")
             tabla.add_column("Regla")
             tabla.add_column("Hallazgo")
             tabla.add_column("Riesgo")

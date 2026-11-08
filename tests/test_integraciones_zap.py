@@ -466,6 +466,28 @@ def test_reporte_zap_formato_invalido(tmp_path):
         generar_reporte_zap(base_datos, proyecto, "pdf")
 
 
+def test_objetivo_con_secreto_en_query_se_redacta_antes_de_persistir(tmp_path, monkeypatch):
+    """El objetivo (a diferencia del de Nuclei) admite ruta/query: puede llevar un secreto."""
+    _instalar_zap_falso(monkeypatch, alertas=[_alerta()])
+    base_datos = BaseDatos(tmp_path / "est.db")
+    proyecto = crear_proyecto(base_datos, "zap-objetivo-secreto")
+    base_datos.agregar_alcance(proyecto.id, "127.0.0.1/32")
+
+    objetivo_con_secreto = "http://127.0.0.1/pagina?session_token=secreto-de-sesion-en-url"
+    _resultado, guardados = ejecutar_zap_pasivo(base_datos, proyecto, objetivo_con_secreto)
+
+    assert len(guardados) == 1
+    assert "secreto-de-sesion-en-url" not in guardados[0].objetivo
+    # redactar_url() codifica el marcador como parte de una query string (urlencode): el
+    # marcador sigue presente, aunque '<'/'>' queden con %-encoding.
+    assert "redactado" in guardados[0].objetivo
+
+    # Tampoco debe sobrevivir en el informe exportado.
+    ruta_json = generar_reporte_zap(base_datos, proyecto, "json", tmp_path / "informe.json")
+    contenido = ruta_json.read_text(encoding="utf-8")
+    assert "secreto-de-sesion-en-url" not in contenido
+
+
 # ---------------------------------------------------------------------------
 # CLI: est zap estado|pasivo|resultados|revisar|reporte
 # ---------------------------------------------------------------------------

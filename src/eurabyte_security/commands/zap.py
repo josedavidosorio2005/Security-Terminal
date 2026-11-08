@@ -17,6 +17,7 @@ from eurabyte_security.core.errores import (
     ErrorFueraDeAlcance,
     ErrorValidacion,
 )
+from eurabyte_security.core.redaccion import redactar_url
 from eurabyte_security.integrations.zap import AdaptadorZAP, HallazgoZAP
 from eurabyte_security.integrations.zap import ResultadoZAP as ResultadoZAPEjecucion
 from eurabyte_security.modules.reporting.generador import (
@@ -89,8 +90,8 @@ def ejecutar_zap_pasivo(
 
     if debe_cancelar is not None and debe_cancelar():
         raise ErrorEscaneoCancelado(
-            f"El analisis de ZAP contra '{objetivo}' se cancelo antes de guardar los "
-            "resultados. No se guardo ningun hallazgo."
+            f"El analisis de ZAP contra '{redactar_url(resultado.objetivo)}' se cancelo "
+            "antes de guardar los resultados. No se guardo ningun hallazgo."
         )
 
     filas = [
@@ -106,7 +107,13 @@ def ejecutar_zap_pasivo(
         )
         for h in resultado.hallazgos
     ]
-    guardados = base_datos.agregar_resultados_zap(proyecto.id, resultado.objetivo, filas)
+    # El objetivo se redacta ANTES de persistirse: puede ser una URL con ruta y cadena de
+    # consulta (a diferencia del objetivo de Nuclei, que nunca admite ninguna de las dos),
+    # asi que podria llevar un token/contrasena/API key en claro si no se ocultara aqui,
+    # igual que 'commands/web.py:auditar_web()' hace con 'resultados_web'.
+    guardados = base_datos.agregar_resultados_zap(
+        proyecto.id, redactar_url(resultado.objetivo), filas
+    )
     return resultado, guardados
 
 
@@ -158,12 +165,14 @@ def pasivo_cmd(
     base_datos = obtener_base_datos()
     proyecto_obj = resolver_proyecto(base_datos, proyecto)
 
-    with consola.status(f"Ejecutando analisis pasivo de ZAP contra {texto_seguro(objetivo)}..."):
+    url_mostrada = redactar_url(objetivo)
+    mensaje_estado = f"Ejecutando analisis pasivo de ZAP contra {texto_seguro(url_mostrada)}..."
+    with consola.status(mensaje_estado):
         resultado, guardados = ejecutar_zap_pasivo(
             base_datos, proyecto_obj, objetivo, tiempo_limite=tiempo_limite
         )
 
-    consola.print(_tabla_hallazgos_zap(resultado.hallazgos, f"OWASP ZAP - {objetivo}"))
+    consola.print(_tabla_hallazgos_zap(resultado.hallazgos, f"OWASP ZAP - {url_mostrada}"))
     consola.print(f"Hallazgos guardados: {len(guardados)}.")
     if resultado.alertas_descartadas:
         consola.print(
