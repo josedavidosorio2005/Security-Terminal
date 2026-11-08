@@ -243,12 +243,19 @@ async def test_panel_resultados_estado_vacio():
 
 
 async def test_herramientas_detecta_sin_ejecutar():
+    # La deteccion corre en un worker en segundo plano (ver docs/ROADMAP.md: evita
+    # congelar la interfaz al cambiar de panel), asi que la tabla se llena un instante
+    # despues de cambiar de panel, no de forma sincrona.
     app = AuraByteApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-herramientas"
         await pilot.pause()
         tabla = app.query_one("#herr-tabla", DataTable)
+        for _ in range(50):
+            if tabla.row_count:
+                break
+            await pilot.pause(delay=0.05)
         assert tabla.row_count == 4  # Nmap, Nuclei, OWASP ZAP, tshark
 
 

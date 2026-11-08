@@ -731,7 +731,15 @@ class PanelVulnerabilidades(VerticalScroll):
         self._refrescar_proyecto()
 
     def _refrescar_deteccion(self) -> None:
+        self.query_one("#nuclei-deteccion", Static).update("Nuclei: comprobando...")
+        self._detectar_nuclei()
+
+    @work(thread=True, exclusive=True, group="nuclei-deteccion", exit_on_error=False)
+    def _detectar_nuclei(self) -> None:
         info = AdaptadorNuclei().info()
+        self.app.call_from_thread(self._mostrar_deteccion_nuclei, info)
+
+    def _mostrar_deteccion_nuclei(self, info) -> None:
         estado = "Instalada" if info.instalada else "No instalada"
         version = f" (version {texto_seguro(info.version)})" if info.version else ""
         self.query_one("#nuclei-deteccion", Static).update(f"Nuclei: {estado}{version}")
@@ -964,7 +972,19 @@ class PanelOWASPZAP(VerticalScroll):
         self._refrescar_proyecto()
 
     def _refrescar_deteccion(self) -> None:
+        self.query_one("#zap-deteccion", Static).update("OWASP ZAP: comprobando...")
+        self._detectar_zap()
+
+    @work(thread=True, exclusive=True, group="zap-deteccion", exit_on_error=False)
+    def _detectar_zap(self) -> None:
+        # Sin instancia de ZAP corriendo (el caso comun en desarrollo), AdaptadorZAP().info()
+        # puede tardar ~2s en el timeout de conexion por defecto: medido empiricamente, es
+        # el mayor bloqueo que sufria la interfaz al cambiar de panel (ver docs/ROADMAP.md).
+        # Ejecutarlo en un worker evita congelar la UI cada vez que se visita esta seccion.
         info = AdaptadorZAP().info()
+        self.app.call_from_thread(self._mostrar_deteccion_zap, info)
+
+    def _mostrar_deteccion_zap(self, info) -> None:
         estado = "Disponible" if info.disponible else "No disponible"
         version = f" (version {texto_seguro(info.version)})" if info.version else ""
         self.query_one("#zap-deteccion", Static).update(f"OWASP ZAP: {estado}{version}")
@@ -1305,6 +1325,7 @@ class PanelHerramientas(Vertical):
         )
         yield DataTable(id="herr-tabla")
         yield Button("Volver a detectar", id="herr-refrescar")
+        yield Static("", id="herr-mensaje", classes="ast-tenue")
 
     def on_mount(self) -> None:
         self.query_one("#herr-tabla", DataTable).add_columns(
@@ -1313,9 +1334,21 @@ class PanelHerramientas(Vertical):
         self.refrescar()
 
     def refrescar(self) -> None:
+        """Dispara la deteccion en un worker: comprobar 4 binarios/servicios tarda
+        cientos de milisegundos (ver docs/ROADMAP.md), y bloquear aqui congelaria la
+        interfaz cada vez que el usuario visita este panel, no solo la primera vez."""
+        self.query_one("#herr-mensaje", Static).update("Detectando herramientas...")
+        self._detectar()
+
+    @work(thread=True, exclusive=True, group="herr-deteccion", exit_on_error=False)
+    def _detectar(self) -> None:
+        herramientas = detectar_herramientas()
+        self.app.call_from_thread(self._mostrar_herramientas, herramientas)
+
+    def _mostrar_herramientas(self, herramientas: list) -> None:
         tabla = self.query_one("#herr-tabla", DataTable)
         tabla.clear()
-        for herramienta in detectar_herramientas():
+        for herramienta in herramientas:
             estado = "Instalada" if herramienta.instalada else "No instalada"
             tabla.add_row(
                 herramienta.nombre,
@@ -1324,6 +1357,7 @@ class PanelHerramientas(Vertical):
                 texto_seguro(herramienta.version) if herramienta.version else "-",
                 texto_seguro(herramienta.ruta) if herramienta.ruta else "-",
             )
+        self.query_one("#herr-mensaje", Static).update("")
 
     @on(Button.Pressed, "#herr-refrescar")
     def _refrescar_click(self, _evento: Button.Pressed) -> None:
