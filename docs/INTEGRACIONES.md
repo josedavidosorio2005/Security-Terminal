@@ -123,12 +123,19 @@ Segundo adaptador implementado, en su propia PR independiente. Sigue el mismo mo
 arriba, con una capa extra de validacion (catalogo cerrado de plantillas, revalidadas
 estructuralmente en cada ejecucion): ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo.
 
-## Proximas integraciones (fuera del alcance de este PR)
+## OWASP ZAP
 
-OWASP ZAP esta en el roadmap (ver [ROADMAP.md](ROADMAP.md)) y se entregara en una PR
-independiente, siguiendo el mismo motor de integraciones descrito aqui.
+Tercer adaptador implementado. A diferencia de Nmap y Nuclei, ZAP **no es un binario que AST
+ejecute como subproceso**: es un servicio HTTP que el usuario ya tiene corriendo por su cuenta
+(con su interfaz grafica o como daemon), con su API REST expuesta en un endpoint local. Por
+eso `integrations/zap.py:AdaptadorZAP` no hereda de `AdaptadorExterno` -- la pregunta no es
+"esta instalado en el PATH" sino "responde su API en el endpoint configurado". Solo ofrece
+analisis pasivo (nunca active scan, spider, ajaxSpider ni fuzzing) y restringe la conexion de
+administracion a loopback. Ver [docs/OWASP_ZAP.md](OWASP_ZAP.md) para el detalle completo.
 
-La auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones) ya esta
-implementada, pero **no pasa por este motor de integraciones** (no invoca ningun binario
-externo: es trafico HTTP(S) hecho por la propia aplicacion). Ver
+## Auditoria web no intrusiva
+
+La auditoria web no intrusiva (cabeceras HTTP, TLS, cookies, redirecciones) **no pasa por
+este motor de integraciones** (no invoca ningun binario externo ni un servicio aparte: es
+trafico HTTP(S) hecho por la propia aplicacion con `http.client`). Ver
 [AUDITORIA_WEB.md](AUDITORIA_WEB.md).

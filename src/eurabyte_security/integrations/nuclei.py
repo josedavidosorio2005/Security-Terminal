@@ -60,7 +60,8 @@ from eurabyte_security.core.errores import (
     ErrorIntegracion,
     ErrorParametrosIntegracion,
 )
-from eurabyte_security.core.redaccion import PALABRAS_SENSIBLES, VALOR_REDACTADO, redactar_url
+from eurabyte_security.core.redaccion import redactar_texto_libre as _redactar_texto_libre
+from eurabyte_security.core.redaccion import redactar_url
 from eurabyte_security.core.validation import ObjetivoNuclei, validar_objetivo_nuclei
 from eurabyte_security.integrations.base import AdaptadorExterno
 
@@ -129,14 +130,6 @@ _TAMANO_MAXIMO_JSONL_BYTES = 10 * 1024 * 1024  # 10 MiB
 _LONGITUD_MAXIMA_LINEA_JSONL = 200_000
 _LONGITUD_MAXIMA_CAMPO_CORTO = 200
 _LONGITUD_MAXIMA_CAMPO_LARGO = 300
-
-# Busca 'palabra_sensible: valor' o 'palabra_sensible=valor' (insensible a mayusculas)
-# en texto libre (no necesariamente una URL): "Authorization: Bearer abc123" redacta
-# "Bearer abc123" completo, no solo el primer token, deteniendose en el siguiente
-# separador de campo (coma, punto y coma o salto de linea) si lo hay.
-_PATRON_SECRETO_EN_TEXTO = re.compile(
-    r"(?i)((?:" + "|".join(re.escape(p) for p in PALABRAS_SENSIBLES) + r")\w*\s*[:=]\s*)([^,;\n]+)"
-)
 
 # --- Opciones de la linea de comandos de Nuclei ---
 
@@ -736,23 +729,6 @@ class AdaptadorNuclei(AdaptadorExterno):
 def _texto_corto(valor: object, longitud_maxima: int = 300) -> str:
     texto = str(valor) if valor is not None else ""
     return texto if len(texto) <= longitud_maxima else texto[: longitud_maxima - 3] + "..."
-
-
-def _redactar_texto_libre(texto: str) -> str:
-    """Redacta posibles secretos en texto libre (no necesariamente una URL).
-
-    ``core/redaccion.py:redactar_url`` esta pensada para query strings/fragmentos de
-    una URL; los campos de Nuclei que no tienen forma de URL (``description``,
-    ``matcher-name``, el detalle de ``stderr``/``stdout`` de un proceso que termino en
-    error) pueden igualmente contener un patron ``palabra_sensible: valor`` o
-    ``palabra_sensible=valor`` -- por ejemplo, una cabecera ``Authorization: Bearer
-    ...`` que Nuclei hubiera volcado en un mensaje de error. Hoy estos campos son, en
-    el camino normal, texto estatico que AURABYTE escribio (la descripcion de una
-    plantilla) o metadatos propios de Nuclei (el nombre del matcher): se redactan
-    igual porque AST trata TODA la salida de un binario externo como no confiable, no
-    solo cuando se sabe de antemano que puede traer algo sensible.
-    """
-    return _PATRON_SECRETO_EN_TEXTO.sub(lambda m: m.group(1) + VALOR_REDACTADO, texto)
 
 
 def _analizar_jsonl_nuclei(

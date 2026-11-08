@@ -142,11 +142,38 @@ est nuclei reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]
 Al igual que `escanear tcp`/`nmap`, rechaza cualquier objetivo que no este en el alcance
 autorizado del proyecto. Requiere tener Nuclei instalado.
 
+## `est zap`
+
+Integracion con OWASP ZAP (Fase 3): solo analisis pasivo, nunca active scan/spider/fuzzing.
+ZAP no lo instala AST: debe estar ya corriendo por tu cuenta, con su API en loopback. Detalle
+completo (configuracion, limitaciones) en [docs/OWASP_ZAP.md](OWASP_ZAP.md).
+
+```bash
+est zap estado
+est zap pasivo URL [--proyecto NOMBRE] [--tiempo-limite 60]
+est zap resultados [--proyecto NOMBRE] [--limite 50]
+est zap revisar ID --estado nuevo|confirmado|falso_positivo
+est zap reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est zap estado` | Muestra si la API de ZAP responde en el endpoint configurado. |
+| `est zap pasivo URL` | Ejecuta un analisis pasivo dentro del alcance autorizado. |
+| `est zap resultados` | Muestra los hallazgos guardados de un proyecto. |
+| `est zap revisar ID --estado ...` | Marca un hallazgo como confirmado o falso positivo. |
+| `est zap reporte` | Exporta los hallazgos guardados a HTML o JSON. |
+
+`URL` debe ser una IPv4 literal ya autorizada en el alcance (misma regla que `est web
+auditar`). Configuracion mediante las variables de entorno `EST_ZAP_URL` (por defecto
+`http://127.0.0.1:8080`, siempre loopback) y `EST_ZAP_API_KEY` (opcional; nunca se muestra
+en pantalla, logs ni informes).
+
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,
-`alcance`, `tcp`, `escanear`, `nmap`, `web`, `nuclei`, `resultados`, `reporte`, `interactivo`,
-`interfaz`.
+`alcance`, `tcp`, `escanear`, `nmap`, `web`, `nuclei`, `zap`, `resultados`, `reporte`,
+`interactivo`, `interfaz`.
 
 ```bash
 est explicar tcp

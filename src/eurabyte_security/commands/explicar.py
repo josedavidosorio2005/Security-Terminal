@@ -119,6 +119,28 @@ EXPLICACIONES: dict[str, str] = {
         "  cookies de sesion: solo un resumen saneado (plantilla, severidad,\n"
         "  descripcion y donde se detecto)."
     ),
+    "zap": (
+        "Integracion con OWASP ZAP (Fase 3, Paso 5): analisis pasivo unicamente, nunca\n"
+        "active scan, spider, ajaxSpider ni fuzzing. ZAP no lo instala AST: debe estar\n"
+        "ya corriendo por tu cuenta, con su API expuesta en loopback.\n\n"
+        "est zap estado\n"
+        "est zap pasivo URL [--proyecto NOMBRE] [--tiempo-limite 60]\n"
+        "est zap resultados [--proyecto NOMBRE] [--limite 50]\n"
+        "est zap revisar ID --estado nuevo|confirmado|falso_positivo\n"
+        "est zap reporte --formato html|json [--proyecto NOMBRE] [--salida RUTA]\n\n"
+        "- URL: debe ser una IPv4 literal ya autorizada en el alcance del proyecto\n"
+        "  (misma regla que 'est web auditar'); no se admiten nombres de dominio.\n"
+        "- 'est zap pasivo' hace una unica peticion GET controlada (via la propia\n"
+        "  API de ZAP, 'accessUrl', sin seguir redirecciones) para alimentar el\n"
+        "  analizador pasivo, y luego lee solo las alertas de ESE objetivo -- nunca\n"
+        "  mezcla alertas de otras auditorias que pudiera tener la misma instancia\n"
+        "  de ZAP.\n"
+        "- Configuracion: variables de entorno EST_ZAP_URL (por defecto\n"
+        "  'http://127.0.0.1:8080', siempre loopback) y EST_ZAP_API_KEY (opcional;\n"
+        "  nunca se muestra en pantalla, en logs ni en informes).\n"
+        "- Ningun hallazgo guarda peticiones/respuestas completas: solo un resumen\n"
+        "  saneado (regla, riesgo, confianza, evidencia truncada y redactada)."
+    ),
 }
 
 def explicar_cmd(

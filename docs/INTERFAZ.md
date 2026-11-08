@@ -38,8 +38,9 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Reconocimiento | Implementada | Descubrimiento de puertos/servicios con Nmap, con boton de cancelar. |
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
+| OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
-| Herramientas | Implementada | Detecta si Nmap/Nuclei/OWASP ZAP/tshark estan instalados, y la version de Nmap/Nuclei (no los ejecuta). |
+| Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
 | Resultados | Implementada | Tabla de resultados guardados del proyecto activo. |
 | Reportes | Implementada | Genera informes HTML o JSON del proyecto activo. |
 | Aprendizaje | Proximamente (Fase 5) | Reservado para laboratorios y contenido educativo. |
@@ -135,11 +136,26 @@ cualquier escaner automatico, revisa la evidencia antes de confirmar un hallazgo
 "Reconocimiento", rechaza objetivos fuera del alcance autorizado y no guarda nada si se
 cancela. Detalle completo (catalogo, limitaciones) en [docs/NUCLEI.md](NUCLEI.md).
 
+### OWASP ZAP
+
+Muestra si la API de ZAP responde (y su version), el proyecto activo y una nota explicita de
+que solo se ofrece analisis pasivo (nunca active scan, spider, ajaxSpider ni fuzzing). Escribe
+la URL autorizada, un tiempo limite opcional y marca la casilla **"Confirmo que el objetivo
+esta autorizado"** antes de poder analizar -- igual que en "Vulnerabilidades", un clic
+accidental en "Analizar" nunca dispara un analisis real. "Cancelar" detiene la espera del
+analisis (ZAP sigue corriendo como servicio independiente; lo que AST garantiza es que no se
+guarda ningun hallazgo si se cancela). Selecciona una fila de la tabla de alertas para ver su
+detalle completo (riesgo, confianza, descripcion, evidencia saneada, solucion y referencia) y
+marcarla como "confirmado" o "falso positivo". Igual que "Vulnerabilidades", rechaza objetivos
+fuera del alcance autorizado. Detalle completo (configuracion, limitaciones) en
+[docs/OWASP_ZAP.md](OWASP_ZAP.md).
+
 ### Herramientas
 
-Muestra si Nmap, Nuclei, OWASP ZAP y tshark estan instalados en el sistema (`PATH`), y la
-version detectada para Nmap y Nuclei. AST **nunca ejecuta un analisis automaticamente** desde
-este panel: solo comprueba presencia/version, de solo lectura.
+Muestra si Nmap, Nuclei y tshark estan instalados en el sistema (`PATH`) y si la API de OWASP
+ZAP responde en el endpoint configurado, con la version detectada para Nmap, Nuclei y ZAP.
+AST **nunca ejecuta un analisis automaticamente** desde este panel: solo comprueba
+presencia/version/disponibilidad, de solo lectura.
 
 ### Reportes
 
@@ -188,8 +204,9 @@ el `PATH` del sistema; instalala y vuelve a pulsar "Volver a detectar".
 
 ## Cancelacion de un escaneo o analisis: semantica exacta
 
-Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web" o "Vulnerabilidades"
-(o al iniciarse un escaneo/analisis nuevo mientras otro seguia en curso):
+Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web",
+"Vulnerabilidades" u "OWASP ZAP" (o al iniciarse un escaneo/analisis nuevo mientras otro
+seguia en curso):
 
 - La semantica es **todo o nada**: un escaneo o analisis cancelado no guarda ningun resultado
   en la base de datos, ni siquiera de los puertos/hallazgos que ya se habian comprobado antes
@@ -202,6 +219,9 @@ Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web" o "Vu
   externo de verdad (`Popen.kill()`), no se limita a dejar de esperarlo.
 - **Analisis web**: deja de leer el cuerpo de la respuesta en cuanto detecta la cancelacion;
   igual que las demas, no persiste ningun hallazgo del analisis cancelado.
+- **OWASP ZAP**: deja de esperar al analizador pasivo en cuanto detecta la cancelacion; como
+  ZAP es un servicio independiente (no un proceso que AST lance), seguira corriendo por su
+  cuenta, pero AST nunca persiste ningun hallazgo de un analisis cancelado.
 - Si inicias un segundo escaneo/analisis antes de que termine el primero, el primero se
   cancela automaticamente y solo el resultado del mas reciente puede llegar a mostrarse en la
   tabla: la interfaz nunca mezcla los resultados de dos ejecuciones.
@@ -211,10 +231,13 @@ Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web" o "Vu
 - `est interfaz` necesita una terminal real (no funciona con la entrada/salida completamente
   redirigida), igual que cualquier aplicacion Textual.
 - Las secciones Modulos y Aprendizaje son marcadores de posicion para las Fases 3 y 5: no
-  tienen funcionalidad todavia (Analisis web y Vulnerabilidades ya estan implementadas).
+  tienen funcionalidad todavia (Analisis web, Vulnerabilidades y OWASP ZAP ya estan
+  implementadas).
 - El escudo de marca (barra superior y panel de Inicio) es una alternativa en texto ASCII
   mientras no exista el recurso grafico oficial (ver `eurabyte_security/marca.py`).
-- Los resultados de Nmap y de Nuclei todavia no aparecen en `est resultados` ni en
+- Los resultados de Nmap, Nuclei y OWASP ZAP todavia no aparecen en `est resultados` ni en
   `est reporte generar` (solo los de `escanear tcp`); se consultan por ahora solo en el
-  propio panel/comando de cada uno. Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md) y
-  [docs/NUCLEI.md](NUCLEI.md).
+  propio panel/comando de cada uno. Ver [docs/INTEGRACIONES.md](INTEGRACIONES.md),
+  [docs/NUCLEI.md](NUCLEI.md) y [docs/OWASP_ZAP.md](OWASP_ZAP.md).
+- El analisis pasivo de OWASP ZAP no se ha podido validar contra una instancia de ZAP real
+  en este entorno de desarrollo (ver limitaciones en [docs/OWASP_ZAP.md](OWASP_ZAP.md)).

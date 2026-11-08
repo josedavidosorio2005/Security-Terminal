@@ -20,6 +20,7 @@ from eurabyte_security.ui.tui.widgets.paneles import (
     PanelConfiguracion,
     PanelHerramientas,
     PanelInicio,
+    PanelOWASPZAP,
     PanelProximamente,
     PanelProyectos,
     PanelReconocimiento,
@@ -66,6 +67,7 @@ class AuraByteApp(App[None]):
                 yield PanelReconocimiento(id="panel-reconocimiento")
                 yield PanelAuditoriaWeb(id="panel-web")
                 yield PanelVulnerabilidades(id="panel-vulnerabilidades")
+                yield PanelOWASPZAP(id="panel-zap")
                 yield PanelRedes(id="panel-redes")
                 yield PanelHerramientas(id="panel-herramientas")
                 yield PanelResultados(id="panel-resultados")

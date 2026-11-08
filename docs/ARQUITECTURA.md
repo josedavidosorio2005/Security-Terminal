@@ -21,9 +21,10 @@ src/eurabyte_security/
 │   ├── network/    Comprobaciones de red (Fase 1: escaneo TCP basico).
 │   ├── web/        Auditoria web (Fase 3, Paso 3): cabeceras HTTP, TLS, cookies,
 │   │               redirecciones. Detalle en docs/AUDITORIA_WEB.md.
-│   ├── vulnerability/  Reservado para analisis de vulnerabilidades en Python puro
-│   │               (sin binario externo). Nuclei vive en integrations/, no aqui
-│   │               (sigue el mismo patron que Nmap: es un adaptador externo).
+│   ├── vulnerability/  Analisis de vulnerabilidades que no son un binario invocado como
+│   │               subproceso. Nuclei (subproceso) vive en integrations/, no aqui; ZAP
+│   │               (servicio HTTP ya en marcha, nunca un subproceso) si vive aqui --
+│   │               ver vulnerability/zap.py y docs/OWASP_ZAP.md.
 │   └── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
 ├── integrations/   Motor de integraciones (Fase 3). Detalle en docs/INTEGRACIONES.md.
 │   ├── base.py     AdaptadorExterno: contrato comun (deteccion, version, validacion...).
@@ -32,7 +33,11 @@ src/eurabyte_security/
 │   ├── deteccion.py  Deteccion/version de las herramientas (nunca las ejecuta de verdad).
 │   ├── nmap.py     Primer adaptador concreto: descubrimiento de puertos y servicios.
 │   ├── nuclei.py   Segundo adaptador: solo plantillas HTTP aprobadas (ver docs/NUCLEI.md).
-│   └── plantillas_nuclei/*.yaml   Catalogo de plantillas que nuclei.py puede ejecutar.
+│   ├── plantillas_nuclei/*.yaml   Catalogo de plantillas que nuclei.py puede ejecutar.
+│   └── zap.py      Fachada de OWASP ZAP (ver docs/OWASP_ZAP.md): a diferencia de los
+│                    anteriores, no hereda de AdaptadorExterno -- ZAP no es un binario
+│                    que AST invoque, sino un servicio HTTP que el usuario ya tiene
+│                    corriendo; la logica real vive en modules/vulnerability/zap.py.
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
 ├── storage/        Repositorio SQLite (proyectos, alcances, resultados).
 └── ui/
@@ -123,9 +128,8 @@ comprueba que no queda nada guardado.
 5. `commands/nmap.py` persiste los resultados (atomicamente, ver arriba) y guarda el XML
    original como evidencia en `core/config.py:ruta_evidencias("nmap")`.
 
-Cualquier integracion futura (OWASP ZAP...) sigue el mismo patron: adaptador en
-`integrations/`, comando/orquestacion en `commands/` (donde vive la verificacion de alcance),
-nunca al reves.
+Nuclei y OWASP ZAP siguen el mismo patron: adaptador en `integrations/`, comando/orquestacion
+en `commands/` (donde vive la verificacion de alcance), nunca al reves.
 
 ## Auditoria web: flujo (ejemplo: `est web auditar`)
 
@@ -162,6 +166,21 @@ plantilla que declare un protocolo distinto de `http`, que siga redirecciones o 
 Interactsh/OAST -- una comprobacion en tiempo de ejecucion, no solo una revision manual que se
 hizo una vez. Ver [docs/NUCLEI.md](NUCLEI.md) para el detalle completo.
 
+## OWASP ZAP: un servicio HTTP ya en marcha, no un subproceso
+
+`integrations/zap.py:AdaptadorZAP` tiene una forma similar a los demas adaptadores
+(`info()`, `validar_parametros()`, `ejecutar()`), pero no hereda de
+`integrations/base.py:AdaptadorExterno`: ZAP no es un binario que AST resuelva con
+`shutil.which` y ejecute sin shell, sino un servicio HTTP que el usuario ya tiene corriendo
+por su cuenta, con su API REST expuesta en loopback. La logica real (validacion del
+endpoint, llamadas HTTP, analisis pasivo) vive en `modules/vulnerability/zap.py`, que habla
+con esa API con `http.client` directo -- el mismo patron que `modules/web/cliente.py` usa
+para hablar con el objetivo auditado, sin `urllib.request` ni variables de entorno de
+proxy. Esta integracion nunca usa `active scan`, `spider`, `ajaxSpider` ni fuzzing: la unica
+peticion que llega al objetivo es la que la propia API de ZAP hace a traves de
+`core/action/accessUrl` (`followRedirects=false`), que alimenta su analizador pasivo sin
+explorar nada mas. Ver [docs/OWASP_ZAP.md](OWASP_ZAP.md) para el detalle completo.
+
 ## Texto seguro frente al marcado Rich
 
 Cualquier texto que pueda contener lo que el usuario escribio (un objetivo invalido, un tema
@@ -195,4 +214,5 @@ mostrar) se repite en los demas comandos (`proyecto`, `alcance`, `resultados`, `
 Toda la informacion vive en SQLite, en un unico archivo bajo el directorio de datos del usuario
 (`~/.eurabyte_security/est.db` por defecto, o `$EST_HOME/est.db` si se define esa variable de
 entorno). El esquema tiene las tablas `proyectos`, `alcances`, `resultados` (escaneo TCP),
-`resultados_nmap`, `resultados_web` y `resultados_nuclei` (ver `storage/database.py`).
+`resultados_nmap`, `resultados_web`, `resultados_nuclei` y `resultados_zap` (ver
+`storage/database.py`).

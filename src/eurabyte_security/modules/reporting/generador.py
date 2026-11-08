@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import escape
 
-from eurabyte_security.storage.database import Resultado, ResultadoNuclei, ResultadoWeb
+from eurabyte_security.storage.database import (
+    Resultado,
+    ResultadoNuclei,
+    ResultadoWeb,
+    ResultadoZAP,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +63,7 @@ th { background: #1a1d26; }
 .cerrado { color: #a0aec0; }
 .error { color: #fc8181; }
 .resumen { color: #a0aec0; margin-bottom: 1rem; }
-.severidad-info, .severidad-unknown { color: #a0aec0; }
+.severidad-info, .severidad-unknown, .severidad-informational { color: #a0aec0; }
 .severidad-baja, .severidad-low { color: #4fd1c5; }
 .severidad-media, .severidad-medium { color: #f6e05e; font-weight: bold; }
 .severidad-alta, .severidad-high, .severidad-critical { color: #fc8181; font-weight: bold; }
@@ -236,3 +241,70 @@ def generar_html_nuclei(datos: DatosInformeNuclei) -> str:
         f"Total de hallazgos: {len(datos.hallazgos)}"
     )
     return _pagina_html(f"Informe Nuclei AST - {datos.proyecto}", resumen, cuerpo_tabla)
+
+
+@dataclass(frozen=True, slots=True)
+class DatosInformeZAP:
+    proyecto: str
+    generado_en: str
+    hallazgos: list[ResultadoZAP]
+
+
+def construir_datos_informe_zap(proyecto: str, hallazgos: list[ResultadoZAP]) -> DatosInformeZAP:
+    return DatosInformeZAP(
+        proyecto=proyecto,
+        generado_en=datetime.now(UTC).isoformat(),
+        hallazgos=hallazgos,
+    )
+
+
+def generar_json_zap(datos: DatosInformeZAP) -> str:
+    cuerpo = {
+        "proyecto": datos.proyecto,
+        "generado_en": datos.generado_en,
+        "total_hallazgos": len(datos.hallazgos),
+        "hallazgos": [
+            {
+                "objetivo": h.objetivo,
+                "plugin_id": h.plugin_id,
+                "nombre_hallazgo": h.nombre_hallazgo,
+                "riesgo": h.riesgo,
+                "confianza": h.confianza,
+                "descripcion": h.descripcion,
+                "evidencia": h.evidencia,
+                "solucion": h.solucion,
+                "referencia": h.referencia,
+                "estado_revision": h.estado_revision,
+                "creado_en": h.creado_en,
+            }
+            for h in datos.hallazgos
+        ],
+    }
+    return json.dumps(cuerpo, ensure_ascii=False, indent=2)
+
+
+def generar_html_zap(datos: DatosInformeZAP) -> str:
+    filas = "\n".join(
+        f"<tr><td>{escape(h.objetivo)}</td><td>{escape(h.plugin_id)}</td>"
+        f"<td>{escape(h.nombre_hallazgo)}</td>"
+        f"<td class=\"severidad-{escape(h.riesgo.lower())}\">{escape(h.riesgo)}</td>"
+        f"<td>{escape(h.confianza)}</td>"
+        f"<td>{escape(h.solucion)}</td><td>{escape(h.estado_revision)}</td>"
+        f"<td>{escape(h.creado_en)}</td></tr>"
+        for h in datos.hallazgos
+    )
+    if not filas:
+        filas = "<tr><td colspan=\"8\">No hay hallazgos de OWASP ZAP registrados.</td></tr>"
+
+    cuerpo_tabla = (
+        "<table>\n<thead><tr><th>Objetivo</th><th>Regla</th><th>Hallazgo</th>"
+        "<th>Riesgo</th><th>Confianza</th><th>Solucion</th><th>Revision</th>"
+        "<th>Fecha</th></tr></thead>\n"
+        f"<tbody>\n{filas}\n</tbody>\n</table>"
+    )
+    resumen = (
+        f"Proyecto: <strong>{escape(datos.proyecto)}</strong> &middot; "
+        f"Generado: {escape(datos.generado_en)} &middot; "
+        f"Total de hallazgos: {len(datos.hallazgos)}"
+    )
+    return _pagina_html(f"Informe OWASP ZAP AST - {datos.proyecto}", resumen, cuerpo_tabla)
