@@ -109,7 +109,13 @@ def _tabla_resultado_nmap(resultado: ResultadoNmap) -> Table:
 @nmap_app.command("descubrir")
 def descubrir_cmd(
     objetivo: str = typer.Argument(..., help="Direccion IPv4 a comprobar."),
-    puertos: str = typer.Option(..., "--puertos", help="Lista de puertos, ej: 22,80,443."),
+    puertos: str = typer.Option(
+        ...,
+        "--puertos",
+        help="Lista (22,80,443), rango (1-1024), mezcla (22,80,1000-2000), o un "
+        "perfil: 'rapido' (puertos comunes) o 'completo' (1-65535, controla los "
+        "tiempos con --tiempo-limite).",
+    ),
     proyecto: str | None = typer.Option(
         None, "--proyecto", help="Proyecto a usar (por defecto, el activo)."
     ),

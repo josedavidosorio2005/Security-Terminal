@@ -437,6 +437,23 @@ los paneles "Reconocimiento" y "Vulnerabilidades", y queda fuera del alcance de 
 incremento por su tamano y sensibilidad de seguridad (es, en esencia, construir el
 flujo que usara esta pieza en produccion).
 
+### Nmap: rangos de puertos y perfiles (completado)
+
+`est nmap descubrir --puertos` admite ahora, ademas de la lista separada por comas de
+siempre, un rango (`1-1024`) y los perfiles `rapido`/`completo` (`1-65535`) --
+`core/validation.py:validar_especificacion_puertos_nmap`. Nmap expande el rango de
+forma nativa al recibir `-p`: AST nunca construye una lista de 65535 enteros en Python
+para pasarsela (a diferencia de `escanear tcp`, que abre una conexion por puerto desde
+el propio proceso y por eso sigue acotado a `MAX_PUERTOS_POR_ESCANEO`, sin cambios). El
+limite que si se aplica aqui es sobre el TEXTO de entrada (como mucho 64 tokens
+separados por comas), no sobre cuantos puertos puede cubrir un rango.
+
+- [x] Pruebas (`tests/test_validation.py`, `tests/test_integraciones_nmap.py`):
+      listas, rangos, mezclas, los dos perfiles por nombre, rechazo de rangos
+      invertidos/fuera de rango/mal formados, y que el perfil `completo` llega a `-p`
+      como `1-65535` literal (nunca expandido).
+- [x] CI verificado en Windows y Linux.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

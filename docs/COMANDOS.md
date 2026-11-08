@@ -80,12 +80,21 @@ limitaciones) en [docs/INTEGRACIONES.md](INTEGRACIONES.md).
 est nmap version
 est nmap descubrir OBJETIVO --puertos 22,80,443 [--proyecto NOMBRE] \
     [--deteccion-version] [--tiempo-limite 120]
+est nmap descubrir OBJETIVO --puertos completo --tiempo-limite 600
 ```
 
 | Comando | Descripcion |
 |---|---|
 | `est nmap version` | Muestra si Nmap esta instalado y su version. |
 | `est nmap descubrir OBJETIVO --puertos ...` | Ejecuta Nmap dentro del alcance autorizado. |
+
+`--puertos` admite, a diferencia de `escanear tcp` (que abre una conexion por puerto desde el
+propio proceso de AST y por eso sigue acotado a 1024 puertos por ejecucion): una lista
+(`22,80,443`), un rango (`1-1024`), una mezcla de ambos (`22,80,1000-2000`), o uno de los
+perfiles predefinidos `rapido` (puertos comunes) o `completo` (`1-65535`). Nmap expande el
+rango de forma nativa; AST nunca construye una lista de 65535 puertos individuales para
+pasarsela. Un escaneo de `completo` puede tardar bastante: ajusta `--tiempo-limite` segun
+corresponda (maximo 600 segundos).
 
 Al igual que `escanear tcp`, rechaza cualquier objetivo que no este en el alcance autorizado del
 proyecto. Requiere tener Nmap instalado.

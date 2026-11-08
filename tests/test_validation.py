@@ -6,8 +6,10 @@ import pytest
 
 from eurabyte_security.core.errores import ErrorValidacion
 from eurabyte_security.core.validation import (
+    MAX_TOKENS_ESPECIFICACION_PUERTOS_NMAP,
     objetivo_en_alcance,
     validar_concurrencia,
+    validar_especificacion_puertos_nmap,
     validar_nombre_proyecto,
     validar_objetivo,
     validar_puertos,
@@ -68,6 +70,56 @@ def test_validar_puertos_rechaza_demasiados():
     especificacion = ",".join(str(p) for p in range(1, 1200))
     with pytest.raises(ErrorValidacion):
         validar_puertos(especificacion)
+
+
+# -- validar_especificacion_puertos_nmap (admite rangos, a diferencia de validar_puertos) --
+
+
+def test_nmap_especificacion_acepta_lista_simple():
+    assert validar_especificacion_puertos_nmap("22,80,443") == "22,80,443"
+
+
+def test_nmap_especificacion_acepta_un_rango():
+    assert validar_especificacion_puertos_nmap("1-1024") == "1-1024"
+
+
+def test_nmap_especificacion_acepta_rango_completo_sin_expandirlo():
+    """El rango IANA completo (perfil 'completo') debe pasar tal cual, sin que AST
+    construya una lista de 65535 enteros en Python para validarlo."""
+    assert validar_especificacion_puertos_nmap("1-65535") == "1-65535"
+
+
+def test_nmap_especificacion_acepta_mezcla_de_puertos_y_rangos():
+    assert validar_especificacion_puertos_nmap("22,80,1000-2000") == "22,80,1000-2000"
+
+
+def test_nmap_especificacion_acepta_perfil_rapido():
+    resultado = validar_especificacion_puertos_nmap("rapido")
+    assert "22" in resultado.split(",")
+    assert "80" in resultado.split(",")
+
+
+def test_nmap_especificacion_acepta_perfil_completo():
+    assert validar_especificacion_puertos_nmap("completo") == "1-65535"
+
+
+def test_nmap_especificacion_perfil_es_insensible_a_mayusculas():
+    assert validar_especificacion_puertos_nmap("COMPLETO") == "1-65535"
+
+
+@pytest.mark.parametrize(
+    "especificacion",
+    ["", "   ", "abc", "0", "70000", "22,abc", "2000-1000", "1-70000", "1-2-3", "a-b"],
+)
+def test_nmap_especificacion_rechaza_invalidas(especificacion):
+    with pytest.raises(ErrorValidacion):
+        validar_especificacion_puertos_nmap(especificacion)
+
+
+def test_nmap_especificacion_rechaza_demasiados_tokens():
+    especificacion = ",".join(str(p) for p in range(1, MAX_TOKENS_ESPECIFICACION_PUERTOS_NMAP + 5))
+    with pytest.raises(ErrorValidacion):
+        validar_especificacion_puertos_nmap(especificacion)
 
 
 @pytest.mark.parametrize("valor", [0.0, 0.05, 10.1, 100])

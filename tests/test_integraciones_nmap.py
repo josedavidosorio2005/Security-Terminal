@@ -98,6 +98,30 @@ def test_nmap_analiza_el_xml_correctamente(monkeypatch):
     assert https.estado == "open" and https.servicio == "https" and https.version == "nginx 1.18"
 
 
+def test_nmap_acepta_un_rango_completo_de_puertos_sin_expandirlo(monkeypatch):
+    """Nmap SI admite rangos (a diferencia de 'escanear tcp'): el perfil 'completo'
+    (1-65535) debe pasarse a '-p' tal cual, nunca como una lista de 65535 enteros."""
+    _instalar_nmap_falso(monkeypatch)
+    resultado = AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="completo")
+    argumentos = resultado.comando_ejecutado
+    assert "-p" in argumentos
+    assert argumentos[argumentos.index("-p") + 1] == "1-65535"
+
+
+def test_nmap_acepta_perfil_rapido_por_nombre(monkeypatch):
+    _instalar_nmap_falso(monkeypatch)
+    resultado = AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="rapido")
+    argumentos = resultado.comando_ejecutado
+    especificacion_usada = argumentos[argumentos.index("-p") + 1]
+    assert "22" in especificacion_usada.split(",")
+
+
+def test_nmap_rechaza_especificacion_de_puertos_invalida(monkeypatch):
+    _instalar_nmap_falso(monkeypatch)
+    with pytest.raises(ErrorValidacion):
+        AdaptadorNmap().ejecutar(objetivo="127.0.0.1", puertos_especificacion="2000-1000")
+
+
 def test_nmap_deteccion_version_agrega_sv(monkeypatch):
     _instalar_nmap_falso(monkeypatch)
     resultado = AdaptadorNmap().ejecutar(

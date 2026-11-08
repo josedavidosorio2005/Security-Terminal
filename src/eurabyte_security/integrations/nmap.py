@@ -22,7 +22,7 @@ from eurabyte_security.core.errores import (
     ErrorIntegracion,
     ErrorParametrosIntegracion,
 )
-from eurabyte_security.core.validation import validar_objetivo, validar_puertos
+from eurabyte_security.core.validation import validar_especificacion_puertos_nmap, validar_objetivo
 from eurabyte_security.integrations.base import AdaptadorExterno
 
 TIEMPO_LIMITE_MINIMO = 5.0
@@ -96,15 +96,15 @@ class AdaptadorNmap(AdaptadorExterno):
         puertos_especificacion: str,
         tiempo_limite: float = TIEMPO_LIMITE_POR_DEFECTO,
         **_kwargs: object,
-    ) -> tuple[str, list[int]]:
+    ) -> tuple[str, str]:
         ip = validar_objetivo(objetivo)
-        puertos = validar_puertos(puertos_especificacion)
+        especificacion = validar_especificacion_puertos_nmap(puertos_especificacion)
         if not (TIEMPO_LIMITE_MINIMO <= tiempo_limite <= TIEMPO_LIMITE_MAXIMO):
             raise ErrorParametrosIntegracion(
                 f"El tiempo limite de Nmap debe estar entre {TIEMPO_LIMITE_MINIMO} y "
                 f"{TIEMPO_LIMITE_MAXIMO} segundos."
             )
-        return str(ip), puertos
+        return str(ip), especificacion
 
     def ejecutar(
         self,
@@ -126,17 +126,18 @@ class AdaptadorNmap(AdaptadorExterno):
         ``ErrorEscaneoCancelado`` y no se devuelve ningun resultado.
         """
         self.requerir_instalada()
-        ip, puertos = self.validar_parametros(
+        ip, especificacion_puertos = self.validar_parametros(
             objetivo=objetivo, puertos_especificacion=puertos_especificacion,
             tiempo_limite=tiempo_limite,
         )
-        lista_puertos = ",".join(str(p) for p in puertos)
 
         with tempfile.TemporaryDirectory(prefix="ast-nmap-") as directorio_temporal:
             ruta_xml = Path(directorio_temporal) / "resultado.xml"
             # -sT: connect scan, no requiere privilegios elevados (a diferencia de -sS).
-            # -Pn: no descartar el objetivo aunque no responda a ping.
-            argumentos = ["-sT", "-Pn", "-p", lista_puertos]
+            # -Pn: no descartar el objetivo aunque no responda a ping. 'especificacion_puertos'
+            # puede ser un rango ('1-65535'): se pasa tal cual, Nmap lo expande de forma
+            # nativa -- AST nunca construye una lista de 65535 enteros para esto.
+            argumentos = ["-sT", "-Pn", "-p", especificacion_puertos]
             if deteccion_version:
                 argumentos.append("-sV")
             argumentos += ["-oX", str(ruta_xml), ip]
