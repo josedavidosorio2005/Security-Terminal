@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from textual import events, on
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Button, ContentSwitcher, Input, OptionList, TabbedContent, TabPane
@@ -86,8 +86,19 @@ class AuraByteApp(App[None]):
 
     def on_mount(self) -> None:
         self.refrescar_estado()
-        self.query_one(PanelInfoComando).actualizar_herramientas(detectar_herramientas())
         self._ajustar_responsivo(self.size.width)
+        self._detectar_herramientas_en_fondo()
+
+    # 'detectar_herramientas()' comprueba 4 binarios/servicios externos (~0.6s medido
+    # empiricamente, ver docs/ROADMAP.md): ejecutarla aqui directamente retrasaria el
+    # primer pintado interactivo de toda la interfaz. Un worker deja que la app responda
+    # de inmediato y la lista de 'Herramientas' se complete un instante despues.
+    @work(thread=True, exclusive=True, group="deteccion-inicial", exit_on_error=False)
+    def _detectar_herramientas_en_fondo(self) -> None:
+        herramientas = detectar_herramientas()
+        self.call_from_thread(
+            self.query_one(PanelInfoComando).actualizar_herramientas, herramientas
+        )
 
     def refrescar_estado(self) -> None:
         """Vuelve a leer el estado (proyecto activo, conteos...) y lo propaga a la UI."""

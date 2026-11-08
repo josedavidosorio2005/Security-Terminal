@@ -369,6 +369,36 @@ compacto-arriba/tabla-abajo sin solapamientos, por lo que no requirieron cambios
 fondo en este PR; una revision visual dedicada a esos tres paneles queda abierta si se
 detectan problemas especificos.
 
+### Rendimiento de la interfaz: deteccion de herramientas movida a workers (completado)
+
+Diagnostico empirico (no supuesto) de los congelamientos reportados al cambiar de
+panel: medido con `time.perf_counter()`, `AdaptadorZAP().info()` sin una instancia de
+ZAP corriendo tarda ~2s (timeout de conexion por defecto) y `detectar_herramientas()`
+(cuatro binarios/servicios) tarda ~0.6s. Ambas se llamaban de forma **sincrona** justo
+en el manejador de evento que cambia de panel (`AuraByteApp._refrescar_panel`) o en
+`on_mount`, bloqueando el hilo principal de Textual -- el peor caso, visitar "OWASP
+ZAP" sin tener ZAP corriendo, congelaba la interfaz ~2 segundos cada vez.
+
+- [x] `PanelOWASPZAP._refrescar_deteccion`, `PanelVulnerabilidades._refrescar_deteccion`
+      y `PanelHerramientas.refrescar` ahora disparan la deteccion en un
+      `@work(thread=True, exclusive=True)` y muestran un texto "comprobando..." mientras
+      se resuelve, igual que cualquier otra operacion de red/proceso externo en la TUI.
+- [x] `AuraByteApp.on_mount` ya no espera a `detectar_herramientas()` antes del primer
+      pintado interactivo: se dispara en el mismo tipo de worker.
+- [x] Verificado con mediciones reales antes/despues (no solo la ausencia de errores):
+      el cambio sincrono a "OWASP ZAP" bajo de ~2s a ~0.004s; a "Herramientas", de ~0.6s
+      a ~0.000s.
+- [x] Pruebas automatizadas con un doble que simula el retraso
+      (`tests/test_tui_rendimiento.py`): confirman que el cambio de panel y el arranque
+      de la app no esperan de forma sincrona, y que el resultado real se refleja un
+      instante despues sin bloquear la interfaz.
+- [x] CI verificado en Windows y Linux.
+
+Pendiente: no se detecto evidencia de otros bloqueos sincronos equivalentes en el resto
+de la interfaz (Nmap, auditoria web, Redes no llaman a ninguna deteccion en su
+`refrescar()`); si aparece un nuevo caso, el mismo patron (`@work` + placeholder) es el
+que corresponde aplicar.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

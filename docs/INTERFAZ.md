@@ -232,6 +232,12 @@ todavia.
 **Herramienta externa marcada como "No instalada"**: AST solo comprueba si el binario esta en
 el `PATH` del sistema; instalala y vuelve a pulsar "Volver a detectar".
 
+**El panel tarda un instante en mostrar "Instalada"/"Disponible" al entrar**: la
+deteccion (version de un binario, o si la API de OWASP ZAP responde) corre en segundo
+plano para no congelar la interfaz -- ver "comprobando..." brevemente es normal,
+sobre todo al entrar a "OWASP ZAP" sin tener una instancia corriendo (timeout de
+conexion de ~2s).
+
 ## Cancelacion de un escaneo o analisis: semantica exacta
 
 Al pulsar "Cancelar" en el panel "Redes", "Reconocimiento", "Analisis web",
