@@ -116,6 +116,85 @@ def validar_puertos(especificacion: str) -> list[int]:
     return puertos
 
 
+# Cantidad maxima de puertos/rangos separados por comas en una especificacion para
+# Nmap (p. ej. '22,80,1000-2000'): limita el TAMAÑO DEL TEXTO de entrada (una
+# proteccion razonable contra una cadena absurdamente larga), nunca la cantidad de
+# puertos que un rango puede cubrir -- un solo token '1-65535' sigue siendo valido.
+MAX_TOKENS_ESPECIFICACION_PUERTOS_NMAP = 64
+
+# Perfiles de puertos predefinidos para Nmap (ver docs/COMANDOS.md): 'rapido' es un
+# listado corto de servicios comunes; 'completo' es el rango IANA completo. Nmap los
+# expande de forma NATIVA al ejecutar '-p' -- AST nunca construye una lista de 65535
+# enteros en Python para pasarsela (eso es exactamente lo que se evita aqui).
+PERFILES_PUERTOS_NMAP: dict[str, str] = {
+    "rapido": "21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080",
+    "completo": f"{PUERTO_MINIMO}-{PUERTO_MAXIMO}",
+}
+
+
+def validar_especificacion_puertos_nmap(especificacion: str) -> str:
+    """Valida una especificacion de puertos para Nmap: admite rangos ('1-1024'),
+    ademas de una lista separada por comas, porque Nmap los expande de forma nativa
+    al recibir '-p' -- a diferencia de ``validar_puertos`` (usado por el motor TCP
+    propio de AST, que abre una conexion por puerto desde el propio proceso de
+    Python y por eso sigue acotado a ``MAX_PUERTOS_POR_ESCANEO``), aqui no hace falta
+    expandir nada: se devuelve la especificacion normalizada tal cual, lista para
+    pasarse como UN SOLO argumento de '-p' (``integrations/proceso.py`` nunca la
+    interpola en un shell).
+
+    Tambien acepta los nombres de los perfiles predefinidos (ver
+    ``PERFILES_PUERTOS_NMAP``): ``'rapido'`` o ``'completo'``.
+    """
+    especificacion = especificacion.strip()
+    if not especificacion:
+        raise ErrorValidacion("Debes indicar al menos un puerto o rango con --puertos.")
+
+    perfil = PERFILES_PUERTOS_NMAP.get(especificacion.lower())
+    if perfil is not None:
+        especificacion = perfil
+
+    tokens = [t.strip() for t in especificacion.split(",") if t.strip()]
+    if not tokens:
+        raise ErrorValidacion("Debes indicar al menos un puerto o rango con --puertos.")
+    if len(tokens) > MAX_TOKENS_ESPECIFICACION_PUERTOS_NMAP:
+        raise ErrorValidacion(
+            f"No se pueden indicar mas de {MAX_TOKENS_ESPECIFICACION_PUERTOS_NMAP} "
+            "puertos/rangos separados por comas en una sola especificacion."
+        )
+
+    normalizados: list[str] = []
+    for token in tokens:
+        if "-" in token:
+            extremos = token.split("-")
+            if len(extremos) != 2 or not all(e.isdigit() for e in extremos):
+                raise ErrorValidacion(
+                    f"'{token}' no es un rango de puertos valido (ej. '1-1024')."
+                )
+            inicio, fin = int(extremos[0]), int(extremos[1])
+            for valor in (inicio, fin):
+                if not (PUERTO_MINIMO <= valor <= PUERTO_MAXIMO):
+                    raise ErrorValidacion(
+                        f"El rango '{token}' esta fuera de {PUERTO_MINIMO}-{PUERTO_MAXIMO}."
+                    )
+            if inicio > fin:
+                raise ErrorValidacion(
+                    f"El rango '{token}' tiene el extremo inicial mayor que el final."
+                )
+            normalizados.append(f"{inicio}-{fin}")
+        else:
+            if not token.isdigit():
+                raise ErrorValidacion(f"'{token}' no es un numero de puerto valido.")
+            puerto = int(token)
+            if not (PUERTO_MINIMO <= puerto <= PUERTO_MAXIMO):
+                raise ErrorValidacion(
+                    f"El puerto {puerto} esta fuera del rango valido "
+                    f"({PUERTO_MINIMO}-{PUERTO_MAXIMO})."
+                )
+            normalizados.append(str(puerto))
+
+    return ",".join(normalizados)
+
+
 def validar_timeout(valor: float) -> float:
     if not (TIMEOUT_MINIMO <= valor <= TIMEOUT_MAXIMO):
         raise ErrorValidacion(
