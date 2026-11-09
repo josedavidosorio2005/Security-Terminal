@@ -43,7 +43,7 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Proyectos | Implementada | Crear proyectos, listarlos y marcar uno como activo. |
 | Alcance | Implementada | Registrar y consultar el alcance autorizado (IP/CIDR). |
 | Modulos | Proximamente (Fase 3) | Punto de entrada futuro a los modulos de auditoria. |
-| Reconocimiento | Implementada | Descubrimiento de puertos/servicios con Nmap, con boton de cancelar. |
+| Reconocimiento | Implementada | Pantalla principal de auditoria: un objetivo, reconocimiento automatico (Nmap, web, Nuclei, ZAP); el formulario manual de Nmap sigue disponible en una seccion avanzada. |
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
 | OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
@@ -110,16 +110,39 @@ comprobacion en segundo plano (no bloquea la interfaz); "Cancelar" detiene la es
 resultado. Si el objetivo no esta en el alcance autorizado, se muestra un error claro y no se
 guarda ningun resultado.
 
-### Reconocimiento (Nmap)
+### Reconocimiento (automatico)
 
-Formulario con objetivo, puertos y una casilla para activar la deteccion de servicios/version
-(`-sV`) -- dejala desmarcada salvo que esa comprobacion este explicitamente autorizada. El
-boton "Ejecutar Nmap" corre el analisis en segundo plano; "Cancelar" detiene el proceso de
-Nmap de verdad (no solo deja de esperar). Requiere tener Nmap instalado (comprueba el panel
-"Herramientas"). Igual que "Redes", rechaza objetivos fuera del alcance autorizado y no guarda
-nada si se cancela. Cada analisis completado guarda su XML original como evidencia; la ruta se
-muestra junto al mensaje de "Analisis completo". Detalle de parametros y limitaciones en
+Pantalla principal de auditoria: escribe el objetivo (IP, dominio o URL) **una sola vez**,
+elige un perfil (Rapido, Completo o Personalizado -- "Opciones avanzadas" tiene el campo de
+puertos personalizados y el tiempo limite de Nmap), marca "Confirmo que el objetivo esta
+autorizado" y pulsa "Iniciar reconocimiento automatico". AST encadena automaticamente Nmap,
+deteccion de servicios HTTP/HTTPS, auditoria web, Nuclei y OWASP ZAP -- el mismo motor que
+`est reconocimiento ejecutar` (ver [docs/ARQUITECTURA.md](ARQUITECTURA.md) para el flujo
+completo) -- sin que tengas que repetir el objetivo en cada panel. El boton "Verificar
+objetivo" resuelve y muestra la IP autorizada sin lanzar el analisis completo.
+
+La tabla "Etapas" se actualiza en vivo con el estado real de cada paso (`pendiente`,
+`ejecutando`, `completada`, `omitida`, `fallida` o `cancelada` -- nunca un porcentaje
+inventado); "Puertos y servicios detectados" y el resumen final aparecen en secciones
+plegables para no saturar la pantalla. "Cancelar" detiene el reconocimiento de verdad: las
+etapas ya completadas se conservan, las siguientes no se ejecutan. "Ver vulnerabilidades"
+lleva directamente al panel "Resultados" ya filtrado a "Solo vulnerabilidades" (web, Nuclei
+y OWASP ZAP -- nunca mezcla un puerto abierto de TCP/Nmap con un hallazgo) y a la sesion que
+se acaba de ejecutar; "Generar informe" crea el informe global en HTML en cualquier momento.
+
+Si el objetivo es un dominio, las etapas de auditoria web/Nuclei/OWASP ZAP se **omiten**
+explicitamente (el resumen final explica por que: AST no puede conservar el `Host`/SNI del
+dominio mientras se conecta a la IP ya fijada con las herramientas HTTP actuales); la etapa
+de puertos si se ejecuta sobre la IP autorizada.
+
+**Nmap manual (avanzado)**: una seccion plegable, identica al formulario que ya existia
+(objetivo, puertos, la casilla de deteccion de servicios/version `-sV` -- dejala desmarcada
+salvo que esa comprobacion este explicitamente autorizada), para quien prefiera ejecutar
+Nmap por separado sin el resto del flujo automatico. Misma politica de cancelacion real y de
+evidencia XML que siempre. Detalle de parametros y limitaciones de Nmap en
 [docs/INTEGRACIONES.md](INTEGRACIONES.md).
+
+![Reconocimiento automatico](capturas/09-reconocimiento-automatico.svg)
 
 ### Analisis web
 
@@ -176,12 +199,17 @@ presencia/version/disponibilidad, de solo lectura.
 ### Resultados
 
 Consulta los resultados/hallazgos guardados del proyecto activo, combinando las cinco
-herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP). Elige una herramienta en el selector
-(o "Todas las herramientas") y pulsa "Actualizar"; selecciona una fila para ver su
-descripcion, evidencia, recomendacion y referencia completas. Es solo lectura: para
-marcar un hallazgo de Nuclei u OWASP ZAP como confirmado o falso positivo, usa sus
-paneles dedicados ("Vulnerabilidades", "OWASP ZAP"). Los resultados de TCP y Nmap nunca
-muestran una severidad (son informacion de conectividad/puertos, no vulnerabilidades).
+herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP). El primer selector filtra por
+herramienta -- incluye la opcion "Solo vulnerabilidades (web+Nuclei+ZAP)" para ver
+unicamente hallazgos de seguridad, nunca puertos de TCP/Nmap mezclados con ellos. El
+segundo selector filtra por sesion de reconocimiento automatico guardada (o "Todas las
+sesiones"): cada sesion filtra por su propia ventana de tiempo, sin mezclar los
+resultados de dos sesiones distintas. Pulsa "Actualizar" tras cambiar cualquiera de los
+dos, o selecciona una fila para ver su descripcion, evidencia, recomendacion y
+referencia completas. Es solo lectura: para marcar un hallazgo de Nuclei u OWASP ZAP
+como confirmado o falso positivo, usa sus paneles dedicados ("Vulnerabilidades", "OWASP
+ZAP"). Los resultados de TCP y Nmap nunca muestran una severidad (son informacion de
+conectividad/puertos, no vulnerabilidades).
 
 ### Reportes
 

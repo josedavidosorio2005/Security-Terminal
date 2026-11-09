@@ -495,11 +495,66 @@ seguridad en [docs/SEGURIDAD.md](SEGURIDAD.md) (puntos 19-20).
       CLI. Ninguna requiere Nmap, Nuclei ni ZAP instalados.
 - [x] CI verificado en Windows y Linux.
 
-**Pendiente** (siguiente iteracion): este motor todavia no tiene un panel visual
-dedicado -- el panel "Reconocimiento" actual sigue siendo el formulario manual de
-Nmap. Conectar la TUI (campo de entrada unica, selector de perfil, barra de estado
-por etapas, tabla de puertos/servicios, resumen de vulnerabilidades, acceso directo
-al panel "Vulnerabilidades") es la siguiente entrega.
+### Interfaz del reconocimiento automatico (completado en este PR)
+
+Conecta la TUI al orquestador de la entrega anterior: el panel "Reconocimiento" es
+ahora la pantalla principal de auditoria.
+
+- [x] Un solo campo de objetivo (IP, dominio o URL), selector de perfil
+      (rapido/completo/personalizado), "Opciones avanzadas" plegable (puertos
+      personalizados, tiempo limite de Nmap), boton "Verificar objetivo" (resuelve
+      sin lanzar el analisis completo), casilla de confirmacion, "Iniciar
+      reconocimiento automatico" y "Cancelar".
+- [x] Tabla de "Etapas" que se actualiza en vivo via el callback de progreso del
+      orquestador (estados reales, nunca un porcentaje inventado); tabla de
+      "Puertos y servicios detectados" y resumen final, ambos en secciones
+      plegables para no mostrar todo el panel a la vez.
+- [x] "Ver vulnerabilidades" lleva al panel "Resultados" unificado (ya filtrable por
+      herramienta, ver la entrega de resultados unificados); "Generar informe"
+      genera el informe global en cualquier momento.
+- [x] El formulario manual de Nmap (identico al que ya existia) se conserva intacto
+      dentro de una seccion "avanzada" plegable (`#reco-nmap-manual`): mismos ids,
+      misma politica de cancelacion y de evidencia XML, cero cambios de
+      comportamiento para quien lo sigue usando por separado.
+- [x] Todas las llamadas pesadas (DNS, Nmap, auditoria web, Nuclei, ZAP, SQLite) se
+      ejecutan en un worker (`@work(thread=True)`), nunca en el hilo de renderizado
+      de Textual -- el mismo patron que ya usa el resto de la interfaz.
+- [x] Pruebas (`tests/test_tui_reconocimiento_automatico.py`): flujo completo
+      (etapas completas, mensaje final), validaciones (sin objetivo, sin confirmar,
+      perfil personalizado sin puertos), cancelacion real a mitad de Nmap, error
+      inesperado sin cerrar la interfaz, navegacion a "Ver vulnerabilidades", y que
+      el formulario manual de Nmap sigue funcionando exactamente igual dentro de la
+      seccion avanzada. Ninguna requiere Nmap/Nuclei/ZAP instalados.
+- [x] CI verificado en Windows y Linux.
+
+### Panel "Resultados" conectado a las sesiones de reconocimiento (completado en este PR)
+
+Cierra el flujo de extremo a extremo: "Ver vulnerabilidades" ya no es solo un enlace de
+navegacion, muestra directamente los hallazgos de la sesion que se acaba de ejecutar.
+
+- [x] Nueva opcion "Solo vulnerabilidades (web+Nuclei+ZAP)" en el filtro de herramienta
+      del panel "Resultados": agrupa las tres fuentes que reportan hallazgos de
+      seguridad, sin mezclarlas nunca con los puertos de TCP/Nmap (que siguen sin
+      severidad, por diseno).
+- [x] Nuevo selector de sesion ("Todas las sesiones" o una sesion especifica guardada):
+      filtra por la ventana de tiempo de esa sesion (`creado_en`/`actualizado_en`),
+      sin anadir ninguna columna nueva a las tablas de resultados existentes ni
+      modificar su esquema.
+- [x] "Ver vulnerabilidades" en el panel "Reconocimiento" preselecciona ambos filtros
+      (vulnerabilidades + la sesion recien completada) antes de cambiar de panel.
+- [x] Las funciones manuales de Nuclei y OWASP ZAP (confirmar/marcar falso positivo)
+      siguen exclusivamente en sus propios paneles dedicados, sin cambios.
+- [x] Pruebas (`tests/test_tui_resultados_reportes.py`): el filtro de vulnerabilidades
+      excluye TCP/Nmap, y el selector de sesion no mezcla resultados de sesiones
+      distintas.
+- [x] CI verificado en Windows y Linux.
+
+**Pendiente** (siguiente iteracion): el filtro por sesion usa la ventana de tiempo de
+la sesion como aproximacion (no hay una clave foranea directa de cada resultado a su
+sesion, para no tener que migrar las cinco tablas de resultados existentes); es preciso
+en el uso normal (una sesion a la vez por proyecto) pero podria incluir un resultado
+ajeno si dos sesiones se ejecutan con una superposicion de tiempo exacta. Anadir esa
+clave foranea, si se necesita mayor precision, queda para una iteracion futura.
 
 ## Fase 4 - Asistente inteligente
 

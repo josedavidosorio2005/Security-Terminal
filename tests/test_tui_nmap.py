@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 import types
 
-from textual.widgets import Checkbox, ContentSwitcher, DataTable, Input
+from textual.widgets import Checkbox, Collapsible, ContentSwitcher, DataTable, Input
 
 from eurabyte_security.core.errores import ErrorEscaneoCancelado
 from eurabyte_security.ui.tui.app import AuraByteApp
@@ -33,6 +33,14 @@ async def _crear_proyecto(pilot, nombre: str) -> None:
     app.query_one("#proy-nombre", Input).focus()
     await _escribir(pilot, nombre)
     await _clic_centro(pilot, "#proy-crear")
+    await pilot.pause()
+
+
+async def _abrir_nmap_manual(pilot) -> None:
+    """La forma manual de Nmap vive en una seccion 'avanzada' plegable, ahora que el
+    panel 'Reconocimiento' tiene tambien el flujo automatico: se expande antes de
+    interactuar con sus campos, igual que un usuario real haria clic para abrirla."""
+    pilot.app.query_one("#reco-nmap-manual", Collapsible).collapsed = False
     await pilot.pause()
 
 
@@ -64,6 +72,7 @@ async def test_panel_reconocimiento_ejecuta_y_muestra_resultados(monkeypatch):
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
         app.query_one("#nmap-objetivo", Input).focus()
         await _escribir(pilot, "127.0.0.1")
         app.query_one("#nmap-puertos", Input).focus()
@@ -99,6 +108,7 @@ async def test_panel_reconocimiento_servicio_con_marcado_rich_no_crashea(monkeyp
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
         app.query_one("#nmap-objetivo", Input).focus()
         await _escribir(pilot, "127.0.0.1")
         app.query_one("#nmap-puertos", Input).focus()
@@ -132,6 +142,7 @@ async def test_panel_reconocimiento_checkbox_activa_deteccion_version(monkeypatc
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
         app.query_one("#nmap-objetivo", Input).focus()
         await _escribir(pilot, "127.0.0.1")
         app.query_one("#nmap-puertos", Input).focus()
@@ -169,6 +180,7 @@ async def test_panel_reconocimiento_cancelar_no_guarda_nada(monkeypatch):
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
         app.query_one("#nmap-objetivo", Input).focus()
         await _escribir(pilot, "127.0.0.1")
         app.query_one("#nmap-puertos", Input).focus()
@@ -198,6 +210,7 @@ async def test_panel_reconocimiento_error_inesperado_no_cierra_la_interfaz(monke
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
         app.query_one("#nmap-objetivo", Input).focus()
         await _escribir(pilot, "127.0.0.1")
         app.query_one("#nmap-puertos", Input).focus()
@@ -232,6 +245,7 @@ async def test_dos_analisis_de_nmap_consecutivos_no_mezclan_resultados(monkeypat
 
         app.query_one("#switcher-central", ContentSwitcher).current = "panel-reconocimiento"
         await pilot.pause()
+        await _abrir_nmap_manual(pilot)
 
         objetivo_campo = app.query_one("#nmap-objetivo", Input)
         puertos_campo = app.query_one("#nmap-puertos", Input)
