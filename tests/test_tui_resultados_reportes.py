@@ -106,6 +106,52 @@ async def test_panel_resultados_no_mezcla_proyectos():
         assert tabla.row_count == 0
 
 
+async def test_panel_resultados_filtro_vulnerabilidades_excluye_tcp_y_nmap():
+    """'Solo vulnerabilidades' nunca confunde un puerto abierto con un hallazgo."""
+    app = AuraByteApp()
+    async with app.run_test(size=(120, 80)) as pilot:
+        await pilot.pause()
+        await _crear_proyecto(pilot, "res-filtro-vuln")
+        _sembrar_cinco_fuentes("res-filtro-vuln")
+
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-resultados"
+        await pilot.pause()
+        panel = app.query_one("#panel-resultados")
+        panel.query_one("#res-fuente", Select).value = "vulnerabilidades"
+        await pilot.pause()
+
+        tabla = panel.query_one("#res-tabla", DataTable)
+        assert tabla.row_count == 3  # web, nuclei, zap -- nunca tcp/nmap
+
+
+async def test_panel_resultados_sesion_filtra_por_ventana_de_tiempo():
+    """El selector de sesion restringe los resultados a los guardados dentro de la
+    ventana de tiempo de esa sesion (creado_en/actualizado_en), sin mezclar sesiones."""
+    app = AuraByteApp()
+    async with app.run_test(size=(120, 80)) as pilot:
+        await pilot.pause()
+        await _crear_proyecto(pilot, "res-sesion")
+
+        base_datos = obtener_base_datos()
+        proyecto = base_datos.obtener_proyecto_por_nombre("res-sesion")
+        sesion = base_datos.crear_sesion_reconocimiento(proyecto.id, "127.0.0.1", "rapido")
+        base_datos.agregar_resultado(proyecto.id, "127.0.0.1", 22, "abierto")
+        base_datos.actualizar_sesion_reconocimiento(sesion.id, estado_general="completada")
+        sesion_final = base_datos.obtener_sesion_reconocimiento(sesion.id)
+
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-resultados"
+        await pilot.pause()
+        panel = app.query_one("#panel-resultados")
+        panel.seleccionar_sesion(sesion_final.id)
+        panel.refrescar()
+        await pilot.pause()
+
+        selector = panel.query_one("#res-sesion", Select)
+        assert selector.value == str(sesion_final.id)
+        tabla = panel.query_one("#res-tabla", DataTable)
+        assert tabla.row_count == 1
+
+
 async def test_panel_reportes_genera_informe_global(tmp_path, monkeypatch):
     from eurabyte_security.commands import reporte as modulo_reporte
 

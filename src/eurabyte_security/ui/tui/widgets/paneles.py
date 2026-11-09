@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import replace
 
 from textual import on, work
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Checkbox, DataTable, Input, Select, SelectionList, Static
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Collapsible,
+    DataTable,
+    Input,
+    Select,
+    SelectionList,
+    Static,
+)
 from textual.worker import get_current_worker
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
@@ -16,6 +26,11 @@ from eurabyte_security.commands.explicar import EXPLICACIONES
 from eurabyte_security.commands.nmap import ejecutar_nmap
 from eurabyte_security.commands.nuclei import ejecutar_nuclei
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
+from eurabyte_security.commands.reconocimiento import (
+    PERFILES_VALIDOS,
+    EtapaReconocimiento,
+    ejecutar_reconocimiento_automatico,
+)
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados_unificados
 from eurabyte_security.commands.web import TIPOS_VALIDOS as TIPOS_WEB_VALIDOS
@@ -23,6 +38,7 @@ from eurabyte_security.commands.web import auditar_web
 from eurabyte_security.commands.zap import ejecutar_zap_pasivo
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
+from eurabyte_security.core.objetivo import interpretar_entrada, resolver_y_autorizar
 from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
 from eurabyte_security.integrations.zap import AdaptadorZAP
@@ -328,44 +344,355 @@ class PanelRedes(Vertical):
         self.app.refrescar_estado()  # type: ignore[attr-defined]
 
 
-class PanelReconocimiento(Vertical):
-    """Descubrimiento de puertos y servicios con Nmap, dentro del alcance autorizado.
+_ESTILOS_ETAPA_RECONOCIMIENTO = {
+    "completada": "bold green",
+    "ejecutando": "bold yellow",
+    "pendiente": "grey70",
+    "omitida": "grey70",
+    "fallida": "bold red",
+    "cancelada": "bold red",
+}
 
-    Misma politica de cancelacion que PanelRedes: numero de secuencia propio
-    por analisis (solo el mas reciente puede actualizar la tabla) y
-    cancelacion real del proceso de Nmap via ``debe_cancelar`` (ver
-    integrations/proceso.py). Un analisis cancelado nunca persiste ningun
-    resultado (``commands/nmap.py`` -> ``ErrorEscaneoCancelado``).
+
+class PanelReconocimiento(VerticalScroll):
+    """Pantalla principal de auditoria: un solo objetivo, reconocimiento automatico.
+
+    Un solo campo de objetivo (IP, dominio o URL) dispara
+    ``commands/reconocimiento.py:ejecutar_reconocimiento_automatico()`` -- el mismo
+    motor que usa ``est reconocimiento ejecutar`` -- en un worker, con una tabla de
+    etapas que se actualiza en vivo via el callback de progreso (nunca un porcentaje
+    inventado: solo los estados reales que ya reporta el orquestador). El formulario
+    manual de Nmap (identico al que ya existia) se conserva intacto dentro de una
+    seccion "avanzada" plegable, para quien prefiera ejecutarlo por separado.
     """
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._worker = None
         self._secuencia = 0
+        self._reco_worker = None
+        self._reco_secuencia = 0
+        self._ultimo_resultado = None
 
     def compose(self):
-        yield Static("Reconocimiento (Nmap)", classes="titulo-panel")
+        yield Static("Reconocimiento automatico", classes="titulo-panel")
+        yield Static("", id="reco-auto-proyecto", classes="ast-tenue")
         yield Static(
-            "Actua sobre el proyecto activo. El objetivo debe estar autorizado en "
-            "'Alcance'. Requiere tener Nmap instalado (ver panel 'Herramientas').",
-            classes="ast-tenue",
+            "Escribe el objetivo una sola vez: AST descubre puertos con Nmap (si esta "
+            "instalado), identifica servicios HTTP/HTTPS, los audita automaticamente y "
+            "ejecuta Nuclei/OWASP ZAP solo contra los que respondieron. Una herramienta "
+            "ausente omite su etapa sin detener las demas.",
+            classes="ast-caja",
+        )
+        yield Input(
+            placeholder="IP, dominio o URL (ej: 127.0.0.1, ejemplo.com, https://127.0.0.1:8765)",
+            id="reco-auto-objetivo",
         )
         with Horizontal():
-            yield Input(placeholder="Objetivo (IPv4)", id="nmap-objetivo")
-            yield Input(placeholder="Puertos, ej: 22,80,443", id="nmap-puertos")
+            yield Select(
+                [
+                    ("Rapido", "rapido"),
+                    ("Completo", "completo"),
+                    ("Personalizado", "personalizado"),
+                ],
+                value="rapido",
+                allow_blank=False,
+                id="reco-auto-perfil",
+            )
+            yield Button("Verificar objetivo", id="reco-auto-verificar")
+        with Collapsible(title="Opciones avanzadas", collapsed=True):
+            yield Input(
+                placeholder="Puertos para el perfil 'personalizado' (ej: 22,80,1000-2000)",
+                id="reco-auto-puertos-personalizados",
+            )
+            yield Input(
+                placeholder="Tiempo limite de Nmap en segundos (120)",
+                id="reco-auto-tiempo-limite",
+            )
         yield Checkbox(
-            "Deteccion de servicios/version (-sV) - solo si esta autorizado",
-            id="nmap-deteccion-version",
+            "Confirmo que el objetivo esta autorizado", id="reco-auto-confirmar"
         )
         with Horizontal():
-            yield Button("Ejecutar Nmap", id="nmap-ejecutar", variant="primary")
-            yield Button("Cancelar", id="nmap-cancelar")
-        yield Static("", id="nmap-mensaje", classes="ast-tenue")
-        yield DataTable(id="nmap-tabla")
+            yield Button(
+                "Iniciar reconocimiento automatico", id="reco-auto-iniciar", variant="primary"
+            )
+            yield Button("Cancelar", id="reco-auto-cancelar")
+        yield Static("", id="reco-auto-mensaje", classes="ast-tenue")
+        with Collapsible(title="Etapas", collapsed=False):
+            yield DataTable(id="reco-auto-etapas-tabla", cursor_type="row")
+        with Collapsible(title="Puertos y servicios detectados", collapsed=True):
+            yield DataTable(id="reco-auto-puertos-tabla", cursor_type="row")
+        yield Static("", id="reco-auto-resumen", classes="ast-caja")
+        with Horizontal():
+            yield Button("Ver vulnerabilidades", id="reco-auto-ver-vulnerabilidades")
+            yield Button("Generar informe", id="reco-auto-generar-informe")
+
+        with Collapsible(title="Nmap manual (avanzado)", collapsed=True, id="reco-nmap-manual"):
+            yield Static(
+                "Actua sobre el proyecto activo. El objetivo debe estar autorizado en "
+                "'Alcance'. Requiere tener Nmap instalado (ver panel 'Herramientas').",
+                classes="ast-tenue",
+            )
+            with Horizontal():
+                yield Input(placeholder="Objetivo (IPv4)", id="nmap-objetivo")
+                yield Input(placeholder="Puertos, ej: 22,80,443", id="nmap-puertos")
+            yield Checkbox(
+                "Deteccion de servicios/version (-sV) - solo si esta autorizado",
+                id="nmap-deteccion-version",
+            )
+            with Horizontal():
+                yield Button("Ejecutar Nmap", id="nmap-ejecutar", variant="primary")
+                yield Button("Cancelar", id="nmap-cancelar")
+            yield Static("", id="nmap-mensaje", classes="ast-tenue")
+            yield DataTable(id="nmap-tabla")
 
     def on_mount(self) -> None:
         self.query_one("#nmap-tabla", DataTable).add_columns(
             "Puerto", "Protocolo", "Estado", "Servicio", "Version"
+        )
+        self.query_one("#reco-auto-etapas-tabla", DataTable).add_columns(
+            "Etapa", "Estado", "Detalle"
+        )
+        self.query_one("#reco-auto-puertos-tabla", DataTable).add_columns(
+            "Puerto", "Estado", "Servicio"
+        )
+        self._refrescar_proyecto_auto()
+
+    def _refrescar_proyecto_auto(self) -> None:
+        etiqueta = self.query_one("#reco-auto-proyecto", Static)
+        try:
+            proyecto = resolver_proyecto(obtener_base_datos(), None)
+            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+        except ErrorEST as exc:
+            etiqueta.update(texto_seguro(exc))
+
+    def _mensaje_auto(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#reco-auto-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    @on(Button.Pressed, "#reco-auto-verificar")
+    def _verificar_objetivo(self, _evento: Button.Pressed) -> None:
+        objetivo = self.query_one("#reco-auto-objetivo", Input).value.strip()
+        if not objetivo:
+            self._mensaje_auto("Escribe un objetivo antes de verificar.", "ast-aviso")
+            return
+        self._mensaje_auto("Verificando objetivo...", "ast-aviso")
+        self._verificar(objetivo)
+
+    @work(thread=True, exclusive=True, group="reco-auto-verificar", exit_on_error=False)
+    def _verificar(self, objetivo: str) -> None:
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            entrada = interpretar_entrada(objetivo)
+            redes = [
+                ipaddress.IPv4Network(a.red) for a in base_datos.listar_alcance(proyecto.id)
+            ]
+            resuelto = resolver_y_autorizar(entrada, redes)
+        except ErrorEST as exc:
+            self.app.call_from_thread(self._mensaje_auto, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self.app.call_from_thread(
+                self._mensaje_auto, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+            )
+            return
+
+        detalle = f"Objetivo autorizado: {resuelto.ip}"
+        if resuelto.nombre_host:
+            otras = ", ".join(str(ip) for ip in resuelto.ips_resueltas)
+            detalle += f" (dominio '{texto_seguro(resuelto.nombre_host)}', IPs: {otras})"
+        self.app.call_from_thread(self._mensaje_auto, detalle, "ast-exito")
+
+    @on(Button.Pressed, "#reco-auto-iniciar")
+    def _iniciar_automatico(self, _evento: Button.Pressed) -> None:
+        self._refrescar_proyecto_auto()
+        objetivo = self.query_one("#reco-auto-objetivo", Input).value.strip()
+        perfil = str(self.query_one("#reco-auto-perfil", Select).value)
+        puertos_personalizados = (
+            self.query_one("#reco-auto-puertos-personalizados", Input).value.strip() or None
+        )
+        tiempo_limite_txt = self.query_one("#reco-auto-tiempo-limite", Input).value.strip()
+        confirmado = self.query_one("#reco-auto-confirmar", Checkbox).value
+
+        if not objetivo:
+            self._mensaje_auto("Escribe un objetivo antes de iniciar.", "ast-aviso")
+            return
+        if not confirmado:
+            self._mensaje_auto(
+                "Confirma que el objetivo esta autorizado (casilla) antes de iniciar.",
+                "ast-aviso",
+            )
+            return
+        if perfil not in PERFILES_VALIDOS:
+            self._mensaje_auto(f"Perfil '{perfil}' no reconocido.", "ast-error")
+            return
+        if perfil == "personalizado" and not puertos_personalizados:
+            self._mensaje_auto(
+                "El perfil 'personalizado' requiere una especificacion de puertos "
+                "en 'Opciones avanzadas'.",
+                "ast-aviso",
+            )
+            return
+        try:
+            tiempo_limite = float(tiempo_limite_txt) if tiempo_limite_txt else 120.0
+        except ValueError:
+            self._mensaje_auto("El tiempo limite de Nmap debe ser numerico.", "ast-error")
+            return
+
+        self._reco_secuencia += 1
+        secuencia = self._reco_secuencia
+        self._ultimo_resultado = None
+        self.query_one("#reco-auto-etapas-tabla", DataTable).clear()
+        self.query_one("#reco-auto-puertos-tabla", DataTable).clear()
+        self.query_one("#reco-auto-resumen", Static).update("")
+
+        self._mensaje_auto(
+            "Ejecutando reconocimiento automatico... (puedes cancelar mientras se ejecuta)",
+            "ast-aviso",
+        )
+        self._reco_worker = self._ejecutar_automatico(
+            secuencia, objetivo, perfil, puertos_personalizados, tiempo_limite
+        )
+
+    @on(Button.Pressed, "#reco-auto-cancelar")
+    def _cancelar_automatico(self, _evento: Button.Pressed) -> None:
+        if self._reco_worker is not None and self._reco_worker.is_running:
+            self._reco_worker.cancel()
+            self._mensaje_auto(
+                "Cancelacion solicitada: las etapas ya completadas se conservan, "
+                "las siguientes no se ejecutaran.",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="reco-auto-ejecucion", exit_on_error=False)
+    def _ejecutar_automatico(
+        self,
+        secuencia: int,
+        objetivo: str,
+        perfil: str,
+        puertos_personalizados: str | None,
+        tiempo_limite_nmap: float,
+    ) -> None:
+        worker = get_current_worker()
+
+        def _progreso(etapa: EtapaReconocimiento) -> None:
+            if secuencia == self._reco_secuencia:
+                self.app.call_from_thread(self._actualizar_etapa, etapa)
+
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            resultado = ejecutar_reconocimiento_automatico(
+                base_datos,
+                proyecto,
+                objetivo,
+                perfil=perfil,
+                especificacion_puertos_personalizada=puertos_personalizados,
+                tiempo_limite_nmap=tiempo_limite_nmap,
+                callback_progreso=_progreso,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEscaneoCancelado as exc:
+            if secuencia == self._reco_secuencia:
+                self.app.call_from_thread(self._mensaje_auto, texto_seguro(exc), "ast-aviso")
+            return
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._reco_secuencia:
+                self.app.call_from_thread(self._mensaje_auto, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._reco_secuencia:
+                self.app.call_from_thread(
+                    self._mensaje_auto, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultado_automatico, secuencia, resultado)
+
+    def _actualizar_etapa(self, etapa: EtapaReconocimiento) -> None:
+        tabla = self.query_one("#reco-auto-etapas-tabla", DataTable)
+        estilo = _ESTILOS_ETAPA_RECONOCIMIENTO.get(etapa.estado, "")
+        estado_texto = (
+            f"[{estilo}]{texto_seguro(etapa.estado)}[/{estilo}]"
+            if estilo
+            else texto_seguro(etapa.estado)
+        )
+        fila = (texto_seguro(etapa.nombre), estado_texto, texto_seguro(etapa.detalle))
+        try:
+            tabla.remove_row(etapa.nombre)
+        except Exception:  # noqa: BLE001 - la fila puede no existir todavia
+            pass
+        tabla.add_row(*fila, key=etapa.nombre)
+
+    def _mostrar_resultado_automatico(self, secuencia: int, resultado) -> None:
+        if secuencia != self._reco_secuencia:
+            return
+        self._ultimo_resultado = resultado
+
+        tabla_puertos = self.query_one("#reco-auto-puertos-tabla", DataTable)
+        tabla_puertos.clear()
+        base_datos = obtener_base_datos()
+        try:
+            proyecto = resolver_proyecto(base_datos, None)
+            puertos = base_datos.listar_resultados_nmap(proyecto.id, limite=500)
+            for puerto in puertos[:200]:
+                tabla_puertos.add_row(
+                    str(puerto.puerto),
+                    texto_seguro(puerto.estado),
+                    texto_seguro(puerto.servicio) if puerto.servicio else "-",
+                )
+        except ErrorEST:
+            pass
+
+        resumen = (
+            f"Estado general: {texto_seguro(resultado.estado_general)}  |  "
+            f"Objetivo: {texto_seguro(resultado.ip or resultado.objetivo_original)}"
+        )
+        if resultado.limitaciones:
+            resumen += "\n\n[bold yellow]Limitaciones:[/bold yellow]\n" + "\n".join(
+                f"- {texto_seguro(lim)}" for lim in resultado.limitaciones
+            )
+        self.query_one("#reco-auto-resumen", Static).update(resumen)
+        self._mensaje_auto("Reconocimiento automatico completo.", "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    @on(Button.Pressed, "#reco-auto-ver-vulnerabilidades")
+    def _ver_vulnerabilidades(self, _evento: Button.Pressed) -> None:
+        from textual.widgets import ContentSwitcher
+
+        switcher = self.app.query_one("#switcher-central", ContentSwitcher)
+        switcher.current = "panel-resultados"
+        panel = self.app.query_one("#panel-resultados", PanelResultados)
+        panel.query_one("#res-fuente", Select).value = "vulnerabilidades"
+        if self._ultimo_resultado is not None:
+            panel.seleccionar_sesion(self._ultimo_resultado.sesion_id)
+        panel.refrescar()
+
+    @on(Button.Pressed, "#reco-auto-generar-informe")
+    def _generar_informe_cmd(self, _evento: Button.Pressed) -> None:
+        self._mensaje_auto("Generando informe global...", "ast-aviso")
+        self._generar_informe()
+
+    @work(thread=True, exclusive=True, group="reco-auto-informe", exit_on_error=False)
+    def _generar_informe(self) -> None:
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            ruta = generar_reporte(base_datos, proyecto, "html")
+        except ErrorEST as exc:
+            self.app.call_from_thread(self._mensaje_auto, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self.app.call_from_thread(
+                self._mensaje_auto, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+            )
+            return
+        self.app.call_from_thread(
+            self._mensaje_auto, f"Informe generado en: {texto_seguro(ruta)}", "ast-exito"
         )
 
     def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
@@ -1155,10 +1482,15 @@ class PanelResultados(VerticalScroll):
     _ETIQUETAS_FUENTE = {
         "tcp": "TCP", "nmap": "Nmap", "web": "Web", "nuclei": "Nuclei", "zap": "OWASP ZAP",
     }
+    # 'vulnerabilidades' agrupa las tres fuentes que reportan hallazgos de seguridad,
+    # para distinguirlas de 'tcp'/'nmap' (conectividad/puertos, nunca una
+    # vulnerabilidad -- ver core de BaseDatos.listar_resultados_unificados).
+    _FUENTES_VULNERABILIDAD = frozenset({"web", "nuclei", "zap"})
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._resultados: list = []
+        self._sesion_preseleccionada: int | None = None
 
     def compose(self):
         yield Static("Resultados guardados (todas las herramientas)", classes="titulo-panel")
@@ -1167,6 +1499,7 @@ class PanelResultados(VerticalScroll):
             yield Select(
                 [
                     ("Todas las herramientas", "todas"),
+                    ("Solo vulnerabilidades (web+Nuclei+ZAP)", "vulnerabilidades"),
                     ("TCP", "tcp"),
                     ("Nmap", "nmap"),
                     ("Web", "web"),
@@ -1176,6 +1509,12 @@ class PanelResultados(VerticalScroll):
                 value="todas",
                 allow_blank=False,
                 id="res-fuente",
+            )
+            yield Select(
+                [("Todas las sesiones", "todas")],
+                value="todas",
+                allow_blank=False,
+                id="res-sesion",
             )
             yield Button("Actualizar", id="res-refrescar")
         yield DataTable(id="res-tabla", cursor_type="row")
@@ -1188,31 +1527,71 @@ class PanelResultados(VerticalScroll):
         )
         self.refrescar()
 
-    def _refrescar_proyecto(self) -> str | None:
+    def _refrescar_proyecto(self):
         etiqueta = self.query_one("#res-proyecto", Static)
         try:
             proyecto = resolver_proyecto(obtener_base_datos(), None)
             etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
-            return proyecto.nombre
+            return proyecto
         except ErrorEST as exc:
             etiqueta.update(texto_seguro(exc))
             return None
 
+    def _refrescar_opciones_sesion(self, proyecto) -> None:
+        """Repuebla el selector de sesiones con las sesiones de reconocimiento
+        automatico guardadas del proyecto, conservando la seleccion actual si sigue
+        existiendo (nunca mezcla resultados de dos sesiones distintas: filtrar por una
+        sesion filtra por su ventana de tiempo -- creado_en/actualizado_en)."""
+        selector = self.query_one("#res-sesion", Select)
+        valor_actual = selector.value
+        sesiones = obtener_base_datos().listar_sesiones_reconocimiento(proyecto.id, limite=50)
+        opciones = [("Todas las sesiones", "todas")] + [
+            (
+                f"#{s.id} {s.objetivo_original[:30]} ({s.estado_general}, {s.creado_en[:19]})",
+                str(s.id),
+            )
+            for s in sesiones
+        ]
+        selector.set_options(opciones)
+        valores_validos = {valor for _etiqueta, valor in opciones}
+        if self._sesion_preseleccionada is not None and str(
+            self._sesion_preseleccionada
+        ) in valores_validos:
+            selector.value = str(self._sesion_preseleccionada)
+            self._sesion_preseleccionada = None
+        elif valor_actual in valores_validos:
+            selector.value = valor_actual
+        else:
+            selector.value = "todas"
+
     def refrescar(self) -> None:
-        self._refrescar_proyecto()
+        proyecto = self._refrescar_proyecto()
         tabla = self.query_one("#res-tabla", DataTable)
         tabla.clear()
         self.query_one("#res-detalle", Static).update("")
         msg = self.query_one("#res-mensaje", Static)
+        if proyecto is None:
+            return
+        self._refrescar_opciones_sesion(proyecto)
+
         fuente_valor = self.query_one("#res-fuente", Select).value
+        sesion_valor = self.query_one("#res-sesion", Select).value
         try:
             base_datos = obtener_base_datos()
-            proyecto = resolver_proyecto(base_datos, None)
-            fuentes = (
-                None if fuente_valor in (None, "todas") else frozenset({str(fuente_valor)})
-            )
+            if fuente_valor in (None, "todas"):
+                fuentes = None
+            elif fuente_valor == "vulnerabilidades":
+                fuentes = self._FUENTES_VULNERABILIDAD
+            else:
+                fuentes = frozenset({str(fuente_valor)})
+
+            desde = hasta = None
+            if sesion_valor not in (None, "todas"):
+                sesion = base_datos.obtener_sesion_reconocimiento(int(str(sesion_valor)))
+                desde, hasta = sesion.creado_en, sesion.actualizado_en
+
             resultados = obtener_resultados_unificados(
-                base_datos, proyecto, fuentes=fuentes, limite=200
+                base_datos, proyecto, fuentes=fuentes, desde=desde, hasta=hasta, limite=200
             )
             self._resultados = resultados
             for r in resultados:
@@ -1239,12 +1618,22 @@ class PanelResultados(VerticalScroll):
             msg.update(f"Error inesperado: {texto_seguro(exc)}")
             msg.set_classes("ast-error")
 
+    def seleccionar_sesion(self, sesion_id: int) -> None:
+        """Preselecciona una sesion antes del siguiente ``refrescar()`` (usado por
+        'Ver vulnerabilidades' en el panel Reconocimiento para abrir directamente en
+        la sesion que se acaba de ejecutar)."""
+        self._sesion_preseleccionada = sesion_id
+
     @on(Button.Pressed, "#res-refrescar")
     def _refrescar_click(self, _evento: Button.Pressed) -> None:
         self.refrescar()
 
     @on(Select.Changed, "#res-fuente")
     def _fuente_cambiada(self, _evento: Select.Changed) -> None:
+        self.refrescar()
+
+    @on(Select.Changed, "#res-sesion")
+    def _sesion_cambiada(self, _evento: Select.Changed) -> None:
         self.refrescar()
 
     @on(DataTable.RowSelected, "#res-tabla")
