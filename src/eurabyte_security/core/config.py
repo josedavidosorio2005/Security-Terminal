@@ -50,6 +50,13 @@ def ruta_evidencias(herramienta: str) -> Path:
     return directorio
 
 
+def ruta_cache_osint() -> Path:
+    """Directorio de cache con caducidad de las fuentes OSINT (ver integrations/osint/cache.py)."""
+    directorio = directorio_datos() / "osint_cache"
+    directorio.mkdir(parents=True, exist_ok=True)
+    return directorio
+
+
 def _leer_configuracion() -> dict[str, Any]:
     ruta = ruta_configuracion()
     if not ruta.exists():

@@ -28,6 +28,8 @@ dependencies = [
     "defusedxml>=0.7.1",
     "cryptography>=42.0.0",
     "PyYAML>=6.0",
+    "dnspython>=2.6.0",
+    "phonenumbers>=8.13.0",
 ]
 
 [project.optional-dependencies]

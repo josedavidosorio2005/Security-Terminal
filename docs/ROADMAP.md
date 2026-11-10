@@ -556,6 +556,55 @@ en el uso normal (una sesion a la vez por proyecto) pero podria incluir un resul
 ajeno si dos sesiones se ejecutan con una superposicion de tiempo exacta. Anadir esa
 clave foranea, si se necesita mayor precision, queda para una iteracion futura.
 
+## Modulo OSINT - Investigacion de fuentes publicas (en curso, por PR)
+
+Se entrega de forma incremental: PR A (motor, validacion, fuentes tecnicas publicas sin
+clave), PR B (indicadores de exposicion, proveedores opcionales, controles de
+privacidad) y PR C (interfaz Textual, resultados persistentes, informes HTML/JSON).
+Detalle completo en [docs/OSINT.md](OSINT.md).
+
+### PR A - Motor OSINT, validacion y fuentes tecnicas publicas (completado en este PR)
+
+- [x] `core/osint/validacion.py`: valida dominio, correo, telefono (`phonenumbers`,
+      normalizado a E.164) y nombre de usuario; exige confirmacion explicita de
+      autorizacion (`--autorizo`) antes de investigar correo/telefono/usuario (datos
+      potencialmente personales). Dominio/empresa se trata como informacion
+      corporativa y no la exige.
+- [x] `integrations/osint/`: contrato comun (`AdaptadorFuenteOSINT`), cliente HTTP
+      unico con timeout/reintentos que respetan `Retry-After`/cancelacion
+      (`cliente_http.py`), cache con caducidad bajo `EST_HOME` y limitador de tasa por
+      fuente. Catalogo unico en `registro.py`.
+- [x] Cinco fuentes gratuitas, sin clave: DNS publico (`dnspython`, A/AAAA/MX/NS/TXT/
+      CNAME + SPF/DMARC), RDAP del dominio y de su infraestructura IP (bootstrap
+      `rdap.org`, con minimizacion deliberada: solo organizacion registrante, nunca
+      nombre/correo/telefono de una persona del WHOIS/RDAP), Certificate Transparency
+      (`crt.sh`, subdominios observados, siempre `probable`) y coincidencia de nombre
+      de usuario en GitHub/GitLab (APIs publicas documentadas, siempre `probable`,
+      nunca una identidad confirmada).
+- [x] `modules/osint/motor.py`: orquesta validacion, autorizacion y las fuentes
+      aplicables al tipo de objetivo -- una fuente ausente, no configurada o fallida
+      nunca detiene a las demas. Cada fuente se persiste en una unica transaccion
+      atomica justo despues de completarse: una investigacion cancelada no persiste
+      nada de la fuente en curso en ese momento (las ya completadas se conservan).
+- [x] Nuevas tablas `investigaciones_osint`/`hallazgos_osint` (aditivas, sin tocar
+      ninguna tabla existente) y `est osint dominio|correo|telefono|usuario|fuentes|
+      investigaciones|resultados|eliminar`. Las investigaciones OSINT se guardan
+      separadas de los hallazgos tecnicos (nunca aparecen en `est resultados`).
+- [x] 94 pruebas nuevas (594 en total): validacion de cada tipo de objetivo
+      (valido/invalido), autorizacion sobre datos personales, cliente HTTP (timeout,
+      404, 429 con `Retry-After`, cancelacion, error de conexion, secretos nunca en
+      claro en un mensaje de error), cada fuente con DNS/HTTP simulado (nunca una
+      consulta real), cache y limitador de tasa, orquestador (fuente exitosa/omitida/
+      fallida/no aplicable, seleccion de fuentes, cancelacion sin persistencia
+      parcial, callback de progreso) y CLI (autorizacion, catalogo, listados,
+      borrado). Ninguna prueba consulta DNS, RDAP ni ninguna API externa real.
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas**: las fuentes opcionales con clave (Have I Been Pwned,
+VirusTotal, urlscan.io), los indicadores de exposicion agregados, la interfaz visual y
+el informe HTML/JSON dedicado de OSINT quedan para las entregas PR B/PR C siguientes
+(ver docs/OSINT.md).
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.
