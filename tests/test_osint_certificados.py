@@ -50,3 +50,34 @@ def test_limite_de_subdominios_respetado(monkeypatch):
         "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
     )
     assert len(hallazgos[0].evidencias) == certificados.MAXIMO_SUBDOMINIOS
+
+
+def test_dominio_no_relacionado_con_sufijo_coincidente_se_descarta(monkeypatch):
+    """Un nombre que termina en el objetivo como SUBCADENA, pero sin el punto de
+    separacion de etiqueta, no es un subdominio real (ej. 'malicioso-ejemplo.com' no
+    es un subdominio de 'ejemplo.com'): debe descartarse, no reportarse como hallazgo.
+    """
+    monkeypatch.setattr(
+        certificados,
+        "peticion_json",
+        lambda *_a, **_k: [
+            {"name_value": "malicioso-ejemplo.com"},
+            {"name_value": "notejemplo.com"},
+            {"name_value": "www.ejemplo.com"},
+        ],
+    )
+    hallazgos = certificados.AdaptadorCertificateTransparency().investigar(
+        "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
+    )
+    valores = {e.valor for e in hallazgos[0].evidencias}
+    assert valores == {"www.ejemplo.com"}
+
+
+def test_el_propio_dominio_no_se_reporta_como_su_propio_subdominio(monkeypatch):
+    monkeypatch.setattr(
+        certificados, "peticion_json", lambda *_a, **_k: [{"name_value": "ejemplo.com"}]
+    )
+    hallazgos = certificados.AdaptadorCertificateTransparency().investigar(
+        "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
+    )
+    assert hallazgos == []

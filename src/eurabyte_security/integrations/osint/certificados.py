@@ -44,12 +44,22 @@ class AdaptadorCertificateTransparency(AdaptadorFuenteOSINT):
             raise ErrorFuenteOSINTError("crt.sh devolvio una respuesta con formato inesperado.")
 
         fecha = _ahora()
+        objetivo_bajo = objetivo.lower()
         subdominios: set[str] = set()
         for entrada in datos:
             nombres = str(entrada.get("name_value", ""))
             for nombre in nombres.splitlines():
-                nombre = nombre.strip().lower().lstrip("*.")
-                if nombre and nombre.endswith(objetivo.lower()) and nombre != objetivo.lower():
+                # Solo quita UN prefijo de comodin literal ('*.'), nunca cualquier
+                # combinacion de '*'/'.' (lstrip() recortaria tambien puntos legitimos
+                # al inicio de un nombre sin comodin).
+                nombre = nombre.strip().lower().removeprefix("*.")
+                # Comprobacion por LIMITE DE ETIQUETA, no un simple 'endswith': sin el
+                # punto exigido antes del sufijo, 'malicioso-ejemplo.com' coincidiria
+                # con el objetivo 'ejemplo.com' por ser un sufijo de cadena, aunque no
+                # sea en absoluto un subdominio real (ver revision de seguridad). El
+                # propio dominio (sin subdominio) se excluye a proposito: esto busca
+                # SUBdominios, no vuelve a reportar el objetivo que el usuario ya dio.
+                if nombre and nombre != objetivo_bajo and nombre.endswith(f".{objetivo_bajo}"):
                     subdominios.add(nombre)
 
         if not subdominios:
