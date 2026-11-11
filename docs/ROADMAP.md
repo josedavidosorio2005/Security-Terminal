@@ -605,6 +605,51 @@ VirusTotal, urlscan.io), los indicadores de exposicion agregados, la interfaz vi
 el informe HTML/JSON dedicado de OSINT quedan para las entregas PR B/PR C siguientes
 (ver docs/OSINT.md).
 
+### PR B - Indicadores de exposicion, proveedores opcionales y controles de privacidad (completado en este PR)
+
+- [x] `integrations/osint/urlscan.py`: historial de escaneos publicos de urlscan.io
+      (busqueda sin clave, pasivo, nivel `probable`) -- se suma a las fuentes
+      gratuitas de la PR A.
+- [x] `integrations/osint/hibp.py`: brechas conocidas de un correo (Have I Been Pwned
+      API v3, opcional, `EST_HIBP_API_KEY`). Minimizacion deliberada: solo nombre,
+      fecha y categorias de datos de cada brecha (nunca contrasenas, hashes ni el
+      contenido real); 404 se trata como "sin brechas" (no un error), 401 como clave
+      invalida, con cache de 1h y limite de tasa propio.
+- [x] `integrations/osint/virustotal.py`: reputacion de un dominio (VirusTotal,
+      opcional, `EST_VIRUSTOTAL_API_KEY`); solo lectura, nunca sube ni envia nada a
+      analizar.
+- [x] `modules/osint/exposicion.py`: resumen de indicadores de exposicion de una
+      investigacion (conteo y listado literal, nunca una puntuacion de riesgo
+      inventada); se muestra automaticamente al terminar `est osint dominio|correo|
+      telefono|usuario`.
+- [x] `core/osint/redaccion.py`: minimizacion/enmascarado de un objetivo personal
+      (correo, telefono, usuario) para una vista o exportacion que no deba mostrarlo
+      completo; disponible para que la interfaz visual e informes de la PR C lo
+      apliquen de forma opcional.
+- [x] `est osint purgar --dias N --confirmar`: politica de retencion explicita (nunca
+      automatica en segundo plano) -- borra investigaciones OSINT (y sus hallazgos)
+      creadas hace mas de N dias, en una sola transaccion atomica.
+      (`BaseDatos.purgar_investigaciones_osint_expiradas`).
+- [x] Revision de seguridad automatica sobre el commit anterior de esta misma rama:
+      `integrations/osint/certificados.py` aceptaba un nombre cuyo SUFIJO DE CADENA
+      coincidia con el dominio objetivo sin exigir el punto de separacion de etiqueta
+      (`'malicioso-ejemplo.com'` coincidia con `'ejemplo.com'`); corregido para exigir
+      el limite de etiqueta y excluir el propio dominio como su propio "subdominio".
+- [x] 35 pruebas nuevas (629 en total): HIBP (sin clave, sin brechas, 404, 401, clave
+      nunca en el error, minimizacion de la brecha, cache), VirusTotal (sin clave,
+      limpio, malicioso, 404, 401), urlscan (sin resultados, con resultados, respuesta
+      malformada), enmascarado de correo/telefono/usuario, resumen de exposicion
+      (sin indicadores, con indicadores de varias fuentes), retencion (borra solo las
+      expiradas, no borra si ninguna expiro) y CLI (resumen de exposicion visible,
+      purgar sin confirmar/con dias invalido/con confirmar). Ninguna prueba consulta
+      una API externa real.
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas**: `hibp`/`virustotal` no tienen nivel gratuito sin registro
+propio (cada usuario crea su propia clave; AST nunca la incluye ni la comparte); la
+interfaz visual y el informe HTML/JSON dedicado de OSINT quedan para la PR C (ver
+docs/OSINT.md).
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

@@ -76,7 +76,9 @@ class AdaptadorRDAPDominio(AdaptadorFuenteOSINT):
         try:
             datos = peticion_json(url, tiempo_limite=tiempo_limite, debe_cancelar=debe_cancelar)
         except ErrorFuenteOSINTError as exc:
-            if "404" in str(exc):
+            # Codigo HTTP estructurado, nunca una subcadena del mensaje (ver revision
+            # de seguridad de esta PR).
+            if exc.codigo_http == 404:
                 raise ErrorFuenteOSINTNoDisponible(
                     f"RDAP no tiene un registro publico para '{objetivo}' (404)."
                 ) from exc

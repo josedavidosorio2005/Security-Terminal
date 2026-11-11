@@ -230,23 +230,29 @@ est osint fuentes [--tipo dominio|correo|telefono|usuario]
 est osint investigaciones [--proyecto NOMBRE] [--limite 20]
 est osint resultados [--proyecto NOMBRE] [--investigacion ID] [--limite 100]
 est osint eliminar INVESTIGACION_ID --confirmar
+est osint purgar [--dias 90] --confirmar
 ```
 
 | Comando | Descripcion |
 |---|---|
-| `est osint dominio` | DNS publico, RDAP, infraestructura IP y Certificate Transparency. |
-| `est osint correo` | Sintaxis del correo y MX/SPF/DMARC de su dominio. |
+| `est osint dominio` | DNS publico, RDAP, infraestructura IP, Certificate Transparency y urlscan.io. |
+| `est osint correo` | Sintaxis del correo, MX/SPF/DMARC de su dominio y brechas conocidas (si `EST_HIBP_API_KEY` esta configurada). |
 | `est osint telefono` | Normaliza a E.164 y describe region/tipo de numero (sin red, sin afirmar operador). |
 | `est osint usuario` | Coincidencias de nombre de usuario en perfiles publicos (GitHub, GitLab). |
 | `est osint fuentes` | Lista el catalogo de fuentes y si cada una esta configurada. |
 | `est osint investigaciones` | Lista las investigaciones guardadas de un proyecto. |
 | `est osint resultados` | Muestra los hallazgos guardados (de un proyecto o de una investigacion). |
 | `est osint eliminar` | Borra una investigacion y todos sus hallazgos (irreversible; exige `--confirmar`). |
+| `est osint purgar` | Aplica retencion: borra investigaciones mas antiguas que `--dias` (irreversible; exige `--confirmar`). |
 
 `--autorizo` es obligatorio para `correo`, `telefono` y `usuario` (datos potencialmente
 personales): sin esa confirmacion explicita, el comando se rechaza con
 `ErrorAutorizacionOSINTRequerida` antes de consultar ninguna fuente. `dominio` no lo
 exige (se trata como informacion corporativa).
+
+Las fuentes opcionales (`hibp`, `virustotal`) requieren una clave propia del usuario
+(`EST_HIBP_API_KEY`, `EST_VIRUSTOTAL_API_KEY`); sin ella se omiten con un mensaje
+explicito. Detalle en [docs/OSINT.md](OSINT.md).
 
 ## `est explicar TEMA`
 

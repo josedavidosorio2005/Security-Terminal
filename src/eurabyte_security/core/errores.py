@@ -77,7 +77,21 @@ class ErrorFuenteOSINTNoDisponible(ErrorEST):
 
 class ErrorFuenteOSINTError(ErrorEST):
     """Fallo al consultar una fuente OSINT (tiempo agotado, respuesta invalida, limite de
-    tasa agotado tras los reintentos, etc.)."""
+    tasa agotado tras los reintentos, etc.).
+
+    ``codigo_http`` lleva el codigo de estado HTTP real cuando el fallo vino de una
+    respuesta HTTP (``None`` para timeouts/errores de conexion/formato invalido, que no
+    tienen codigo). Un adaptador que necesite distinguir, por ejemplo, un 404 (recurso
+    no encontrado) de un 401 (clave invalida) debe comparar este atributo entero, nunca
+    buscar la subcadena del codigo dentro del mensaje de error ya formateado: un
+    mensaje que mencionara el codigo por otra razon (o un cambio futuro en su
+    redaccion) podria hacer que una fuente interprete un fallo real como un resultado
+    valido (p. ej. "sin brechas conocidas" cuando en realidad la consulta fallo).
+    """
+
+    def __init__(self, mensaje: str, *, codigo_http: int | None = None) -> None:
+        super().__init__(mensaje)
+        self.codigo_http = codigo_http
 
 
 class ErrorInvestigacionOSINTCancelada(ErrorEST):

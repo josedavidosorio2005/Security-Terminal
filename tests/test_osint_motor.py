@@ -22,20 +22,31 @@ from eurabyte_security.storage.database import BaseDatos
 
 
 class _FuenteFalsa(AdaptadorFuenteOSINT):
-    def __init__(self, id_fuente, *, configurada=True, hallazgos=None, error=None):
+    def __init__(
+        self,
+        id_fuente,
+        *,
+        configurada=True,
+        hallazgos=None,
+        error=None,
+        requiere_objetivo_original=False,
+    ):
         self.id_fuente = id_fuente
         self.nombre = f"Fuente {id_fuente}"
         self.tipos_objetivo = frozenset({"dominio", "correo", "telefono", "usuario"})
+        self.requiere_objetivo_original = requiere_objetivo_original
         self._configurada = configurada
         self._hallazgos = hallazgos or []
         self._error = error
         self.llamadas = 0
+        self.objetivos_recibidos: list[str] = []
 
     def configurada(self) -> bool:
         return self._configurada
 
     def investigar(self, objetivo, *, tipo_objetivo, tiempo_limite, debe_cancelar):
         self.llamadas += 1
+        self.objetivos_recibidos.append(objetivo)
         if self._error is not None:
             raise self._error
         return self._hallazgos
@@ -198,3 +209,30 @@ def test_callback_de_progreso_se_invoca_por_fuente(tmp_path, monkeypatch):
     )
     assert "ejecutando" in estados_vistos
     assert "completada" in estados_vistos
+
+
+def test_fuente_que_requiere_objetivo_original_recibe_el_correo_completo(tmp_path, monkeypatch):
+    """Regresion: una fuente de tipo 'correo' que necesita la cuenta completa (p. ej.
+    Have I Been Pwned) debe recibir el correo entero, nunca solo el dominio derivado
+    que si usan DNS/RDAP/Certificate Transparency (ver integrations/osint/base.py)."""
+    base_datos, proyecto = _proyecto(tmp_path)
+    fuente_correo_completo = _FuenteFalsa(
+        "hibp", hallazgos=[_hallazgo()], requiere_objetivo_original=True
+    )
+    fuente_dominio = _FuenteFalsa("dns", hallazgos=[_hallazgo()])
+    monkeypatch.setattr(
+        motor,
+        "fuentes_para_tipo",
+        lambda tipo: {"hibp": fuente_correo_completo, "dns": fuente_dominio},
+    )
+
+    motor.ejecutar_investigacion_osint(
+        base_datos,
+        proyecto,
+        "correo",
+        "usuario@ejemplo.com",
+        autorizado_datos_personales=True,
+    )
+
+    assert fuente_correo_completo.objetivos_recibidos == ["usuario@ejemplo.com"]
+    assert fuente_dominio.objetivos_recibidos == ["ejemplo.com"]

@@ -121,3 +121,73 @@ def test_osint_eliminar_sin_confirmar_no_borra(runner):
 def test_osint_eliminar_investigacion_inexistente_falla(runner):
     resultado = runner.invoke(app, ["osint", "eliminar", "999", "--confirmar"])
     assert resultado.exit_code != 0
+
+
+def test_osint_dominio_muestra_indicadores_de_exposicion(runner, monkeypatch):
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "ejemplo.com", "ejemplo.com", False, []
+    )
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "dns",
+        [
+            {
+                "categoria": "correo",
+                "titulo": "SPF no configurado",
+                "descripcion": "d",
+                "nivel_confianza": "confirmado",
+                "indicador_exposicion": "Sin SPF configurado",
+                "evidencias": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        commands.osint,
+        "ejecutar_investigacion_osint",
+        lambda *_a, **_k: _resultado_falso(investigacion_id=investigacion.id),
+    )
+    resultado = runner.invoke(app, ["osint", "dominio", "ejemplo.com"])
+    assert resultado.exit_code == 0
+    assert "Indicadores de exposicion: 1" in resultado.stdout
+    assert "Sin SPF configurado" in resultado.stdout
+
+
+def test_osint_purgar_sin_confirmar_no_borra(runner):
+    resultado = runner.invoke(app, ["osint", "purgar"])
+    assert resultado.exit_code != 0
+
+
+def test_osint_purgar_dias_invalido_falla(runner):
+    resultado = runner.invoke(app, ["osint", "purgar", "--dias", "0", "--confirmar"])
+    assert resultado.exit_code != 0
+
+
+def test_osint_purgar_con_confirmar_borra_antiguas(runner):
+    from datetime import UTC, datetime, timedelta
+
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    antigua = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "vieja.com", "vieja.com", False, []
+    )
+    fecha = (datetime.now(UTC) - timedelta(days=100)).isoformat()
+    with base_datos._conectar() as conexion:  # noqa: SLF001 - solo en pruebas
+        conexion.execute(
+            "UPDATE investigaciones_osint SET creado_en = ? WHERE id = ?", (fecha, antigua.id)
+        )
+
+    resultado = runner.invoke(app, ["osint", "purgar", "--dias", "90", "--confirmar"])
+    assert resultado.exit_code == 0
+    assert "1" in resultado.stdout
+
+    resultado = runner.invoke(app, ["osint", "investigaciones"])
+    assert "no tiene investigaciones" in resultado.stdout

@@ -11,14 +11,18 @@ Arquitectura en `src/eurabyte_security/`:
 
 ```text
 core/osint/
-└── validacion.py      Valida cada tipo de objetivo y exige autorizacion sobre datos
-                        personales (correo, telefono, usuario) antes de consultar nada.
+├── validacion.py      Valida cada tipo de objetivo y exige autorizacion sobre datos
+│                       personales (correo, telefono, usuario) antes de consultar nada.
+└── redaccion.py        Minimizacion: enmascara un correo/telefono/usuario propio para
+                         una vista o exportacion que no deba mostrarlo completo.
 
 modules/osint/
 ├── modelos.py          Dataclasses compartidas (HallazgoOSINT, EvidenciaOSINT...).
-└── motor.py            Orquesta: valida, autoriza, recorre las fuentes aplicables y
-                         persiste los hallazgos de cada una (sin dependencias de
-                         Typer/Rich/Textual, igual que el orquestador de reconocimiento).
+├── motor.py            Orquesta: valida, autoriza, recorre las fuentes aplicables y
+│                        persiste los hallazgos de cada una (sin dependencias de
+│                        Typer/Rich/Textual, igual que el orquestador de reconocimiento).
+└── exposicion.py        Resumen de indicadores de exposicion de una investigacion
+                          (conteo y listado; nunca una puntuacion de riesgo inventada).
 
 integrations/osint/
 ├── base.py             Contrato comun (AdaptadorFuenteOSINT): que tipos de objetivo
@@ -32,7 +36,10 @@ integrations/osint/
 ├── dns_publico.py        Registros DNS (A/AAAA/MX/NS/TXT/CNAME) + SPF/DMARC.
 ├── rdap.py                RDAP del dominio y de la infraestructura IP.
 ├── certificados.py        Certificate Transparency (crt.sh): subdominios observados.
-└── perfiles_publicos.py   Coincidencia de nombre de usuario (GitHub, GitLab).
+├── perfiles_publicos.py   Coincidencia de nombre de usuario (GitHub, GitLab).
+├── urlscan.py             Historial de escaneos publicos (urlscan.io, sin clave).
+├── hibp.py                Brechas conocidas de un correo (Have I Been Pwned, opcional).
+└── virustotal.py          Reputacion de un dominio (VirusTotal, opcional).
 
 commands/osint.py        Comandos `est osint ...` (ver docs/COMANDOS.md).
 storage/database.py      Tablas `investigaciones_osint` y `hallazgos_osint`.
@@ -67,6 +74,13 @@ storage/database.py      Tablas `investigaciones_osint` y `hallazgos_osint`.
 7. **Ninguna clave de API aparece en la CLI, la TUI, un log ni un informe.** Las claves
    se leen de variables de entorno (ver tabla de fuentes opcionales mas abajo) y nunca
    se guardan en el repositorio ni en la base de datos.
+8. **Minimizacion deliberada de lo que se guarda de una brecha.** Have I Been Pwned solo
+   aporta el nombre de la brecha, su fecha y las CATEGORIAS de datos reportadas (p. ej.
+   "Email addresses", "Passwords"): nunca una contrasena, hash, cookie, token ni el
+   contenido real de la brecha (ver `integrations/osint/hibp.py`).
+9. **Retencion explicita, nunca automatica en silencio.** `est osint purgar` borra
+   investigaciones antiguas solo cuando se invoca y se confirma; AST nunca borra datos
+   por su cuenta en segundo plano.
 
 ## Tipos de objetivo
 
@@ -90,22 +104,25 @@ numeracion: **nunca afirma que el prefijo identifica con certeza al operador act
 | `infraestructura_ip` | RDAP (ICANN) | `dominio`, `correo` | Red/ASN/organizacion de la primera IP publicada por el dominio. |
 | `certificados` | Certificate Transparency (crt.sh) | `dominio`, `correo` | Subdominios observados en certificados TLS emitidos (pasivo, nunca confirma que esten activos). |
 | `perfiles_publicos` | API publica de GitHub/GitLab | `usuario` | Coincidencia de nombre de usuario (nunca una identidad confirmada). |
+| `urlscan_historial` | Busqueda publica de urlscan.io | `dominio`, `correo` | Escaneos publicos ya existentes del dominio (pasivo, nivel `probable`). |
 
 Ninguna de estas fuentes necesita credenciales ni suscripcion: `est osint fuentes`
 las muestra siempre como "Disponible".
 
-## Fuentes opcionales (pendientes de credenciales)
+## Fuentes opcionales (requieren clave propia)
 
-Previstas para una entrega posterior del modulo (ver `docs/ROADMAP.md`), siguiendo el
-mismo contrato (`AdaptadorFuenteOSINT`) que las fuentes gratuitas: cuando no esten
-configuradas, `est osint fuentes` las mostrara como "Requiere configuracion" con la
-variable de entorno exacta que falta, nunca con un resultado simulado.
+Siguen el mismo contrato (`AdaptadorFuenteOSINT`) que las fuentes gratuitas: cuando no
+esten configuradas, `est osint fuentes` las muestra como "Requiere configuracion" con
+la variable de entorno exacta que falta, nunca con un resultado simulado. El usuario
+decide que proveedor recibe la consulta al configurar (o no) cada variable.
 
-| Fuente | Uso previsto | Variable de entorno prevista |
-|---|---|---|
-| Have I Been Pwned (API v3) | Brechas conocidas de un correo. | `EST_HIBP_API_KEY` |
-| VirusTotal | Reputacion/indicadores de un dominio. | `EST_VIRUSTOTAL_API_KEY` |
-| urlscan.io | Historial de escaneos de un dominio. | `EST_URLSCAN_API_KEY` |
+| Fuente | Que aporta | Variable de entorno | Documentacion |
+|---|---|---|---|
+| `hibp` (Have I Been Pwned) | Brechas conocidas de un correo: nombre, fecha y categorias de datos expuestas (nunca contrasenas/hashes). | `EST_HIBP_API_KEY` | https://haveibeenpwned.com/API/v3 |
+| `virustotal` (VirusTotal) | Reputacion de un dominio (motores que lo marcan como malicioso/sospechoso). | `EST_VIRUSTOTAL_API_KEY` | https://docs.virustotal.com/reference/domain-info |
+
+Ambas requieren suscripcion/registro propio en el proveedor correspondiente: AST nunca
+incluye una clave propia ni comparte una clave entre usuarios.
 
 ## Lo que este modulo NO hace
 
@@ -130,6 +147,21 @@ Dos tablas nuevas, aditivas (no modifican ninguna tabla existente):
 
 `est osint eliminar INVESTIGACION_ID --confirmar` borra una investigacion y todos sus
 hallazgos de forma permanente (`BaseDatos.eliminar_investigacion_osint`).
+`est osint purgar --dias N --confirmar` aplica una politica de retencion explicita:
+borra toda investigacion (y sus hallazgos) creada hace mas de `N` dias.
+
+## Resumen de exposicion y minimizacion
+
+Cada investigacion muestra, al terminar, cuantos hallazgos llevan un
+`indicador_exposicion` y de que fuentes vienen (`modules/osint/exposicion.py`): un
+conteo y un listado literal de esos indicadores, nunca una puntuacion de riesgo
+inventada ni una clasificacion "alto/medio/bajo" sin respaldo de la fuente.
+
+`core/osint/redaccion.py` ofrece funciones de enmascarado (`enmascarar_correo`,
+`enmascarar_telefono`, `enmascarar_usuario`) para cuando una vista o exportacion no
+deba mostrar el objetivo completo (p. ej. un informe compartido con un publico mas
+amplio que el propio proyecto); estan disponibles para que la interfaz visual e
+informes de una entrega posterior las apliquen de forma opcional.
 
 ## Limitaciones conocidas
 
@@ -143,6 +175,12 @@ hallazgos de forma permanente (`BaseDatos.eliminar_investigacion_osint`).
 - La fuente de perfiles publicos solo cubre GitHub y GitLab en esta entrega (ambas con
   API publica documentada que no requiere autenticacion para esta consulta). Otras
   plataformas quedan pendientes de una fuente opcional con credenciales propias.
+- `hibp` y `virustotal` no tienen nivel gratuito sin registro: cada usuario debe crear
+  su propia suscripcion/clave en el proveedor correspondiente (AST nunca la incluye ni
+  la comparte). Sin esa variable de entorno configurada, la fuente se omite con un
+  mensaje explicito (no es un error de AST).
+- `est osint purgar` borra por fecha de creacion de la investigacion, no por fecha del
+  hallazgo individual: todos los hallazgos de una investigacion se borran juntos.
 - El informe HTML/JSON dedicado de OSINT y la pestana de la interfaz visual se entregan
   en una iteracion posterior (ver `docs/ROADMAP.md`); por ahora, los hallazgos se
   consultan con `est osint resultados`.

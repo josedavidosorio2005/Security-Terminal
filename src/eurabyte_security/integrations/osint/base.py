@@ -29,6 +29,14 @@ class AdaptadorFuenteOSINT(ABC):
     variable_entorno_clave: str | None = None
     url_documentacion: str = ""
 
+    # Por defecto, para un objetivo de tipo 'correo' el motor deriva y pasa solo el
+    # DOMINIO a ``investigar()`` (DNS/RDAP/Certificate Transparency/VirusTotal operan
+    # sobre un dominio, no sobre una direccion de correo completa). Una fuente que
+    # necesite el objetivo tal cual se valido -- p. ej. Have I Been Pwned, que consulta
+    # por CUENTA DE CORREO completa, no por dominio -- debe fijar esto en ``True`` para
+    # recibir ``objetivo_saneado`` sin derivar nada (ver modules/osint/motor.py).
+    requiere_objetivo_original: bool = False
+
     def configurada(self) -> bool:
         """``True`` si la fuente puede usarse ya mismo (gratuita, o con su clave presente)."""
         if not self.requiere_clave:
