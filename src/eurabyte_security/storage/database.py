@@ -7,7 +7,7 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from eurabyte_security.core.config import ruta_base_datos
@@ -1182,6 +1182,30 @@ class BaseDatos:
         with self._conectar() as conexion:
             conexion.execute("DELETE FROM hallazgos_osint WHERE investigacion_id = ?", (id_,))
             conexion.execute("DELETE FROM investigaciones_osint WHERE id = ?", (id_,))
+
+    def purgar_investigaciones_osint_expiradas(self, dias: int) -> int:
+        """Borra (con sus hallazgos) toda investigacion OSINT creada hace mas de
+        ``dias`` dias: politica de retencion explicita (ver docs/OSINT.md), nunca
+        automatica/silenciosa -- quien llama a esto (``est osint purgar``) decide
+        cuando ejecutarla. Devuelve cuantas investigaciones se borraron.
+        """
+        limite = (datetime.now(UTC) - timedelta(days=dias)).isoformat()
+        with self._conectar() as conexion:
+            ids = [
+                fila["id"]
+                for fila in conexion.execute(
+                    "SELECT id FROM investigaciones_osint WHERE creado_en < ?", (limite,)
+                ).fetchall()
+            ]
+            if ids:
+                marcadores = ",".join("?" * len(ids))
+                conexion.execute(
+                    f"DELETE FROM hallazgos_osint WHERE investigacion_id IN ({marcadores})", ids
+                )
+                conexion.execute(
+                    f"DELETE FROM investigaciones_osint WHERE id IN ({marcadores})", ids
+                )
+        return len(ids)
 
     # -- Hallazgos OSINT -------------------------------------------------
     _COLUMNAS_HALLAZGO_OSINT = (

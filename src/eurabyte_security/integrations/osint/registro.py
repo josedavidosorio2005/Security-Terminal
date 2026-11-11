@@ -11,11 +11,14 @@ from __future__ import annotations
 from eurabyte_security.integrations.osint.base import AdaptadorFuenteOSINT
 from eurabyte_security.integrations.osint.certificados import AdaptadorCertificateTransparency
 from eurabyte_security.integrations.osint.dns_publico import AdaptadorDNSPublico
+from eurabyte_security.integrations.osint.hibp import AdaptadorHIBP
 from eurabyte_security.integrations.osint.perfiles_publicos import AdaptadorPerfilesPublicos
 from eurabyte_security.integrations.osint.rdap import (
     AdaptadorInfraestructuraIP,
     AdaptadorRDAPDominio,
 )
+from eurabyte_security.integrations.osint.urlscan import AdaptadorUrlscan
+from eurabyte_security.integrations.osint.virustotal import AdaptadorVirusTotal
 
 FUENTES_OSINT: dict[str, AdaptadorFuenteOSINT] = {
     "dns": AdaptadorDNSPublico(),
@@ -23,6 +26,9 @@ FUENTES_OSINT: dict[str, AdaptadorFuenteOSINT] = {
     "infraestructura_ip": AdaptadorInfraestructuraIP(),
     "certificados": AdaptadorCertificateTransparency(),
     "perfiles_publicos": AdaptadorPerfilesPublicos(),
+    "urlscan_historial": AdaptadorUrlscan(),
+    "hibp": AdaptadorHIBP(),
+    "virustotal": AdaptadorVirusTotal(),
 }
 
 

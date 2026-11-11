@@ -7,6 +7,7 @@ from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
+from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
 from eurabyte_security.storage.database import BaseDatos, Proyecto
@@ -94,6 +95,21 @@ def _ejecutar_y_mostrar(
     titulo = f"Investigacion OSINT #{resultado.investigacion_id} - {objetivo}"
     consola.print(_tabla_etapas(resultado.etapas, titulo))
     consola.print(f"\nTotal de hallazgos: {resultado.total_hallazgos}")
+
+    hallazgos_guardados = base_datos.listar_hallazgos_osint(
+        investigacion_id=resultado.investigacion_id, limite=10_000
+    )
+    resumen = construir_resumen_exposicion(hallazgos_guardados)
+    if resumen.total_indicadores:
+        consola.print(
+            f"\n[bold yellow]Indicadores de exposicion: {resumen.total_indicadores}[/bold yellow] "
+            f"(fuentes: {', '.join(resumen.fuentes_con_indicador)})"
+        )
+        for indicador in resumen.indicadores:
+            consola.print(f"- {texto_seguro(indicador)}")
+    else:
+        consola.print("\n[bold green]Sin indicadores de exposicion.[/bold green]")
+
     if resultado.limitaciones:
         consola.print("\n[bold yellow]Limitaciones:[/bold yellow]")
         for limitacion in resultado.limitaciones:
@@ -308,3 +324,28 @@ def eliminar_cmd(
     base_datos = obtener_base_datos()
     base_datos.eliminar_investigacion_osint(investigacion_id)
     consola.print(f"Investigacion OSINT #{investigacion_id} y sus hallazgos se borraron.")
+
+
+@osint_app.command("purgar")
+def purgar_cmd(
+    dias: int = typer.Option(
+        90, "--dias", help="Borra investigaciones (y sus hallazgos) creadas hace mas de N dias."
+    ),
+    confirmar: bool = typer.Option(
+        False, "--confirmar", help="Confirma el borrado permanente de las investigaciones expiradas"
+    ),
+) -> None:
+    """Aplica una politica de retencion: borra investigaciones OSINT antiguas (irreversible)."""
+    if dias < 1:
+        consola.print("[bold red]Error:[/bold red] --dias debe ser al menos 1.")
+        raise typer.Exit(code=1)
+    if not confirmar:
+        consola.print(
+            f"[bold yellow]Aviso:[/bold yellow] esto borraria permanentemente toda investigacion "
+            f"OSINT (y sus hallazgos) creada hace mas de {dias} dia(s). Repite el comando con "
+            "--confirmar para continuar."
+        )
+        raise typer.Exit(code=1)
+    base_datos = obtener_base_datos()
+    total = base_datos.purgar_investigaciones_osint_expiradas(dias)
+    consola.print(f"Se borraron {total} investigacion(es) OSINT con mas de {dias} dia(s).")

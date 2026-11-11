@@ -109,3 +109,44 @@ def test_eliminar_investigacion_inexistente_falla(tmp_path):
     base_datos = BaseDatos(tmp_path / "est.db")
     with pytest.raises(ErrorInvestigacionOSINTNoEncontrada):
         base_datos.eliminar_investigacion_osint(999)
+
+
+def _backdatar_investigacion(base_datos: BaseDatos, id_: int, dias: int) -> None:
+    """Fuerza 'creado_en' a una fecha pasada, para probar la retencion sin esperar."""
+    from datetime import UTC, datetime, timedelta
+
+    fecha = (datetime.now(UTC) - timedelta(days=dias)).isoformat()
+    with base_datos._conectar() as conexion:  # noqa: SLF001 - acceso directo solo en pruebas
+        conexion.execute(
+            "UPDATE investigaciones_osint SET creado_en = ? WHERE id = ?", (fecha, id_)
+        )
+
+
+def test_purgar_investigaciones_expiradas_borra_solo_las_antiguas(tmp_path):
+    base_datos = BaseDatos(tmp_path / "est.db")
+    proyecto = base_datos.crear_proyecto("laboratorio")
+    antigua = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "vieja.com", "vieja.com", False, []
+    )
+    reciente = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "nueva.com", "nueva.com", False, []
+    )
+    base_datos.agregar_hallazgos_osint(antigua.id, proyecto.id, "dns", [_hallazgo()])
+    _backdatar_investigacion(base_datos, antigua.id, dias=100)
+
+    total_borradas = base_datos.purgar_investigaciones_osint_expiradas(dias=90)
+
+    assert total_borradas == 1
+    with pytest.raises(ErrorInvestigacionOSINTNoEncontrada):
+        base_datos.obtener_investigacion_osint(antigua.id)
+    assert base_datos.listar_hallazgos_osint(investigacion_id=antigua.id) == []
+    assert base_datos.obtener_investigacion_osint(reciente.id).id == reciente.id
+
+
+def test_purgar_sin_investigaciones_expiradas_no_borra_nada(tmp_path):
+    base_datos = BaseDatos(tmp_path / "est.db")
+    proyecto = base_datos.crear_proyecto("laboratorio")
+    base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "nueva.com", "nueva.com", False, []
+    )
+    assert base_datos.purgar_investigaciones_osint_expiradas(dias=90) == 0
