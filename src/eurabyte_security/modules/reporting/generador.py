@@ -638,6 +638,46 @@ class DatosInformeOSINT:
     recomendaciones: tuple[str, ...]
 
 
+def _minimizar_texto(texto: str | None, objetivo_real: str, objetivo_minimizado: str) -> str | None:
+    if texto is None:
+        return None
+    return texto.replace(objetivo_real, objetivo_minimizado)
+
+
+def _minimizar_hallazgo(
+    hallazgo: HallazgoOSINTGuardado, objetivo_real: str, objetivo_minimizado: str
+) -> HallazgoOSINTGuardado:
+    """Sustituye el objetivo real por su version minimizada en TODO el texto del
+    hallazgo -- no solo el campo 'objetivo' superior del informe. Un hallazgo de
+    perfiles publicos, por ejemplo, repite el nombre de usuario/correo investigado en
+    su titulo, descripcion y evidencia (URL del perfil, valor de la evidencia...): si
+    solo se minimizara el campo superior, ``--minimizar`` no minimizaria nada en la
+    practica (ver revision de seguridad de esta PR)."""
+    evidencias = json.loads(hallazgo.evidencias_json)
+    evidencias_minimizadas = [
+        {
+            **e,
+            "valor": _minimizar_texto(e.get("valor"), objetivo_real, objetivo_minimizado),
+            "referencia": _minimizar_texto(e.get("referencia"), objetivo_real, objetivo_minimizado),
+        }
+        for e in evidencias
+    ]
+    return replace(
+        hallazgo,
+        titulo=(
+            _minimizar_texto(hallazgo.titulo, objetivo_real, objetivo_minimizado) or hallazgo.titulo
+        ),
+        descripcion=(
+            _minimizar_texto(hallazgo.descripcion, objetivo_real, objetivo_minimizado)
+            or hallazgo.descripcion
+        ),
+        indicador_exposicion=_minimizar_texto(
+            hallazgo.indicador_exposicion, objetivo_real, objetivo_minimizado
+        ),
+        evidencias_json=json.dumps(evidencias_minimizadas, ensure_ascii=False),
+    )
+
+
 def construir_datos_informe_osint(
     proyecto: str,
     investigacion: InvestigacionOSINT,
@@ -650,17 +690,24 @@ def construir_datos_informe_osint(
     ``minimizar=True`` enmascara el objetivo (correo/telefono/usuario; un dominio
     nunca se minimiza, ver ``core/osint/redaccion.py``) para una exportacion pensada
     para un publico mas amplio que el propio proyecto; por defecto se muestra completo,
-    porque es la propia investigacion autorizada del usuario.
+    porque es la propia investigacion autorizada del usuario. La sustitucion se aplica
+    en TODO el texto de cada hallazgo (titulo, descripcion, indicador de exposicion y
+    evidencias), no solo en el campo 'objetivo' superior del informe.
     """
     etapas = json.loads(investigacion.etapas_json)
     fuentes_utilizadas = tuple(e["fuente"] for e in etapas if e["estado"] != "pendiente")
     limitaciones = tuple(json.loads(investigacion.limitaciones_json))
 
-    objetivo_mostrado = (
-        minimizar_objetivo(investigacion.tipo_objetivo, investigacion.objetivo_saneado)
-        if minimizar
-        else investigacion.objetivo_saneado
-    )
+    if minimizar:
+        objetivo_mostrado = minimizar_objetivo(
+            investigacion.tipo_objetivo, investigacion.objetivo_saneado
+        )
+        hallazgos = [
+            _minimizar_hallazgo(h, investigacion.objetivo_saneado, objetivo_mostrado)
+            for h in hallazgos
+        ]
+    else:
+        objetivo_mostrado = investigacion.objetivo_saneado
 
     categorias_presentes = {h.categoria for h in hallazgos}
     recomendaciones = tuple(

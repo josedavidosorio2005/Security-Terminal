@@ -122,3 +122,53 @@ def test_generar_html_osint_sin_hallazgos_muestra_mensaje(tmp_path):
     html = generar_html_osint(datos)
     assert "No hay hallazgos OSINT registrados" in html
     assert "Sin indicadores de exposicion" in html
+
+
+def test_minimizar_tambien_oculta_el_objetivo_dentro_de_cada_hallazgo(tmp_path):
+    """Regresion: --minimizar debe ocultar el objetivo en TODO el texto de cada
+    hallazgo (titulo, descripcion, evidencia), no solo en el campo 'objetivo'
+    superior del informe -- un hallazgo de perfil publico repite el nombre de
+    usuario investigado en su titulo y en la URL de evidencia."""
+    base_datos, proyecto, investigacion = _preparar_investigacion(
+        tmp_path, tipo="usuario", objetivo="torvalds", autorizado=True
+    )
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "perfiles_publicos",
+        [
+            {
+                "categoria": "perfil_publico",
+                "titulo": "Coincidencia en GitHub",
+                "descripcion": (
+                    "Perfil publico de GitHub: https://github.com/torvalds. "
+                    "Coincidencia de nombre de usuario, no una identidad confirmada."
+                ),
+                "nivel_confianza": "probable",
+                "indicador_exposicion": None,
+                "evidencias": [
+                    {
+                        "fuente": "perfiles_publicos",
+                        "fecha_consulta": "2026-01-01T00:00:00+00:00",
+                        "referencia": "https://github.com/torvalds",
+                        "valor": "torvalds",
+                    }
+                ],
+            }
+        ],
+    )
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id)
+
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, hallazgos, minimizar=True)
+
+    assert datos.objetivo_mostrado != "torvalds"
+    hallazgo = datos.hallazgos[0]
+    assert "torvalds" not in hallazgo.titulo
+    assert "torvalds" not in hallazgo.descripcion
+    assert "torvalds" not in hallazgo.evidencias_json
+
+    # Tambien no debe aparecer en ninguna de las dos exportaciones completas.
+    cuerpo_json = generar_json_osint(datos)
+    assert "torvalds" not in cuerpo_json
+    html = generar_html_osint(datos)
+    assert "torvalds" not in html
