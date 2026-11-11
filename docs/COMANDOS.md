@@ -229,6 +229,7 @@ est osint usuario NOMBRE_USUARIO --autorizo [--proyecto NOMBRE] [--fuentes ...]
 est osint fuentes [--tipo dominio|correo|telefono|usuario]
 est osint investigaciones [--proyecto NOMBRE] [--limite 20]
 est osint resultados [--proyecto NOMBRE] [--investigacion ID] [--limite 100]
+est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar] [--salida RUTA]
 est osint eliminar INVESTIGACION_ID --confirmar
 est osint purgar [--dias 90] --confirmar
 ```
@@ -242,6 +243,7 @@ est osint purgar [--dias 90] --confirmar
 | `est osint fuentes` | Lista el catalogo de fuentes y si cada una esta configurada. |
 | `est osint investigaciones` | Lista las investigaciones guardadas de un proyecto. |
 | `est osint resultados` | Muestra los hallazgos guardados (de un proyecto o de una investigacion). |
+| `est osint reporte` | Genera el informe (HTML/JSON) de una investigacion; `--minimizar` enmascara el objetivo. |
 | `est osint eliminar` | Borra una investigacion y todos sus hallazgos (irreversible; exige `--confirmar`). |
 | `est osint purgar` | Aplica retencion: borra investigaciones mas antiguas que `--dias` (irreversible; exige `--confirmar`). |
 

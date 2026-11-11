@@ -153,6 +153,7 @@ EXPLICACIONES: dict[str, str] = {
         "est osint fuentes [--tipo dominio|correo|telefono|usuario]\n"
         "est osint investigaciones [--proyecto NOMBRE] [--limite 20]\n"
         "est osint resultados [--proyecto NOMBRE] [--investigacion ID]\n"
+        "est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar]\n"
         "est osint eliminar INVESTIGACION_ID --confirmar\n"
         "est osint purgar [--dias 90] --confirmar\n\n"
         "- --autorizo es obligatorio para correo/telefono/usuario (datos\n"

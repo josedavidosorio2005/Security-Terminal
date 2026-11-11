@@ -47,6 +47,7 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
 | OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
+| OSINT | Implementada | Investigacion de fuentes publicas (dominio, correo, telefono, usuario), con pestanas de Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe y boton de cancelar. Ver [docs/OSINT.md](OSINT.md). |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
 | Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
@@ -188,6 +189,42 @@ detalle completo (riesgo, confianza, descripcion, evidencia saneada, solucion y 
 marcarla como "confirmado" o "falso positivo". Igual que "Vulnerabilidades", rechaza objetivos
 fuera del alcance autorizado. Detalle completo (configuracion, limitaciones) en
 [docs/OWASP_ZAP.md](OWASP_ZAP.md).
+
+### OSINT
+
+Investigacion de fuentes publicas sobre un dominio/empresa, un correo, un telefono o un
+nombre de usuario. **Nunca ejecuta un escaneo activo contra el objetivo**: solo consulta
+fuentes publicas ya documentadas (DNS, RDAP, Certificate Transparency, APIs publicas de
+GitHub/GitLab/urlscan.io y, si estan configuradas, Have I Been Pwned/VirusTotal). Detalle
+completo de cada fuente y sus limitaciones en [docs/OSINT.md](OSINT.md).
+
+Elige el tipo de objetivo, escribe el objetivo, y si es correo/telefono/usuario marca
+**"Confirmo que el objetivo es propio o su revision esta autorizada"** -- el boton
+"Iniciar investigacion" rechaza continuar sin esa confirmacion para esos tipos (un
+dominio se trata como informacion corporativa y no la exige). La seccion plegable
+"Fuentes a consultar" se repuebla segun el tipo elegido; si no marcas ninguna, se
+consultan todas las aplicables. "Cancelar" detiene la investigacion de verdad: la
+fuente en curso en ese momento no persiste nada, las ya completadas se conservan.
+
+Los resultados se organizan en pestanas:
+
+- **Resumen**: estado de cada fuente consultada (`pendiente`, `ejecutando`,
+  `completada`, `omitida`, `fallida` o `cancelada` -- nunca un porcentaje inventado) y
+  el resumen final (total de hallazgos, indicadores de exposicion, limitaciones).
+- **Infraestructura**: DNS, RDAP, Certificate Transparency e historial de escaneos.
+- **Perfiles publicos**: coincidencias de nombre de usuario (GitHub, GitLab) -- nunca
+  se presentan como una identidad confirmada.
+- **Exposicion**: brechas conocidas (si `EST_HIBP_API_KEY` esta configurada),
+  reputacion de dominio (si `EST_VIRUSTOTAL_API_KEY` esta configurada) y cualquier otro
+  hallazgo con un indicador de exposicion.
+- **Fuentes**: catalogo completo, con si cada una esta disponible o requiere
+  configuracion (y que variable de entorno le falta).
+- **Informe**: genera el informe de la investigacion en HTML o JSON, con una casilla
+  opcional para minimizar (enmascarar) el objetivo en el archivo exportado.
+
+Selecciona una fila de cualquiera de las tablas de hallazgos para ver su detalle
+completo (categoria, nivel de confianza, descripcion, indicador de exposicion y fecha
+de consulta) debajo de la tabla.
 
 ### Herramientas
 

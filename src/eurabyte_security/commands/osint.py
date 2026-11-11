@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 import typer
 from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+from eurabyte_security.core.config import ruta_reportes
+from eurabyte_security.core.errores import ErrorValidacion
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
 from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
+from eurabyte_security.modules.reporting.generador import (
+    construir_datos_informe_osint,
+    generar_html_osint,
+    generar_json_osint,
+)
 from eurabyte_security.storage.database import BaseDatos, Proyecto
 from eurabyte_security.ui.consola import consola, texto_seguro
+
+FORMATOS_INFORME_VALIDOS = {"html", "json"}
 
 osint_app = typer.Typer(
     help="Investiga fuentes publicas (OSINT) sobre un objetivo autorizado.",
@@ -118,6 +130,44 @@ def _ejecutar_y_mostrar(
         f"\nUsa 'est osint resultados --investigacion {resultado.investigacion_id}' "
         "para ver el detalle."
     )
+
+
+def generar_reporte_osint(
+    base_datos: BaseDatos,
+    proyecto: Proyecto,
+    investigacion_id: int,
+    formato: str,
+    *,
+    minimizar: bool = False,
+    salida: Path | None = None,
+) -> Path:
+    """Genera el informe de UNA investigacion OSINT (separado del informe global
+    de hallazgos tecnicos, ver ``commands/reporte.py``)."""
+    formato = formato.lower()
+    if formato not in FORMATOS_INFORME_VALIDOS:
+        raise ErrorValidacion(
+            f"Formato '{formato}' no soportado. Usa uno de: "
+            f"{', '.join(sorted(FORMATOS_INFORME_VALIDOS))}."
+        )
+
+    investigacion = base_datos.obtener_investigacion_osint(investigacion_id)
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion_id, limite=10_000)
+    datos = construir_datos_informe_osint(
+        proyecto.nombre, investigacion, hallazgos, minimizar=minimizar
+    )
+    contenido = generar_html_osint(datos) if formato == "html" else generar_json_osint(datos)
+
+    if salida is None:
+        marca_tiempo = datetime.now().strftime("%Y%m%d-%H%M%S")
+        ruta_salida = (
+            ruta_reportes()
+            / f"informe-osint-{proyecto.nombre}-{investigacion_id}-{marca_tiempo}.{formato}"
+        )
+    else:
+        ruta_salida = salida
+    ruta_salida.parent.mkdir(parents=True, exist_ok=True)
+    ruta_salida.write_text(contenido, encoding="utf-8")
+    return ruta_salida
 
 
 @osint_app.command("dominio")
@@ -303,6 +353,29 @@ def resultados_cmd(
             h.creado_en,
         )
     consola.print(tabla)
+
+
+@osint_app.command("reporte")
+def reporte_cmd(
+    investigacion_id: int = typer.Argument(
+        ..., help="Id de la investigacion (ver 'est osint investigaciones')."
+    ),
+    formato: str = typer.Option("html", "--formato", help="Formato del informe: html o json."),
+    minimizar: bool = typer.Option(
+        False, "--minimizar", help="Enmascara el objetivo (correo/telefono/usuario) en el informe."
+    ),
+    proyecto: str | None = typer.Option(None, "--proyecto", help=_AYUDA_PROYECTO),
+    salida: Path | None = typer.Option(  # noqa: B008
+        None, "--salida", help="Ruta del archivo de salida (por defecto, se genera una)."
+    ),
+) -> None:
+    """Genera el informe (HTML/JSON) de una investigacion OSINT concreta."""
+    base_datos = obtener_base_datos()
+    proyecto_obj = resolver_proyecto(base_datos, proyecto)
+    ruta = generar_reporte_osint(
+        base_datos, proyecto_obj, investigacion_id, formato, minimizar=minimizar, salida=salida
+    )
+    consola.print(f"Informe OSINT generado en: {texto_seguro(ruta)}")
 
 
 @osint_app.command("eliminar")

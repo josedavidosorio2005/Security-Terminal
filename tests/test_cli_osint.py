@@ -191,3 +191,80 @@ def test_osint_purgar_con_confirmar_borra_antiguas(runner):
 
     resultado = runner.invoke(app, ["osint", "investigaciones"])
     assert "no tiene investigaciones" in resultado.stdout
+
+
+def test_osint_reporte_html(runner, tmp_path):
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "ejemplo.com", "ejemplo.com", False, []
+    )
+
+    ruta_salida = tmp_path / "informe.html"
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "reporte",
+            str(investigacion.id),
+            "--formato",
+            "html",
+            "--salida",
+            str(ruta_salida),
+        ],
+    )
+    assert resultado.exit_code == 0
+    assert ruta_salida.exists()
+    assert "Informe OSINT AST" in ruta_salida.read_text(encoding="utf-8")
+
+
+def test_osint_reporte_json_minimizado(runner, tmp_path):
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "correo", "usuario@ejemplo.com", "usuario@ejemplo.com", True, []
+    )
+
+    ruta_salida = tmp_path / "informe.json"
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "reporte",
+            str(investigacion.id),
+            "--formato",
+            "json",
+            "--minimizar",
+            "--salida",
+            str(ruta_salida),
+        ],
+    )
+    assert resultado.exit_code == 0
+    contenido = ruta_salida.read_text(encoding="utf-8")
+    assert "usuario@ejemplo.com" not in contenido
+
+
+def test_osint_reporte_investigacion_inexistente_falla(runner):
+    resultado = runner.invoke(app, ["osint", "reporte", "999"])
+    assert resultado.exit_code != 0
+
+
+def test_osint_reporte_formato_invalido_falla(runner):
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "ejemplo.com", "ejemplo.com", False, []
+    )
+    resultado = runner.invoke(
+        app, ["osint", "reporte", str(investigacion.id), "--formato", "pdf"]
+    )
+    assert resultado.exit_code != 0
