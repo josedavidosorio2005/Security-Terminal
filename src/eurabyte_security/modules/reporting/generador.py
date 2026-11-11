@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from html import escape
+from urllib.parse import quote
 
 from eurabyte_security.core.osint.redaccion import minimizar_objetivo
 from eurabyte_security.core.redaccion import redactar_texto_libre
@@ -638,10 +640,26 @@ class DatosInformeOSINT:
     recomendaciones: tuple[str, ...]
 
 
+def _variantes_objetivo(objetivo_real: str) -> list[str]:
+    """Formas en las que ``objetivo_real`` puede aparecer dentro de texto libre: tal
+    cual, y codificado para URL (p. ej. ``integrations/osint/hibp.py`` construye su
+    URL de consulta con ``urllib.parse.quote(correo, safe='')``; si esa fuente falla
+    con un codigo distinto de 404/401, la URL completa -- con el correo codificado --
+    puede terminar en el mensaje de ``limitaciones``)."""
+    codificado = quote(objetivo_real, safe="")
+    return [objetivo_real] if codificado == objetivo_real else [objetivo_real, codificado]
+
+
 def _minimizar_texto(texto: str | None, objetivo_real: str, objetivo_minimizado: str) -> str | None:
     if texto is None:
         return None
-    return texto.replace(objetivo_real, objetivo_minimizado)
+    resultado = texto
+    for variante in _variantes_objetivo(objetivo_real):
+        # Insensible a mayusculas/minusculas: una fuente puede devolver el objetivo
+        # con una capitalizacion distinta a la que el usuario escribio (ver revision
+        # de seguridad de esta PR).
+        resultado = re.sub(re.escape(variante), objetivo_minimizado, resultado, flags=re.IGNORECASE)
+    return resultado
 
 
 def _minimizar_hallazgo(
@@ -706,6 +724,10 @@ def construir_datos_informe_osint(
             _minimizar_hallazgo(h, investigacion.objetivo_saneado, objetivo_mostrado)
             for h in hallazgos
         ]
+        limitaciones = tuple(
+            _minimizar_texto(lim, investigacion.objetivo_saneado, objetivo_mostrado) or lim
+            for lim in limitaciones
+        )
     else:
         objetivo_mostrado = investigacion.objetivo_saneado
 

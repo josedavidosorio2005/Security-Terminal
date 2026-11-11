@@ -172,3 +172,55 @@ def test_minimizar_tambien_oculta_el_objetivo_dentro_de_cada_hallazgo(tmp_path):
     assert "torvalds" not in cuerpo_json
     html = generar_html_osint(datos)
     assert "torvalds" not in html
+
+
+def test_minimizar_es_insensible_a_mayusculas(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(
+        tmp_path, tipo="usuario", objetivo="torvalds", autorizado=True
+    )
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "perfiles_publicos",
+        [_hallazgo(categoria="perfil_publico", titulo="Perfil de Torvalds encontrado")],
+    )
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id)
+
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, hallazgos, minimizar=True)
+
+    assert "torvalds" not in datos.hallazgos[0].titulo.lower()
+
+
+def test_minimizar_tambien_oculta_el_objetivo_en_limitaciones(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(
+        tmp_path, tipo="correo", objetivo="usuario@ejemplo.com", autorizado=True
+    )
+    base_datos.actualizar_investigacion_osint(
+        investigacion.id,
+        limitaciones=["hibp: 'usuario@ejemplo.com' fallo con un error inesperado."],
+    )
+    investigacion = base_datos.obtener_investigacion_osint(investigacion.id)
+
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, [], minimizar=True)
+
+    assert "usuario@ejemplo.com" not in datos.limitaciones[0]
+
+
+def test_minimizar_cubre_el_objetivo_codificado_para_url(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(
+        tmp_path, tipo="correo", objetivo="usuario@ejemplo.com", autorizado=True
+    )
+    codificado = "usuario%40ejemplo.com"
+    base_datos.actualizar_investigacion_osint(
+        investigacion.id,
+        limitaciones=[
+            f"hibp: 'https://haveibeenpwned.com/api/v3/breachedaccount/{codificado}' "
+            "respondio con el codigo HTTP 500."
+        ],
+    )
+    investigacion = base_datos.obtener_investigacion_osint(investigacion.id)
+
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, [], minimizar=True)
+
+    assert codificado not in datos.limitaciones[0]
+    assert "usuario@ejemplo.com" not in datos.limitaciones[0]

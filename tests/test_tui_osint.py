@@ -255,6 +255,12 @@ async def test_panel_osint_generar_informe_genera_archivo(monkeypatch, tmp_path)
         await _abrir_pestana_informe(pilot)
 
         app.query_one("#osint-informe-generar", Button).press()
+        # 'press()' solo encola el mensaje Button.Pressed; hace falta un 'pause()' para
+        # que la cola de mensajes se procese y el worker realmente arranque ANTES de
+        # esperar a que termine (si no, 'wait_for_complete()' puede no ver ningun
+        # worker en marcha todavia y devolver de inmediato -- carrera real observada
+        # en CI sobre Windows, no reproducida siempre en local).
+        await pilot.pause()
         await app.workers.wait_for_complete()
         await pilot.pause()
 
