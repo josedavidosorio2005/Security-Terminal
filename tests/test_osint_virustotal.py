@@ -68,7 +68,9 @@ def test_dominio_no_encontrado_no_disponible(monkeypatch):
     _preparar(monkeypatch)
 
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'virustotal.com' respondio con el codigo HTTP 404.")
+        raise ErrorFuenteOSINTError(
+            "'virustotal.com' respondio con el codigo HTTP 404.", codigo_http=404
+        )
 
     monkeypatch.setattr(virustotal, "peticion_json", _fallar)
     with pytest.raises(ErrorFuenteOSINTNoDisponible):
@@ -82,7 +84,9 @@ def test_clave_invalida_no_disponible(monkeypatch):
     _preparar(monkeypatch)
 
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'virustotal.com' respondio con el codigo HTTP 401.")
+        raise ErrorFuenteOSINTError(
+            "'virustotal.com' respondio con el codigo HTTP 401.", codigo_http=401
+        )
 
     monkeypatch.setattr(virustotal, "peticion_json", _fallar)
     with pytest.raises(ErrorFuenteOSINTNoDisponible) as exc_info:

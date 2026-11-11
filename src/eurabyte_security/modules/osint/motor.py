@@ -129,8 +129,6 @@ def ejecutar_investigacion_osint(
     def _cancelado() -> bool:
         return debe_cancelar is not None and debe_cancelar()
 
-    objetivo_consulta = _objetivo_para_fuente(tipo_objetivo, objetivo_saneado)
-
     for id_fuente, adaptador in fuentes_aplicables.items():
         if _cancelado():
             _emitir(id_fuente, "cancelada", "")
@@ -138,6 +136,16 @@ def ejecutar_investigacion_osint(
             raise ErrorInvestigacionOSINTCancelada(
                 f"La investigacion OSINT de '{objetivo_texto}' se cancelo."
             )
+
+        # Cada fuente declara si necesita el objetivo tal cual se valido (p. ej. Have
+        # I Been Pwned, que consulta por cuenta de correo completa) o el dominio
+        # derivado (DNS/RDAP/Certificate Transparency/VirusTotal): calcularlo UNA sola
+        # vez fuera de este bucle enviaria el dominio a una fuente que necesita el
+        # correo completo, o viceversa (ver integrations/osint/base.py).
+        if adaptador.requiere_objetivo_original:
+            objetivo_consulta: str | None = objetivo_saneado
+        else:
+            objetivo_consulta = _objetivo_para_fuente(tipo_objetivo, objetivo_saneado)
 
         if objetivo_consulta is None:
             _emitir(id_fuente, "omitida", "No hay un dominio que consultar para este objetivo.")

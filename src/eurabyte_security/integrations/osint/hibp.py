@@ -47,6 +47,10 @@ class AdaptadorHIBP(AdaptadorFuenteOSINT):
     tipos_objetivo = frozenset({"correo"})
     requiere_clave = True
     variable_entorno_clave = VARIABLE_CLAVE_HIBP
+    # Consulta por CUENTA DE CORREO completa (breachedaccount/{correo}), nunca por
+    # dominio: a diferencia del resto de fuentes de 'correo', necesita el objetivo
+    # original completo, no el dominio derivado (ver integrations/osint/base.py).
+    requiere_objetivo_original = True
     url_documentacion = URL_DOCUMENTACION_HIBP
 
     def investigar(
@@ -81,10 +85,13 @@ class AdaptadorHIBP(AdaptadorFuenteOSINT):
                     debe_cancelar=debe_cancelar,
                 )
             except ErrorFuenteOSINTError as exc:
-                mensaje = str(exc)
-                if "404" in mensaje:
-                    datos = []  # sin brechas conocidas: no es un error
-                elif "401" in mensaje:
+                # Comparacion por codigo HTTP ESTRUCTURADO (entero), nunca por
+                # subcadena del mensaje ya formateado: evita que un fallo real se
+                # confunda con "sin brechas" por una coincidencia de texto (ver
+                # revision de seguridad de esta misma PR).
+                if exc.codigo_http == 404:
+                    datos = []  # documentado por HIBP: cuenta no encontrada = sin brechas
+                elif exc.codigo_http == 401:
                     raise ErrorFuenteOSINTNoDisponible(
                         f"'{self.nombre}' rechazo la clave configurada en "
                         f"'{self.variable_entorno_clave}' (401). Verifica que sea valida."

@@ -26,7 +26,9 @@ def test_usuario_encontrado_en_ambas_plataformas(monkeypatch):
 def test_usuario_no_encontrado_en_github_se_omite_sin_error(monkeypatch):
     def _falso(url, **_kwargs):
         if "github.com" in url:
-            raise ErrorFuenteOSINTError("'api.github.com' respondio con el codigo HTTP 404.")
+            raise ErrorFuenteOSINTError(
+                "'api.github.com' respondio con el codigo HTTP 404.", codigo_http=404
+            )
         return []
 
     monkeypatch.setattr(perfiles_publicos, "peticion_json", _falso)

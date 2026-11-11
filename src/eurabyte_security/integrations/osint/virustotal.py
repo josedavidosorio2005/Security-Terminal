@@ -71,12 +71,14 @@ class AdaptadorVirusTotal(AdaptadorFuenteOSINT):
                     debe_cancelar=debe_cancelar,
                 )
             except ErrorFuenteOSINTError as exc:
-                mensaje = str(exc)
-                if "404" in mensaje:
+                # Comparacion por codigo HTTP estructurado, nunca por subcadena del
+                # mensaje (ver revision de seguridad: una coincidencia de texto podria
+                # confundir un fallo real con un resultado valido).
+                if exc.codigo_http == 404:
                     raise ErrorFuenteOSINTNoDisponible(
                         f"'{self.nombre}' no tiene informacion registrada para '{objetivo}'."
                     ) from exc
-                if "401" in mensaje or "403" in mensaje:
+                if exc.codigo_http in (401, 403):
                     raise ErrorFuenteOSINTNoDisponible(
                         f"'{self.nombre}' rechazo la clave configurada en "
                         f"'{self.variable_entorno_clave}'. Verifica que sea valida."

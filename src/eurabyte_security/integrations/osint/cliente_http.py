@@ -120,7 +120,8 @@ def peticion_http(
                 intento += 1
                 continue
             raise ErrorFuenteOSINTError(
-                f"'{redactar_url(url)}' respondio con el codigo HTTP {exc.code}."
+                f"'{redactar_url(url)}' respondio con el codigo HTTP {exc.code}.",
+                codigo_http=exc.code,
             ) from exc
         except TimeoutError as exc:
             raise ErrorFuenteOSINTError(

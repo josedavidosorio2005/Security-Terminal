@@ -55,7 +55,9 @@ def test_rdap_dominio_extrae_organizacion_pero_nunca_persona(monkeypatch):
 
 def test_rdap_dominio_404_no_disponible(monkeypatch):
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'rdap.org' respondio con el codigo HTTP 404.")
+        raise ErrorFuenteOSINTError(
+            "'rdap.org' respondio con el codigo HTTP 404.", codigo_http=404
+        )
 
     monkeypatch.setattr(rdap, "peticion_json", _fallar)
     with pytest.raises(ErrorFuenteOSINTNoDisponible):

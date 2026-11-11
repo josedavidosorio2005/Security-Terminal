@@ -44,7 +44,9 @@ def test_404_se_trata_como_sin_brechas(monkeypatch):
     _sin_cache(monkeypatch)
 
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'haveibeenpwned.com' respondio con el codigo HTTP 404.")
+        raise ErrorFuenteOSINTError(
+            "'haveibeenpwned.com' respondio con el codigo HTTP 404.", codigo_http=404
+        )
 
     monkeypatch.setattr(hibp, "peticion_json", _fallar)
     hallazgos = hibp.AdaptadorHIBP().investigar(
@@ -58,7 +60,9 @@ def test_401_clave_invalida_no_disponible(monkeypatch):
     _sin_cache(monkeypatch)
 
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'haveibeenpwned.com' respondio con el codigo HTTP 401.")
+        raise ErrorFuenteOSINTError(
+            "'haveibeenpwned.com' respondio con el codigo HTTP 401.", codigo_http=401
+        )
 
     monkeypatch.setattr(hibp, "peticion_json", _fallar)
     with pytest.raises(ErrorFuenteOSINTNoDisponible):
@@ -72,7 +76,9 @@ def test_clave_nunca_aparece_en_el_mensaje_de_error(monkeypatch):
     _sin_cache(monkeypatch)
 
     def _fallar(*_a, **_k):
-        raise ErrorFuenteOSINTError("'haveibeenpwned.com' respondio con el codigo HTTP 401.")
+        raise ErrorFuenteOSINTError(
+            "'haveibeenpwned.com' respondio con el codigo HTTP 401.", codigo_http=401
+        )
 
     monkeypatch.setattr(hibp, "peticion_json", _fallar)
     with pytest.raises(ErrorFuenteOSINTNoDisponible) as exc_info:
