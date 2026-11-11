@@ -12,6 +12,7 @@ from pathlib import Path
 
 from eurabyte_security.core.config import ruta_base_datos
 from eurabyte_security.core.errores import (
+    ErrorInvestigacionOSINTNoEncontrada,
     ErrorProyectoDuplicado,
     ErrorProyectoNoEncontrado,
     ErrorSesionReconocimientoNoEncontrada,
@@ -96,6 +97,37 @@ CREATE TABLE IF NOT EXISTS resultados_zap (
     solucion TEXT NOT NULL,
     referencia TEXT,
     estado_revision TEXT NOT NULL,
+    creado_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS investigaciones_osint (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    tipo_objetivo TEXT NOT NULL,
+    objetivo_original TEXT NOT NULL,
+    objetivo_saneado TEXT NOT NULL,
+    autorizado_datos_personales INTEGER NOT NULL,
+    fuentes_json TEXT NOT NULL,
+    estado_general TEXT NOT NULL,
+    etapas_json TEXT NOT NULL,
+    limitaciones_json TEXT NOT NULL,
+    ruta_informe_html TEXT,
+    ruta_informe_json TEXT,
+    creado_en TEXT NOT NULL,
+    actualizado_en TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hallazgos_osint (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    investigacion_id INTEGER NOT NULL REFERENCES investigaciones_osint(id) ON DELETE CASCADE,
+    proyecto_id INTEGER NOT NULL REFERENCES proyectos(id) ON DELETE CASCADE,
+    fuente TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    titulo TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    nivel_confianza TEXT NOT NULL,
+    indicador_exposicion TEXT,
+    evidencias_json TEXT NOT NULL,
     creado_en TEXT NOT NULL
 );
 
@@ -350,6 +382,49 @@ class SesionReconocimiento:
     ruta_informe_json: str | None
     creado_en: str
     actualizado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class InvestigacionOSINT:
+    """Investigacion OSINT guardada (ver ``modules/osint/motor.py``).
+
+    ``fuentes_json``/``etapas_json``/``limitaciones_json`` son listas ya serializadas a
+    JSON, con la misma logica que ``SesionReconocimiento``: esta capa no conoce
+    ``EtapaFuenteOSINT`` ni ningun otro tipo de ``modules/``, solo datos primitivos.
+    """
+
+    id: int
+    proyecto_id: int
+    tipo_objetivo: str
+    objetivo_original: str
+    objetivo_saneado: str
+    autorizado_datos_personales: bool
+    fuentes_json: str
+    estado_general: str
+    etapas_json: str
+    limitaciones_json: str
+    ruta_informe_html: str | None
+    ruta_informe_json: str | None
+    creado_en: str
+    actualizado_en: str
+
+
+@dataclass(frozen=True, slots=True)
+class HallazgoOSINTGuardado:
+    """Un hallazgo OSINT ya persistido. ``evidencias_json`` es una lista de
+    ``EvidenciaOSINT.como_dict()`` ya serializada (ver ``modules/osint/modelos.py``)."""
+
+    id: int
+    investigacion_id: int
+    proyecto_id: int
+    fuente: str
+    categoria: str
+    titulo: str
+    descripcion: str
+    nivel_confianza: str
+    indicador_exposicion: str | None
+    evidencias_json: str
+    creado_en: str
 
 
 class BaseDatos:
@@ -980,3 +1055,199 @@ class BaseDatos:
                     (proyecto_id, limite),
                 ).fetchall()
         return [SesionReconocimiento(**fila) for fila in filas]
+
+    # -- Investigaciones OSINT ------------------------------------------
+    _COLUMNAS_INVESTIGACION_OSINT = (
+        "id, proyecto_id, tipo_objetivo, objetivo_original, objetivo_saneado, "
+        "autorizado_datos_personales, fuentes_json, estado_general, etapas_json, "
+        "limitaciones_json, ruta_informe_html, ruta_informe_json, creado_en, actualizado_en"
+    )
+
+    @staticmethod
+    def _fila_a_investigacion_osint(fila: sqlite3.Row) -> InvestigacionOSINT:
+        datos = dict(fila)
+        datos["autorizado_datos_personales"] = bool(datos["autorizado_datos_personales"])
+        return InvestigacionOSINT(**datos)
+
+    def crear_investigacion_osint(
+        self,
+        proyecto_id: int,
+        tipo_objetivo: str,
+        objetivo_original: str,
+        objetivo_saneado: str,
+        autorizado_datos_personales: bool,
+        fuentes_seleccionadas: list[str],
+    ) -> InvestigacionOSINT:
+        ahora = _ahora()
+        with self._conectar() as conexion:
+            cursor = conexion.execute(
+                "INSERT INTO investigaciones_osint (proyecto_id, tipo_objetivo, "
+                "objetivo_original, objetivo_saneado, autorizado_datos_personales, "
+                "fuentes_json, estado_general, etapas_json, limitaciones_json, "
+                "ruta_informe_html, ruta_informe_json, creado_en, actualizado_en) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'ejecutando', '[]', '[]', NULL, NULL, ?, ?)",
+                (
+                    proyecto_id,
+                    tipo_objetivo,
+                    objetivo_original,
+                    objetivo_saneado,
+                    int(autorizado_datos_personales),
+                    json.dumps(fuentes_seleccionadas),
+                    ahora,
+                    ahora,
+                ),
+            )
+            nuevo_id = cursor.lastrowid
+        return self.obtener_investigacion_osint(nuevo_id)  # type: ignore[arg-type]
+
+    def actualizar_investigacion_osint(
+        self,
+        id_: int,
+        *,
+        estado_general: str | None = None,
+        etapas: list[dict] | None = None,
+        limitaciones: list[str] | None = None,
+        ruta_informe_html: str | None = None,
+        ruta_informe_json: str | None = None,
+    ) -> InvestigacionOSINT:
+        actual = self.obtener_investigacion_osint(id_)
+        nuevo_estado = estado_general if estado_general is not None else actual.estado_general
+        nuevas_etapas_json = json.dumps(etapas) if etapas is not None else actual.etapas_json
+        nuevas_limitaciones_json = (
+            json.dumps(limitaciones) if limitaciones is not None else actual.limitaciones_json
+        )
+        nueva_ruta_html = (
+            ruta_informe_html if ruta_informe_html is not None else actual.ruta_informe_html
+        )
+        nueva_ruta_json = (
+            ruta_informe_json if ruta_informe_json is not None else actual.ruta_informe_json
+        )
+        with self._conectar() as conexion:
+            conexion.execute(
+                "UPDATE investigaciones_osint SET estado_general = ?, etapas_json = ?, "
+                "limitaciones_json = ?, ruta_informe_html = ?, ruta_informe_json = ?, "
+                "actualizado_en = ? WHERE id = ?",
+                (
+                    nuevo_estado,
+                    nuevas_etapas_json,
+                    nuevas_limitaciones_json,
+                    nueva_ruta_html,
+                    nueva_ruta_json,
+                    _ahora(),
+                    id_,
+                ),
+            )
+        return self.obtener_investigacion_osint(id_)
+
+    def obtener_investigacion_osint(self, id_: int) -> InvestigacionOSINT:
+        with self._conectar() as conexion:
+            fila = conexion.execute(
+                f"SELECT {self._COLUMNAS_INVESTIGACION_OSINT} FROM investigaciones_osint "
+                "WHERE id = ?",
+                (id_,),
+            ).fetchone()
+        if fila is None:
+            raise ErrorInvestigacionOSINTNoEncontrada(
+                f"No existe una investigacion OSINT con id {id_}."
+            )
+        return self._fila_a_investigacion_osint(fila)
+
+    def listar_investigaciones_osint(
+        self, proyecto_id: int | None = None, limite: int = 50
+    ) -> list[InvestigacionOSINT]:
+        with self._conectar() as conexion:
+            if proyecto_id is None:
+                filas = conexion.execute(
+                    f"SELECT {self._COLUMNAS_INVESTIGACION_OSINT} FROM investigaciones_osint "
+                    "ORDER BY creado_en DESC LIMIT ?",
+                    (limite,),
+                ).fetchall()
+            else:
+                filas = conexion.execute(
+                    f"SELECT {self._COLUMNAS_INVESTIGACION_OSINT} FROM investigaciones_osint "
+                    "WHERE proyecto_id = ? ORDER BY creado_en DESC LIMIT ?",
+                    (proyecto_id, limite),
+                ).fetchall()
+        return [self._fila_a_investigacion_osint(fila) for fila in filas]
+
+    def eliminar_investigacion_osint(self, id_: int) -> None:
+        """Borra la investigacion y todos sus hallazgos, en una sola transaccion.
+
+        No depende de ``ON DELETE CASCADE`` (SQLite no lo aplica salvo que
+        ``PRAGMA foreign_keys`` este activada en la conexion, y esta capa no la activa
+        hoy para ninguna tabla): borra ``hallazgos_osint`` explicitamente antes de
+        borrar la investigacion, dentro de la misma transaccion.
+        """
+        self.obtener_investigacion_osint(id_)  # ErrorInvestigacionOSINTNoEncontrada si no existe
+        with self._conectar() as conexion:
+            conexion.execute("DELETE FROM hallazgos_osint WHERE investigacion_id = ?", (id_,))
+            conexion.execute("DELETE FROM investigaciones_osint WHERE id = ?", (id_,))
+
+    # -- Hallazgos OSINT -------------------------------------------------
+    _COLUMNAS_HALLAZGO_OSINT = (
+        "id, investigacion_id, proyecto_id, fuente, categoria, titulo, descripcion, "
+        "nivel_confianza, indicador_exposicion, evidencias_json, creado_en"
+    )
+
+    def agregar_hallazgos_osint(
+        self, investigacion_id: int, proyecto_id: int, fuente: str, hallazgos: list[dict]
+    ) -> list[HallazgoOSINTGuardado]:
+        """Inserta los hallazgos de UNA fuente en una sola transaccion (todo o nada).
+
+        ``hallazgos`` es una lista de ``HallazgoOSINT.como_dict()`` (ver
+        ``modules/osint/modelos.py``). Misma semantica de atomicidad que
+        :meth:`agregar_resultados_nmap`: si la investigacion se cancela antes de que una
+        fuente termine, esta funcion no llega a invocarse para ella y no queda ningun
+        hallazgo parcial de esa fuente.
+        """
+        guardados: list[HallazgoOSINTGuardado] = []
+        with self._conectar() as conexion:
+            for hallazgo in hallazgos:
+                evidencias_json = json.dumps(hallazgo["evidencias"])
+                cursor = conexion.execute(
+                    "INSERT INTO hallazgos_osint (investigacion_id, proyecto_id, fuente, "
+                    "categoria, titulo, descripcion, nivel_confianza, indicador_exposicion, "
+                    "evidencias_json, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        investigacion_id,
+                        proyecto_id,
+                        fuente,
+                        hallazgo["categoria"],
+                        hallazgo["titulo"],
+                        hallazgo["descripcion"],
+                        hallazgo["nivel_confianza"],
+                        hallazgo["indicador_exposicion"],
+                        evidencias_json,
+                        _ahora(),
+                    ),
+                )
+                fila = conexion.execute(
+                    f"SELECT {self._COLUMNAS_HALLAZGO_OSINT} FROM hallazgos_osint WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                guardados.append(HallazgoOSINTGuardado(**dict(fila)))
+        return guardados
+
+    def listar_hallazgos_osint(
+        self,
+        investigacion_id: int | None = None,
+        proyecto_id: int | None = None,
+        limite: int = 500,
+    ) -> list[HallazgoOSINTGuardado]:
+        condiciones: list[str] = []
+        parametros: list[object] = []
+        if investigacion_id is not None:
+            condiciones.append("investigacion_id = ?")
+            parametros.append(investigacion_id)
+        if proyecto_id is not None:
+            condiciones.append("proyecto_id = ?")
+            parametros.append(proyecto_id)
+        clausula = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+        parametros.append(limite)
+        with self._conectar() as conexion:
+            filas = conexion.execute(
+                f"SELECT {self._COLUMNAS_HALLAZGO_OSINT} FROM hallazgos_osint {clausula} "
+                "ORDER BY creado_en DESC LIMIT ?",
+                parametros,
+            ).fetchall()
+        return [HallazgoOSINTGuardado(**dict(fila)) for fila in filas]

@@ -141,6 +141,29 @@ EXPLICACIONES: dict[str, str] = {
         "- Ningun hallazgo guarda peticiones/respuestas completas: solo un resumen\n"
         "  saneado (regla, riesgo, confianza, evidencia truncada y redactada)."
     ),
+    "osint": (
+        "Investigacion de fuentes publicas (OSINT) sobre un dominio, correo,\n"
+        "telefono o nombre de usuario. Nunca ejecuta un escaneo activo contra el\n"
+        "objetivo: solo consulta fuentes publicas documentadas (DNS, RDAP,\n"
+        "Certificate Transparency, APIs publicas de GitHub/GitLab...).\n\n"
+        "est osint dominio DOMINIO [--proyecto NOMBRE] [--fuentes ...]\n"
+        "est osint correo CORREO --autorizo [--proyecto NOMBRE] [--fuentes ...]\n"
+        "est osint telefono NUMERO --autorizo [--region CO] [--proyecto NOMBRE]\n"
+        "est osint usuario NOMBRE_USUARIO --autorizo [--proyecto NOMBRE]\n"
+        "est osint fuentes [--tipo dominio|correo|telefono|usuario]\n"
+        "est osint investigaciones [--proyecto NOMBRE] [--limite 20]\n"
+        "est osint resultados [--proyecto NOMBRE] [--investigacion ID]\n"
+        "est osint eliminar INVESTIGACION_ID --confirmar\n\n"
+        "- --autorizo es obligatorio para correo/telefono/usuario (datos\n"
+        "  potencialmente personales): confirma que el objetivo es propio o que\n"
+        "  su revision esta autorizada. 'dominio' no lo exige.\n"
+        "- Cada hallazgo indica su nivel de confianza (confirmado/probable/\n"
+        "  no_verificado): una coincidencia de usuario NUNCA se trata como una\n"
+        "  identidad confirmada.\n"
+        "- Las investigaciones OSINT se guardan separadas de los hallazgos\n"
+        "  tecnicos (nunca aparecen en 'est resultados').\n"
+        "- Ver docs/OSINT.md para el detalle de cada fuente y sus limitaciones."
+    ),
 }
 
 def explicar_cmd(

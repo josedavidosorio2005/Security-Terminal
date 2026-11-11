@@ -27,7 +27,9 @@ src/eurabyte_security/
 │   │               subproceso. Nuclei (subproceso) vive en integrations/, no aqui; ZAP
 │   │               (servicio HTTP ya en marcha, nunca un subproceso) si vive aqui --
 │   │               ver vulnerability/zap.py y docs/OWASP_ZAP.md.
-│   └── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
+│   ├── reporting/  Construccion de informes (HTML/JSON) a partir de resultados.
+│   └── osint/      Motor OSINT: orquesta validacion, autorizacion y fuentes publicas
+│                   sobre un dominio/correo/telefono/usuario. Detalle en docs/OSINT.md.
 ├── integrations/   Motor de integraciones (Fase 3). Detalle en docs/INTEGRACIONES.md.
 │   ├── base.py     AdaptadorExterno: contrato comun (deteccion, version, validacion...).
 │   ├── proceso.py  Unico punto de ejecucion real de un binario externo (sin shell, con
@@ -40,6 +42,11 @@ src/eurabyte_security/
 │                    anteriores, no hereda de AdaptadorExterno -- ZAP no es un binario
 │                    que AST invoque, sino un servicio HTTP que el usuario ya tiene
 │                    corriendo; la logica real vive en modules/vulnerability/zap.py.
+├── core/osint/     Validacion de objetivos OSINT y autorizacion sobre datos
+│                   personales (correo/telefono/usuario). Ver docs/OSINT.md.
+├── integrations/osint/  Adaptadores de fuentes OSINT (DNS, RDAP, Certificate
+│                   Transparency, perfiles publicos): cliente HTTP, cache y
+│                   limitador de tasa compartidos. Ver docs/OSINT.md.
 ├── assistant/      Contrato base del futuro asistente de IA. Fase 4.
 ├── commands/reconocimiento.py  Orquestador de reconocimiento automatico: encadena
 │                   core/objetivo.py + Nmap + auditoria web + Nuclei + ZAP reutilizando

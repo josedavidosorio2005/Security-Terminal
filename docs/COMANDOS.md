@@ -214,6 +214,40 @@ exactamente igual que si se hubieran ejecutado por separado (`est resultados`, `
 resultados`, `est zap resultados`...), y el informe final es el mismo informe global de
 `est reporte generar`.
 
+## `est osint`
+
+Investiga fuentes publicas (OSINT) sobre un dominio, correo, telefono o nombre de
+usuario. Las investigaciones OSINT se guardan por separado de los hallazgos tecnicos
+(nunca se mezclan en `est resultados`). Detalle completo, fuentes disponibles y
+limitaciones en [docs/OSINT.md](OSINT.md).
+
+```bash
+est osint dominio DOMINIO [--proyecto NOMBRE] [--fuentes dns,rdap_dominio,...]
+est osint correo CORREO --autorizo [--proyecto NOMBRE] [--fuentes ...]
+est osint telefono "+573000000000" --autorizo [--region CO] [--proyecto NOMBRE]
+est osint usuario NOMBRE_USUARIO --autorizo [--proyecto NOMBRE] [--fuentes ...]
+est osint fuentes [--tipo dominio|correo|telefono|usuario]
+est osint investigaciones [--proyecto NOMBRE] [--limite 20]
+est osint resultados [--proyecto NOMBRE] [--investigacion ID] [--limite 100]
+est osint eliminar INVESTIGACION_ID --confirmar
+```
+
+| Comando | Descripcion |
+|---|---|
+| `est osint dominio` | DNS publico, RDAP, infraestructura IP y Certificate Transparency. |
+| `est osint correo` | Sintaxis del correo y MX/SPF/DMARC de su dominio. |
+| `est osint telefono` | Normaliza a E.164 y describe region/tipo de numero (sin red, sin afirmar operador). |
+| `est osint usuario` | Coincidencias de nombre de usuario en perfiles publicos (GitHub, GitLab). |
+| `est osint fuentes` | Lista el catalogo de fuentes y si cada una esta configurada. |
+| `est osint investigaciones` | Lista las investigaciones guardadas de un proyecto. |
+| `est osint resultados` | Muestra los hallazgos guardados (de un proyecto o de una investigacion). |
+| `est osint eliminar` | Borra una investigacion y todos sus hallazgos (irreversible; exige `--confirmar`). |
+
+`--autorizo` es obligatorio para `correo`, `telefono` y `usuario` (datos potencialmente
+personales): sin esa confirmacion explicita, el comando se rechaza con
+`ErrorAutorizacionOSINTRequerida` antes de consultar ninguna fuente. `dominio` no lo
+exige (se trata como informacion corporativa).
+
 ## `est explicar TEMA`
 
 Muestra una explicacion en espanol de un comando y sus parametros. Temas disponibles: `proyecto`,

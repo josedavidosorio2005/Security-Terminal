@@ -65,3 +65,25 @@ class ErrorResolucionDNS(ErrorEST):
 
 class ErrorSesionReconocimientoNoEncontrada(ErrorEST):
     """No existe una sesion de reconocimiento automatico con el id indicado."""
+
+
+class ErrorAutorizacionOSINTRequerida(ErrorEST):
+    """Falta la confirmacion explicita de autorizacion para investigar datos personales."""
+
+
+class ErrorFuenteOSINTNoDisponible(ErrorEST):
+    """La fuente OSINT no esta configurada o no admite el tipo de objetivo indicado."""
+
+
+class ErrorFuenteOSINTError(ErrorEST):
+    """Fallo al consultar una fuente OSINT (tiempo agotado, respuesta invalida, limite de
+    tasa agotado tras los reintentos, etc.)."""
+
+
+class ErrorInvestigacionOSINTCancelada(ErrorEST):
+    """La investigacion OSINT se cancelo antes de completarse; la fuente en curso en ese
+    momento no persistio ningun hallazgo."""
+
+
+class ErrorInvestigacionOSINTNoEncontrada(ErrorEST):
+    """No existe una investigacion OSINT con el id indicado."""
