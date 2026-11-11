@@ -650,6 +650,42 @@ propio (cada usuario crea su propia clave; AST nunca la incluye ni la comparte);
 interfaz visual y el informe HTML/JSON dedicado de OSINT quedan para la PR C (ver
 docs/OSINT.md).
 
+### PR C - Interfaz Textual, resultados e informes (completado en este PR)
+
+- [x] `modules/reporting/generador.py`: `DatosInformeOSINT`/`generar_json_osint`/
+      `generar_html_osint`, reutilizando el mismo esqueleto HTML/CSS que el resto de
+      informes de AST. Incluye resumen ejecutivo, fuentes utilizadas, hallazgos
+      verificados, indicadores de exposicion, recomendaciones generales por categoria
+      de hallazgo, limitaciones y nota metodologica. `--minimizar` enmascara el
+      objetivo (correo/telefono/usuario; un dominio nunca se minimiza).
+- [x] `est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar]
+      [--salida RUTA]`: informe de una investigacion OSINT, siempre separado del
+      informe global de hallazgos tecnicos.
+- [x] Seccion "OSINT" de la interfaz visual (`PanelOSINT`): selector de tipo de
+      objetivo, campo de busqueda, casilla de autorizacion sobre datos personales,
+      selector de fuentes (repoblado segun el tipo elegido), botones Iniciar/Cancelar,
+      y pestanas Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe.
+      Reutiliza integramente `modules/osint/motor.py`: no duplica validacion,
+      autorizacion ni persistencia. Toda llamada al motor corre en un worker
+      (`@work(thread=True)`), nunca en el hilo principal de Textual; cancelar detiene
+      la investigacion de verdad (la fuente en curso no persiste nada).
+- [x] 20 pruebas nuevas (650 en total): informe OSINT (minimizado/sin minimizar,
+      dominio nunca minimizado, JSON/HTML, escape de contenido hostil, sin hallazgos),
+      CLI `est osint reporte` (HTML, JSON minimizado, investigacion inexistente,
+      formato invalido) y Textual Pilot del panel OSINT (objetivo requerido,
+      autorizacion requerida para correo, dominio ejecuta sin autorizacion, cancelacion
+      real, error inesperado sin cerrar la interfaz, catalogo de fuentes poblado,
+      repoblado de fuentes al cambiar de tipo, generacion de informe con y sin
+      investigacion previa, presencia en la barra lateral). Ninguna prueba consulta
+      una fuente OSINT real.
+- [x] CI verificado en Windows y Linux.
+
+**Limitaciones conocidas**: el panel no incluye un selector para ver investigaciones
+anteriores guardadas (siempre muestra la que se acaba de ejecutar); para consultar el
+historial completo se usa `est osint investigaciones`/`est osint resultados`. Queda
+para una iteracion futura si se necesita ese historial tambien desde la interfaz
+visual.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

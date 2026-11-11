@@ -16,6 +16,8 @@ from textual.widgets import (
     Select,
     SelectionList,
     Static,
+    TabbedContent,
+    TabPane,
 )
 from textual.worker import get_current_worker
 
@@ -25,6 +27,7 @@ from eurabyte_security.commands.escanear import escanear_tcp
 from eurabyte_security.commands.explicar import EXPLICACIONES
 from eurabyte_security.commands.nmap import ejecutar_nmap
 from eurabyte_security.commands.nuclei import ejecutar_nuclei
+from eurabyte_security.commands.osint import generar_reporte_osint
 from eurabyte_security.commands.proyecto import crear_proyecto, listar_proyectos, usar_proyecto
 from eurabyte_security.commands.reconocimiento import (
     PERFILES_VALIDOS,
@@ -39,10 +42,17 @@ from eurabyte_security.commands.zap import ejecutar_zap_pasivo
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
 from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
 from eurabyte_security.core.objetivo import interpretar_entrada, resolver_y_autorizar
+from eurabyte_security.core.osint.validacion import (
+    requiere_autorizacion_datos_personales,
+)
 from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
+from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
 from eurabyte_security.integrations.zap import AdaptadorZAP
 from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
+from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
+from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
+from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
 from eurabyte_security.modules.web.modelos import Hallazgo
 from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
@@ -1660,6 +1670,412 @@ class PanelResultados(VerticalScroll):
             f"Recomendacion: {texto_seguro(r.recomendacion or '-')}\n"
             f"Referencia: {texto_seguro(r.referencia or '-')}"
         )
+
+
+_ESTILOS_ESTADO_FUENTE_OSINT = {
+    "completada": "bold green",
+    "ejecutando": "bold yellow",
+    "pendiente": "grey70",
+    "omitida": "grey70",
+    "fallida": "bold red",
+    "cancelada": "bold red",
+}
+_ESTILOS_CONFIANZA_OSINT = {
+    "confirmado": "bold green",
+    "probable": "yellow",
+    "no_verificado": "grey70",
+}
+_CATEGORIAS_INFRAESTRUCTURA_OSINT = frozenset(
+    {"dns", "rdap", "infraestructura", "certificados", "correo", "historial_escaneos"}
+)
+
+
+class PanelOSINT(VerticalScroll):
+    """Investigacion de fuentes publicas (OSINT) sobre un objetivo autorizado.
+
+    Reutiliza integramente ``modules/osint/motor.py`` (igual que ``PanelReconocimiento``
+    reutiliza su propio orquestador): este panel solo construye el formulario, lanza la
+    investigacion en un worker y presenta sus hallazgos ya guardados, nunca duplica la
+    logica de validacion, autorizacion ni persistencia.
+    """
+
+    _OPCIONES_TIPO = [
+        ("Dominio / empresa", "dominio"),
+        ("Correo electronico", "correo"),
+        ("Telefono", "telefono"),
+        ("Nombre de usuario", "usuario"),
+    ]
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._worker = None
+        self._secuencia = 0
+        self._investigacion_actual_id: int | None = None
+        self._hallazgos: list = []
+
+    def compose(self):
+        yield Static("OSINT: investigacion de fuentes publicas", classes="titulo-panel")
+        yield Static("", id="osint-proyecto", classes="ast-tenue")
+        yield Static(
+            "Investiga fuentes publicas verificables sobre un dominio, correo, telefono "
+            "o nombre de usuario. Nunca ejecuta un escaneo activo contra el objetivo: solo "
+            "consulta fuentes publicas ya documentadas (DNS, RDAP, Certificate "
+            "Transparency, APIs publicas...). Correo/telefono/usuario exigen confirmar "
+            "que el objetivo es propio o su revision esta autorizada.",
+            classes="ast-caja",
+        )
+        with Horizontal():
+            yield Select(self._OPCIONES_TIPO, value="dominio", allow_blank=False, id="osint-tipo")
+            yield Input(placeholder="Objetivo a investigar", id="osint-objetivo")
+        yield Input(
+            placeholder="Region ISO (opcional, solo para telefono sin '+pais', ej. CO)",
+            id="osint-region",
+        )
+        yield Checkbox(
+            "Confirmo que el objetivo es propio o su revision esta autorizada "
+            "(obligatorio para correo/telefono/usuario)",
+            id="osint-autorizo",
+        )
+        with Collapsible(title="Fuentes a consultar (todas las aplicables si no eliges)"):
+            yield SelectionList(id="osint-fuentes")
+        with Horizontal():
+            yield Button("Iniciar investigacion", id="osint-iniciar", variant="primary")
+            yield Button("Cancelar", id="osint-cancelar")
+        yield Static("", id="osint-mensaje", classes="ast-tenue")
+
+        with TabbedContent(id="osint-tabs"):
+            with TabPane("Resumen", id="osint-tab-resumen"):
+                yield DataTable(id="osint-tabla-etapas", cursor_type="row")
+                yield Static("", id="osint-resumen", classes="ast-caja")
+            with TabPane("Infraestructura", id="osint-tab-infraestructura"):
+                yield DataTable(id="osint-tabla-infraestructura", cursor_type="row")
+                yield Static("", id="osint-detalle-infraestructura", classes="ast-caja")
+            with TabPane("Perfiles publicos", id="osint-tab-perfiles"):
+                yield DataTable(id="osint-tabla-perfiles", cursor_type="row")
+                yield Static("", id="osint-detalle-perfiles", classes="ast-caja")
+            with TabPane("Exposicion", id="osint-tab-exposicion"):
+                yield DataTable(id="osint-tabla-exposicion", cursor_type="row")
+                yield Static("", id="osint-detalle-exposicion", classes="ast-caja")
+            with TabPane("Fuentes", id="osint-tab-fuentes"):
+                yield DataTable(id="osint-tabla-fuentes", cursor_type="row")
+            with TabPane("Informe", id="osint-tab-informe"):
+                with Horizontal():
+                    yield Select(
+                        [("HTML", "html"), ("JSON", "json")],
+                        value="html",
+                        allow_blank=False,
+                        id="osint-informe-formato",
+                    )
+                    yield Checkbox(
+                        "Minimizar objetivo (correo/telefono/usuario) en el informe",
+                        id="osint-informe-minimizar",
+                    )
+                    yield Button("Generar informe", id="osint-informe-generar", variant="primary")
+                yield Static("", id="osint-informe-mensaje", classes="ast-tenue")
+
+    def on_mount(self) -> None:
+        for id_tabla, columnas in (
+            ("osint-tabla-etapas", ("Fuente", "Estado", "Detalle")),
+            (
+                "osint-tabla-infraestructura",
+                ("Fuente", "Titulo", "Confianza", "Indicador", "Fecha"),
+            ),
+            ("osint-tabla-perfiles", ("Fuente", "Titulo", "Confianza", "Fecha")),
+            ("osint-tabla-exposicion", ("Fuente", "Titulo", "Confianza", "Indicador", "Fecha")),
+            ("osint-tabla-fuentes", ("Id", "Nombre", "Tipos de objetivo", "Estado")),
+        ):
+            self.query_one(f"#{id_tabla}", DataTable).add_columns(*columnas)
+        self._repoblar_fuentes()
+        self._refrescar_catalogo_fuentes()
+        self.refrescar()
+
+    def refrescar(self) -> None:
+        self._refrescar_proyecto()
+
+    def _refrescar_proyecto(self):
+        etiqueta = self.query_one("#osint-proyecto", Static)
+        try:
+            proyecto = resolver_proyecto(obtener_base_datos(), None)
+            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+            return proyecto
+        except ErrorEST as exc:
+            etiqueta.update(texto_seguro(exc))
+            return None
+
+    def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
+        msg = self.query_one("#osint-mensaje", Static)
+        msg.update(texto)
+        msg.set_classes(clase)
+
+    def _repoblar_fuentes(self) -> None:
+        tipo = str(self.query_one("#osint-tipo", Select).value)
+        selector = self.query_one("#osint-fuentes", SelectionList)
+        selector.clear_options()
+        selector.add_options(
+            [
+                (adaptador.nombre, id_fuente)
+                for id_fuente, adaptador in fuentes_para_tipo(tipo).items()
+            ]
+        )
+
+    def _refrescar_catalogo_fuentes(self) -> None:
+        tabla = self.query_one("#osint-tabla-fuentes", DataTable)
+        tabla.clear()
+        for id_fuente, adaptador in FUENTES_OSINT.items():
+            estado = "Disponible" if adaptador.configurada() else "Requiere configuracion"
+            tabla.add_row(
+                id_fuente,
+                adaptador.nombre,
+                ", ".join(sorted(adaptador.tipos_objetivo)),
+                estado,
+            )
+
+    @on(Select.Changed, "#osint-tipo")
+    def _tipo_cambiado(self, _evento: Select.Changed) -> None:
+        self._repoblar_fuentes()
+
+    @on(Button.Pressed, "#osint-iniciar")
+    def _iniciar(self, _evento: Button.Pressed) -> None:
+        self._refrescar_proyecto()
+        tipo = str(self.query_one("#osint-tipo", Select).value)
+        objetivo = self.query_one("#osint-objetivo", Input).value.strip()
+        region = self.query_one("#osint-region", Input).value.strip() or None
+        autorizado = self.query_one("#osint-autorizo", Checkbox).value
+        fuentes_ids = set(self.query_one("#osint-fuentes", SelectionList).selected)
+
+        if not objetivo:
+            self._mensaje("Escribe un objetivo antes de iniciar.", "ast-aviso")
+            return
+        if requiere_autorizacion_datos_personales(tipo) and not autorizado:
+            self._mensaje(
+                "Este tipo de objetivo puede exponer datos personales: marca la casilla "
+                "de autorizacion antes de iniciar.",
+                "ast-aviso",
+            )
+            return
+
+        self._secuencia += 1
+        secuencia = self._secuencia
+        self._investigacion_actual_id = None
+        self._hallazgos = []
+        self.query_one("#osint-tabla-etapas", DataTable).clear()
+        self._limpiar_tablas_resultados()
+        self.query_one("#osint-resumen", Static).update("")
+
+        self._mensaje(
+            "Ejecutando investigacion OSINT... (puedes cancelar mientras se ejecuta)",
+            "ast-aviso",
+        )
+        self._worker = self._ejecutar(
+            secuencia,
+            tipo,
+            objetivo,
+            autorizado,
+            region,
+            frozenset(fuentes_ids) if fuentes_ids else None,
+        )
+
+    @on(Button.Pressed, "#osint-cancelar")
+    def _cancelar(self, _evento: Button.Pressed) -> None:
+        if self._worker is not None and self._worker.is_running:
+            self._worker.cancel()
+            self._mensaje(
+                "Cancelacion solicitada: la fuente en curso no se persiste; las ya "
+                "completadas se conservan.",
+                "ast-aviso",
+            )
+
+    @work(thread=True, exclusive=True, group="osint-investigacion", exit_on_error=False)
+    def _ejecutar(
+        self,
+        secuencia: int,
+        tipo: str,
+        objetivo: str,
+        autorizado: bool,
+        region: str | None,
+        fuentes: frozenset[str] | None,
+    ) -> None:
+        worker = get_current_worker()
+
+        def _progreso(etapa: EtapaFuenteOSINT) -> None:
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(self._actualizar_etapa, etapa)
+
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            resultado = ejecutar_investigacion_osint(
+                base_datos,
+                proyecto,
+                tipo,
+                objetivo,
+                autorizado_datos_personales=autorizado,
+                region_telefono=region,
+                fuentes_seleccionadas=fuentes,
+                callback_progreso=_progreso,
+                debe_cancelar=lambda: worker.is_cancelled,
+            )
+        except ErrorEST as exc:
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            if not worker.is_cancelled and secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                )
+            return
+
+        if worker.is_cancelled:
+            return
+        self.app.call_from_thread(self._mostrar_resultado, secuencia, resultado)
+
+    def _actualizar_etapa(self, etapa: EtapaFuenteOSINT) -> None:
+        tabla = self.query_one("#osint-tabla-etapas", DataTable)
+        estilo = _ESTILOS_ESTADO_FUENTE_OSINT.get(etapa.estado, "")
+        estado_texto = (
+            f"[{estilo}]{texto_seguro(etapa.estado)}[/{estilo}]"
+            if estilo
+            else texto_seguro(etapa.estado)
+        )
+        adaptador = FUENTES_OSINT.get(etapa.fuente)
+        nombre_fuente = texto_seguro(adaptador.nombre if adaptador is not None else etapa.fuente)
+        try:
+            tabla.remove_row(etapa.fuente)
+        except Exception:  # noqa: BLE001 - la fila puede no existir todavia
+            pass
+        tabla.add_row(nombre_fuente, estado_texto, texto_seguro(etapa.detalle), key=etapa.fuente)
+
+    def _limpiar_tablas_resultados(self) -> None:
+        for id_tabla in (
+            "osint-tabla-infraestructura", "osint-tabla-perfiles", "osint-tabla-exposicion",
+        ):
+            self.query_one(f"#{id_tabla}", DataTable).clear()
+
+    def _mostrar_resultado(self, secuencia: int, resultado) -> None:
+        if secuencia != self._secuencia:
+            return
+        self._investigacion_actual_id = resultado.investigacion_id
+        base_datos = obtener_base_datos()
+        self._hallazgos = base_datos.listar_hallazgos_osint(
+            investigacion_id=resultado.investigacion_id, limite=10_000
+        )
+
+        self._limpiar_tablas_resultados()
+        tabla_infra = self.query_one("#osint-tabla-infraestructura", DataTable)
+        tabla_perfiles = self.query_one("#osint-tabla-perfiles", DataTable)
+        tabla_exposicion = self.query_one("#osint-tabla-exposicion", DataTable)
+
+        for h in self._hallazgos:
+            fila_comun = (
+                texto_seguro(h.fuente),
+                texto_seguro(h.titulo),
+                self._confianza_coloreada(h.nivel_confianza),
+            )
+            if h.categoria in _CATEGORIAS_INFRAESTRUCTURA_OSINT:
+                tabla_infra.add_row(
+                    *fila_comun,
+                    texto_seguro(h.indicador_exposicion) if h.indicador_exposicion else "-",
+                    h.creado_en,
+                    key=str(h.id),
+                )
+            if h.categoria == "perfil_publico":
+                tabla_perfiles.add_row(*fila_comun, h.creado_en, key=str(h.id))
+            if h.categoria == "exposicion" or h.indicador_exposicion:
+                tabla_exposicion.add_row(
+                    *fila_comun,
+                    texto_seguro(h.indicador_exposicion) if h.indicador_exposicion else "-",
+                    h.creado_en,
+                    key=str(h.id),
+                )
+
+        resumen = construir_resumen_exposicion(self._hallazgos)
+        texto_resumen = (
+            f"Estado general: {texto_seguro(resultado.estado_general)}  |  "
+            f"Total de hallazgos: {resumen.total_hallazgos}  |  "
+            f"Indicadores de exposicion: {resumen.total_indicadores}"
+        )
+        if resultado.limitaciones:
+            texto_resumen += "\n\n[bold yellow]Limitaciones:[/bold yellow]\n" + "\n".join(
+                f"- {texto_seguro(lim)}" for lim in resultado.limitaciones
+            )
+        self.query_one("#osint-resumen", Static).update(texto_resumen)
+        self._mensaje("Investigacion OSINT completa.", "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _confianza_coloreada(nivel: str) -> str:
+        estilo = _ESTILOS_CONFIANZA_OSINT.get(nivel, "")
+        nivel_seguro = texto_seguro(nivel)
+        return f"[{estilo}]{nivel_seguro}[/{estilo}]" if estilo else nivel_seguro
+
+    def _detalle_hallazgo(self, id_hallazgo_txt: str | None) -> str:
+        if id_hallazgo_txt is None:
+            return ""
+        hallazgo = next((h for h in self._hallazgos if str(h.id) == id_hallazgo_txt), None)
+        if hallazgo is None:
+            return ""
+        return (
+            f"[bold]{texto_seguro(hallazgo.titulo)}[/bold] ({texto_seguro(hallazgo.fuente)})\n"
+            f"Categoria: {texto_seguro(hallazgo.categoria)}  |  "
+            f"Confianza: {texto_seguro(hallazgo.nivel_confianza)}\n"
+            f"Descripcion: {texto_seguro(hallazgo.descripcion)}\n"
+            f"Indicador de exposicion: {texto_seguro(hallazgo.indicador_exposicion or '-')}\n"
+            f"Fecha de consulta: {texto_seguro(hallazgo.creado_en)}"
+        )
+
+    @on(DataTable.RowSelected, "#osint-tabla-infraestructura")
+    def _fila_infraestructura_seleccionada(self, event: DataTable.RowSelected) -> None:
+        detalle = self._detalle_hallazgo(
+            str(event.row_key.value) if event.row_key.value is not None else None
+        )
+        self.query_one("#osint-detalle-infraestructura", Static).update(detalle)
+
+    @on(DataTable.RowSelected, "#osint-tabla-perfiles")
+    def _fila_perfiles_seleccionada(self, event: DataTable.RowSelected) -> None:
+        detalle = self._detalle_hallazgo(
+            str(event.row_key.value) if event.row_key.value is not None else None
+        )
+        self.query_one("#osint-detalle-perfiles", Static).update(detalle)
+
+    @on(DataTable.RowSelected, "#osint-tabla-exposicion")
+    def _fila_exposicion_seleccionada(self, event: DataTable.RowSelected) -> None:
+        detalle = self._detalle_hallazgo(
+            str(event.row_key.value) if event.row_key.value is not None else None
+        )
+        self.query_one("#osint-detalle-exposicion", Static).update(detalle)
+
+    @on(Button.Pressed, "#osint-informe-generar")
+    def _generar_informe_click(self, _evento: Button.Pressed) -> None:
+        if self._investigacion_actual_id is None:
+            self.query_one("#osint-informe-mensaje", Static).update(
+                "Ejecuta una investigacion primero."
+            )
+            self.query_one("#osint-informe-mensaje", Static).set_classes("ast-aviso")
+            return
+        formato = str(self.query_one("#osint-informe-formato", Select).value)
+        minimizar = self.query_one("#osint-informe-minimizar", Checkbox).value
+        self._generar_informe(self._investigacion_actual_id, formato, minimizar)
+
+    @work(thread=True, exclusive=True, group="osint-informe", exit_on_error=False)
+    def _generar_informe(self, investigacion_id: int, formato: str, minimizar: bool) -> None:
+        msg = self.query_one("#osint-informe-mensaje", Static)
+        try:
+            base_datos = obtener_base_datos()
+            proyecto = resolver_proyecto(base_datos, None)
+            ruta = generar_reporte_osint(
+                base_datos, proyecto, investigacion_id, formato, minimizar=minimizar
+            )
+        except ErrorEST as exc:
+            self.app.call_from_thread(msg.update, texto_seguro(exc))
+            self.app.call_from_thread(msg.set_classes, "ast-error")
+            return
+        except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
+            self.app.call_from_thread(msg.update, f"Error inesperado: {texto_seguro(exc)}")
+            self.app.call_from_thread(msg.set_classes, "ast-error")
+            return
+        self.app.call_from_thread(msg.update, f"Informe generado en: {texto_seguro(ruta)}")
+        self.app.call_from_thread(msg.set_classes, "ast-exito")
 
 
 class PanelReportes(Vertical):

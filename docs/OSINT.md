@@ -160,8 +160,30 @@ inventada ni una clasificacion "alto/medio/bajo" sin respaldo de la fuente.
 `core/osint/redaccion.py` ofrece funciones de enmascarado (`enmascarar_correo`,
 `enmascarar_telefono`, `enmascarar_usuario`) para cuando una vista o exportacion no
 deba mostrar el objetivo completo (p. ej. un informe compartido con un publico mas
-amplio que el propio proyecto); estan disponibles para que la interfaz visual e
-informes de una entrega posterior las apliquen de forma opcional.
+amplio que el propio proyecto). `est osint reporte INVESTIGACION_ID --minimizar` (y la
+casilla equivalente en la pestana "Informe" de la interfaz visual) las aplica al
+generar el informe de esa investigacion; un dominio nunca se minimiza (se trata como
+informacion corporativa, no personal).
+
+## Informe (HTML/JSON)
+
+`est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar] [--salida RUTA]`
+genera el informe de UNA investigacion OSINT concreta -- siempre separado del informe
+global de hallazgos tecnicos (`est reporte generar`), nunca mezclado. Contiene: tipo de
+objetivo, objetivo (saneado o minimizado), estado de autorizacion sobre datos
+personales, fuentes utilizadas, resumen ejecutivo (total de hallazgos e indicadores de
+exposicion), cada hallazgo verificado con su nivel de confianza y evidencia,
+recomendaciones generales (segun las categorias de hallazgos presentes), limitaciones
+de la investigacion y una nota metodologica. Reutiliza el mismo esqueleto HTML/CSS que
+el resto de informes de AST (`modules/reporting/generador.py`), sin duplicarlo.
+
+## Interfaz visual
+
+La seccion "OSINT" de `est interfaz` (ver [docs/INTERFAZ.md](INTERFAZ.md)) ofrece el
+mismo formulario y el mismo motor que la CLI, con los resultados organizados en
+pestanas (Resumen, Infraestructura, Perfiles publicos, Exposicion, Fuentes, Informe).
+Todas las llamadas al motor OSINT corren en un worker (`@work(thread=True)`), nunca en
+el hilo principal de Textual.
 
 ## Limitaciones conocidas
 
@@ -181,6 +203,6 @@ informes de una entrega posterior las apliquen de forma opcional.
   mensaje explicito (no es un error de AST).
 - `est osint purgar` borra por fecha de creacion de la investigacion, no por fecha del
   hallazgo individual: todos los hallazgos de una investigacion se borran juntos.
-- El informe HTML/JSON dedicado de OSINT y la pestana de la interfaz visual se entregan
-  en una iteracion posterior (ver `docs/ROADMAP.md`); por ahora, los hallazgos se
-  consultan con `est osint resultados`.
+- Las recomendaciones del informe son generales por categoria de hallazgo (no una
+  recomendacion tecnica individual por cada uno): sirven como punto de partida, no
+  como un analisis de riesgo completo.

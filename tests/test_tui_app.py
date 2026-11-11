@@ -33,7 +33,7 @@ async def test_todos_los_paneles_estan_registrados():
     app = AuraByteApp()
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        # Las 14 secciones del roadmap deben existir como opciones de navegacion.
+        # Las secciones del roadmap deben existir como opciones de navegacion.
         opciones = app.query_one("#barra-lateral", OptionList)
         assert opciones.option_count == len(SECCIONES)
         for _etiqueta, id_panel in SECCIONES:

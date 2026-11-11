@@ -7,9 +7,16 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from html import escape
 
+from eurabyte_security.core.osint.redaccion import minimizar_objetivo
 from eurabyte_security.core.redaccion import redactar_texto_libre
+from eurabyte_security.modules.osint.exposicion import (
+    ResumenExposicion,
+    construir_resumen_exposicion,
+)
 from eurabyte_security.storage.database import (
     FUENTES_RESULTADOS,
+    HallazgoOSINTGuardado,
+    InvestigacionOSINT,
     Resultado,
     ResultadoNuclei,
     ResultadoUnificado,
@@ -87,6 +94,9 @@ th { background: #1a1d26; }
 .severidad-baja, .severidad-low { color: #4fd1c5; }
 .severidad-media, .severidad-medium { color: #f6e05e; font-weight: bold; }
 .severidad-alta, .severidad-high, .severidad-critical { color: #fc8181; font-weight: bold; }
+.severidad-confirmado { color: #68d391; font-weight: bold; }
+.severidad-probable { color: #f6e05e; }
+.severidad-no_verificado { color: #a0aec0; }
 """
 
 
@@ -574,3 +584,223 @@ ocultar informacion relevante ademas de la sensible, por diseno.</li>
         f"Total de registros: {len(datos.resultados)}"
     )
     return _pagina_html(f"Informe global AST - {datos.proyecto}", resumen, cuerpo_tabla)
+
+
+# ---------------------------------------------------------------------------
+# Informe OSINT (ver docs/OSINT.md) -- investigacion de fuentes publicas,
+# deliberadamente separado del informe global de hallazgos tecnicos (nunca se
+# mezclan ambos conjuntos de datos).
+# ---------------------------------------------------------------------------
+
+_RECOMENDACIONES_POR_CATEGORIA = {
+    "correo": (
+        "Revisa y refuerza la configuracion SPF/DMARC del dominio para reducir el "
+        "riesgo de suplantacion de correo."
+    ),
+    "exposicion": (
+        "Si el correo aparece en una brecha conocida, cambia la contrasena asociada "
+        "y activa verificacion en dos pasos donde sea posible."
+    ),
+    "certificados": (
+        "Revisa los subdominios observados: si alguno expone un servicio que no "
+        "deberia ser publico, retiralo o restringe su acceso."
+    ),
+    "perfil_publico": (
+        "Revisa la configuracion de privacidad de los perfiles publicos encontrados "
+        "si no reconoces alguna cuenta como propia."
+    ),
+    "infraestructura": (
+        "Verifica que la infraestructura/ASN reportada corresponda a un proveedor "
+        "que reconoces."
+    ),
+    "historial_escaneos": (
+        "Revisa los escaneos historicos: si alguno corresponde a una version antigua "
+        "o a contenido que ya no deberia ser publico, considera solicitar su retiro."
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class DatosInformeOSINT:
+    """Datos de entrada del informe de una investigacion OSINT (ver modules/osint/)."""
+
+    proyecto: str
+    generado_en: str
+    investigacion_id: int
+    tipo_objetivo: str
+    objetivo_mostrado: str
+    autorizado_datos_personales: bool
+    estado_general: str
+    fuentes_utilizadas: tuple[str, ...]
+    limitaciones: tuple[str, ...]
+    hallazgos: list[HallazgoOSINTGuardado]
+    resumen_exposicion: ResumenExposicion
+    recomendaciones: tuple[str, ...]
+
+
+def construir_datos_informe_osint(
+    proyecto: str,
+    investigacion: InvestigacionOSINT,
+    hallazgos: list[HallazgoOSINTGuardado],
+    *,
+    minimizar: bool = False,
+) -> DatosInformeOSINT:
+    """Construye los datos del informe de una investigacion ya guardada.
+
+    ``minimizar=True`` enmascara el objetivo (correo/telefono/usuario; un dominio
+    nunca se minimiza, ver ``core/osint/redaccion.py``) para una exportacion pensada
+    para un publico mas amplio que el propio proyecto; por defecto se muestra completo,
+    porque es la propia investigacion autorizada del usuario.
+    """
+    etapas = json.loads(investigacion.etapas_json)
+    fuentes_utilizadas = tuple(e["fuente"] for e in etapas if e["estado"] != "pendiente")
+    limitaciones = tuple(json.loads(investigacion.limitaciones_json))
+
+    objetivo_mostrado = (
+        minimizar_objetivo(investigacion.tipo_objetivo, investigacion.objetivo_saneado)
+        if minimizar
+        else investigacion.objetivo_saneado
+    )
+
+    categorias_presentes = {h.categoria for h in hallazgos}
+    recomendaciones = tuple(
+        sorted(
+            mensaje
+            for categoria, mensaje in _RECOMENDACIONES_POR_CATEGORIA.items()
+            if categoria in categorias_presentes
+        )
+    )
+
+    return DatosInformeOSINT(
+        proyecto=proyecto,
+        generado_en=datetime.now(UTC).isoformat(),
+        investigacion_id=investigacion.id,
+        tipo_objetivo=investigacion.tipo_objetivo,
+        objetivo_mostrado=objetivo_mostrado,
+        autorizado_datos_personales=investigacion.autorizado_datos_personales,
+        estado_general=investigacion.estado_general,
+        fuentes_utilizadas=fuentes_utilizadas,
+        limitaciones=limitaciones,
+        hallazgos=hallazgos,
+        resumen_exposicion=construir_resumen_exposicion(hallazgos),
+        recomendaciones=recomendaciones,
+    )
+
+
+def generar_json_osint(datos: DatosInformeOSINT) -> str:
+    cuerpo = {
+        "proyecto": datos.proyecto,
+        "generado_en": datos.generado_en,
+        "investigacion_id": datos.investigacion_id,
+        "tipo_objetivo": datos.tipo_objetivo,
+        "objetivo": datos.objetivo_mostrado,
+        "autorizacion_datos_personales": datos.autorizado_datos_personales,
+        "estado_general": datos.estado_general,
+        "fuentes_utilizadas": list(datos.fuentes_utilizadas),
+        "limitaciones": list(datos.limitaciones),
+        "resumen_exposicion": {
+            "total_hallazgos": datos.resumen_exposicion.total_hallazgos,
+            "total_indicadores": datos.resumen_exposicion.total_indicadores,
+            "fuentes_con_indicador": list(datos.resumen_exposicion.fuentes_con_indicador),
+            "indicadores": list(datos.resumen_exposicion.indicadores),
+        },
+        "recomendaciones": list(datos.recomendaciones),
+        "hallazgos": [
+            {
+                "fuente": h.fuente,
+                "categoria": h.categoria,
+                "titulo": h.titulo,
+                "descripcion": h.descripcion,
+                "nivel_confianza": h.nivel_confianza,
+                "indicador_exposicion": h.indicador_exposicion,
+                "evidencias": json.loads(h.evidencias_json),
+                "creado_en": h.creado_en,
+            }
+            for h in datos.hallazgos
+        ],
+        "nota_metodologica": (
+            "Cada hallazgo indica su nivel de confianza (confirmado/probable/"
+            "no_verificado): una coincidencia de nombre de usuario o un nombre "
+            "observado en Certificate Transparency nunca se trata como una identidad "
+            "o un servicio activo confirmado. Este informe refleja unicamente lo que "
+            "las fuentes consultadas devolvieron en el momento de la investigacion."
+        ),
+    }
+    return json.dumps(cuerpo, ensure_ascii=False, indent=2)
+
+
+def generar_html_osint(datos: DatosInformeOSINT) -> str:
+    filas = "\n".join(
+        f"<tr><td>{escape(h.fuente)}</td><td>{escape(h.categoria)}</td>"
+        f"<td>{escape(h.titulo)}</td>"
+        f"<td class=\"severidad-{escape(h.nivel_confianza)}\">{escape(h.nivel_confianza)}</td>"
+        f"<td>{escape(h.indicador_exposicion or '-')}</td>"
+        f"<td>{escape(h.descripcion)}</td><td>{escape(h.creado_en)}</td></tr>"
+        for h in datos.hallazgos
+    )
+    if not filas:
+        filas = "<tr><td colspan=\"7\">No hay hallazgos OSINT registrados.</td></tr>"
+
+    fuentes_html = ", ".join(escape(f) for f in datos.fuentes_utilizadas) or "(ninguna)"
+    limitaciones_html = (
+        "".join(f"<li>{escape(limite)}</li>" for limite in datos.limitaciones)
+        or "<li>(ninguna)</li>"
+    )
+    indicadores_html = (
+        "".join(f"<li>{escape(ind)}</li>" for ind in datos.resumen_exposicion.indicadores)
+        or "<li>Sin indicadores de exposicion.</li>"
+    )
+    recomendaciones_html = (
+        "".join(f"<li>{escape(r)}</li>" for r in datos.recomendaciones)
+        or "<li>Sin recomendaciones especificas: revisa igualmente las limitaciones.</li>"
+    )
+    autorizacion_html = (
+        "Confirmada por el usuario antes de consultar cualquier fuente."
+        if datos.autorizado_datos_personales
+        else "No aplica (objetivo tratado como informacion corporativa, no personal)."
+    )
+
+    cuerpo_tabla = f"""
+<h2>Resumen ejecutivo</h2>
+<ul>
+<li>Tipo de investigacion: {escape(datos.tipo_objetivo)}</li>
+<li>Objetivo: {escape(datos.objetivo_mostrado)}</li>
+<li>Estado de autorizacion sobre datos personales: {autorizacion_html}</li>
+<li>Estado general: {escape(datos.estado_general)}</li>
+<li>Fuentes utilizadas: {fuentes_html}</li>
+<li>Total de hallazgos: {datos.resumen_exposicion.total_hallazgos}</li>
+<li>Indicadores de exposicion: {datos.resumen_exposicion.total_indicadores}</li>
+</ul>
+
+<h2>Indicadores de exposicion</h2>
+<ul>{indicadores_html}</ul>
+
+<h2>Hallazgos verificados</h2>
+<table>
+<thead><tr><th>Fuente</th><th>Categoria</th><th>Titulo</th><th>Confianza</th>
+<th>Indicador de exposicion</th><th>Descripcion</th><th>Fecha</th></tr></thead>
+<tbody>
+{filas}
+</tbody>
+</table>
+
+<h2>Recomendaciones</h2>
+<ul>{recomendaciones_html}</ul>
+
+<h2>Limitaciones</h2>
+<ul>{limitaciones_html}</ul>
+
+<h2>Nota metodologica</h2>
+<p class="resumen">Cada hallazgo indica su nivel de confianza (confirmado/probable/
+no_verificado): una coincidencia de nombre de usuario o un nombre observado en
+Certificate Transparency nunca se trata como una identidad o un servicio activo
+confirmado. Este informe refleja unicamente lo que las fuentes consultadas
+devolvieron en el momento de la investigacion; AST no promete cobertura total de
+Internet ni de las filtraciones existentes.</p>
+"""
+    resumen = (
+        f"Proyecto: <strong>{escape(datos.proyecto)}</strong> &middot; "
+        f"Generado: {escape(datos.generado_en)} &middot; "
+        f"Investigacion #{datos.investigacion_id} ({escape(datos.tipo_objetivo)})"
+    )
+    return _pagina_html(f"Informe OSINT AST - {datos.proyecto}", resumen, cuerpo_tabla)
