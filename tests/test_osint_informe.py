@@ -206,6 +206,152 @@ def test_minimizar_tambien_oculta_el_objetivo_en_limitaciones(tmp_path):
     assert "usuario@ejemplo.com" not in datos.limitaciones[0]
 
 
+def test_html_enlaza_la_referencia_real_de_una_evidencia(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(tmp_path)
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "urlscan_historial",
+        [
+            {
+                "categoria": "historial_escaneos",
+                "titulo": "1 escaneo",
+                "descripcion": "d",
+                "nivel_confianza": "probable",
+                "indicador_exposicion": None,
+                "evidencias": [
+                    {
+                        "fuente": "urlscan_historial",
+                        "fecha_consulta": "2026-01-01T00:00:00+00:00",
+                        "referencia": "https://urlscan.io/result/abc123/",
+                        "valor": "https://ejemplo.com/pagina",
+                        "fecha_observada": "2025-06-01T00:00:00+00:00",
+                    }
+                ],
+            }
+        ],
+    )
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id)
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, hallazgos)
+
+    html = generar_html_osint(datos)
+    assert '<a href="https://urlscan.io/result/abc123/"' in html
+    assert "https://ejemplo.com/pagina" in html
+    assert "2025-06-01T00:00:00+00:00" in html  # fecha observada, no solo la consulta
+
+
+def test_html_nunca_enlaza_un_esquema_peligroso(tmp_path):
+    """Defensa en profundidad: aunque nunca deberiamos persistir 'javascript:' como
+    referencia, el generador de HTML nunca debe convertirlo en un <a href> clicable."""
+    base_datos, proyecto, investigacion = _preparar_investigacion(tmp_path)
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "urlscan_historial",
+        [
+            {
+                "categoria": "historial_escaneos",
+                "titulo": "t",
+                "descripcion": "d",
+                "nivel_confianza": "probable",
+                "indicador_exposicion": None,
+                "evidencias": [
+                    {
+                        "fuente": "urlscan_historial",
+                        "fecha_consulta": "x",
+                        "referencia": "javascript:alert(1)",
+                        "valor": "v",
+                    }
+                ],
+            }
+        ],
+    )
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id)
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, hallazgos)
+
+    html = generar_html_osint(datos)
+    # El esquema peligroso puede aparecer como TEXTO plano (escapado, inerte), pero
+    # nunca dentro de un atributo href= que el navegador pudiera ejecutar.
+    assert 'href="javascript' not in html
+    assert "<a href=" not in html
+
+
+def test_html_muestra_fuentes_consultadas_con_su_estado_real(tmp_path):
+    """Nunca debe mostrarse 'sin informacion' cuando una fuente en realidad fallo u
+    omitio la consulta (seccion 6 de la especificacion de evidencia completa)."""
+    base_datos, proyecto, investigacion = _preparar_investigacion(tmp_path)
+    base_datos.actualizar_investigacion_osint(
+        investigacion.id,
+        etapas=[
+            {"fuente": "dns", "estado": "completada", "detalle": "3 hallazgo(s)."},
+            {
+                "fuente": "hibp",
+                "estado": "omitida",
+                "detalle": "'Have I Been Pwned' requiere configurar una clave.",
+            },
+            {
+                "fuente": "virustotal",
+                "estado": "fallida",
+                "detalle": "Tiempo de espera agotado.",
+            },
+        ],
+    )
+    investigacion = base_datos.obtener_investigacion_osint(investigacion.id)
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, [])
+
+    html = generar_html_osint(datos)
+    assert "omitida" in html
+    assert "fallida" in html
+    assert "requiere configurar una clave" in html
+    assert "Tiempo de espera agotado" in html
+
+    cuerpo = json.loads(generar_json_osint(datos))
+    estados = {e["fuente"]: e["estado"] for e in cuerpo["fuentes_consultadas"]}
+    assert estados["hibp"] == "omitida"
+    assert estados["virustotal"] == "fallida"
+
+
+def test_json_incluye_estado_de_verificacion_y_totales_por_categoria(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(tmp_path)
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "dns",
+        [_hallazgo(categoria="dns"), _hallazgo(categoria="dns")],
+    )
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id, proyecto.id, "rdap_dominio", [_hallazgo(categoria="rdap")]
+    )
+    hallazgos = base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id)
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, hallazgos)
+
+    cuerpo = json.loads(generar_json_osint(datos))
+    assert cuerpo["hallazgos"][0]["estado_verificacion"]
+    assert cuerpo["totales_por_categoria"] == {"dns": 2, "rdap": 1}
+
+
+def test_minimizar_tambien_oculta_el_objetivo_en_el_detalle_de_una_etapa(tmp_path):
+    base_datos, proyecto, investigacion = _preparar_investigacion(
+        tmp_path, tipo="correo", objetivo="usuario@ejemplo.com", autorizado=True
+    )
+    base_datos.actualizar_investigacion_osint(
+        investigacion.id,
+        etapas=[
+            {
+                "fuente": "hibp",
+                "estado": "fallida",
+                "detalle": "La consulta de 'usuario@ejemplo.com' fallo con un error.",
+            }
+        ],
+    )
+    investigacion = base_datos.obtener_investigacion_osint(investigacion.id)
+    datos = construir_datos_informe_osint(proyecto.nombre, investigacion, [], minimizar=True)
+
+    assert "usuario@ejemplo.com" not in datos.fuentes_consultadas[0].detalle
+    html = generar_html_osint(datos)
+    assert "usuario@ejemplo.com" not in html
+
+
 def test_minimizar_cubre_el_objetivo_codificado_para_url(tmp_path):
     base_datos, proyecto, investigacion = _preparar_investigacion(
         tmp_path, tipo="correo", objetivo="usuario@ejemplo.com", autorizado=True

@@ -1257,7 +1257,11 @@ class BaseDatos:
         investigacion_id: int | None = None,
         proyecto_id: int | None = None,
         limite: int = 500,
+        desplazamiento: int = 0,
     ) -> list[HallazgoOSINTGuardado]:
+        """``desplazamiento`` (OFFSET) permite paginar un numero de hallazgos mayor que
+        ``limite`` sin tener que traerlos todos de una vez (ver ``est osint resultados
+        --pagina``)."""
         condiciones: list[str] = []
         parametros: list[object] = []
         if investigacion_id is not None:
@@ -1267,11 +1271,31 @@ class BaseDatos:
             condiciones.append("proyecto_id = ?")
             parametros.append(proyecto_id)
         clausula = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
-        parametros.append(limite)
+        parametros.extend([limite, desplazamiento])
         with self._conectar() as conexion:
             filas = conexion.execute(
                 f"SELECT {self._COLUMNAS_HALLAZGO_OSINT} FROM hallazgos_osint {clausula} "
-                "ORDER BY creado_en DESC LIMIT ?",
+                "ORDER BY creado_en DESC, id DESC LIMIT ? OFFSET ?",
                 parametros,
             ).fetchall()
         return [HallazgoOSINTGuardado(**dict(fila)) for fila in filas]
+
+    def contar_hallazgos_osint(
+        self, investigacion_id: int | None = None, proyecto_id: int | None = None
+    ) -> int:
+        """Total de hallazgos que coinciden con los filtros (sin aplicar limite ni
+        desplazamiento): usado para que la CLI pueda mostrar 'pagina X de Y'."""
+        condiciones: list[str] = []
+        parametros: list[object] = []
+        if investigacion_id is not None:
+            condiciones.append("investigacion_id = ?")
+            parametros.append(investigacion_id)
+        if proyecto_id is not None:
+            condiciones.append("proyecto_id = ?")
+            parametros.append(proyecto_id)
+        clausula = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+        with self._conectar() as conexion:
+            fila = conexion.execute(
+                f"SELECT COUNT(*) AS total FROM hallazgos_osint {clausula}", parametros
+            ).fetchone()
+        return int(fila["total"])

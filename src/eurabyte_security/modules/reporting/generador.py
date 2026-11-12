@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from eurabyte_security.core.osint.redaccion import minimizar_objetivo
 from eurabyte_security.core.redaccion import redactar_texto_libre
+from eurabyte_security.integrations.osint.registro import FUENTES_OSINT
 from eurabyte_security.modules.osint.exposicion import (
     ResumenExposicion,
     construir_resumen_exposicion,
@@ -99,6 +100,15 @@ th { background: #1a1d26; }
 .severidad-confirmado { color: #68d391; font-weight: bold; }
 .severidad-probable { color: #f6e05e; }
 .severidad-no_verificado { color: #a0aec0; }
+a { color: #63b3ed; }
+a:visited { color: #9f7aea; }
+details.hallazgo { background: #161922; border: 1px solid #2d2f36; border-radius: 6px;
+  margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+details.hallazgo summary { cursor: pointer; font-weight: bold; }
+.estado-completada { color: #68d391; }
+.estado-omitida, .estado-cancelada { color: #a0aec0; }
+.estado-fallida { color: #fc8181; }
+.estado-ejecutando, .estado-pendiente { color: #f6e05e; }
 """
 
 
@@ -622,6 +632,52 @@ _RECOMENDACIONES_POR_CATEGORIA = {
 }
 
 
+# Mismo texto para los 3 niveles de confianza en todo el informe (HTML y JSON): nunca
+# se deja que el usuario adivine que implica "probable" o "no_verificado" (seccion 6 de
+# la especificacion de evidencia completa).
+_ESTADOS_VERIFICACION_INFORME = {
+    "confirmado": "Dato confirmado directamente por la fuente.",
+    "probable": "Evidencia indirecta o historica: no confirma el estado actual.",
+    "no_verificado": "Asociacion no verificada: tratar como estimacion, no como hecho.",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class EtapaInforme:
+    """Estado final de UNA fuente dentro del informe (ver
+    ``modules/osint/modelos.py:EtapaFuenteOSINT``): se muestra en el informe para que
+    nunca se confunda "no encontrado" (la fuente respondio y no reporto nada) con "no
+    consultado"/"sin API configurada"/"fallida" (seccion 6 de la especificacion de
+    evidencia completa, "nunca mostrar 'sin informacion' cuando en realidad fallo")."""
+
+    fuente: str
+    nombre: str
+    estado: str
+    detalle: str
+
+
+# Las URL que no empiezan por http(s):// (javascript:, data:, vbscript:...) nunca se
+# convierten en un enlace clicable: se escapan como texto plano. Defensa en profundidad
+# contra inyeccion HTML/URL maliciosa en un informe que el usuario podria abrir en un
+# navegador (seccion 5 de la especificacion de evidencia completa).
+_ESQUEMAS_URL_SEGUROS = ("http://", "https://")
+
+
+def _es_url_segura(url: str | None) -> bool:
+    return bool(url) and url.strip().lower().startswith(_ESQUEMAS_URL_SEGUROS)
+
+
+def _enlace_html(url: str | None, texto: str | None = None) -> str:
+    """Devuelve un ``<a>`` real si ``url`` es http(s), o el texto escapado sin enlazar
+    en cualquier otro caso (incluido ``None``). Todo se escapa, incluso el propio
+    ``href``: una URL con comillas no debe poder escapar el atributo."""
+    texto_final: str = texto if texto is not None else (url or "")
+    etiqueta = escape(texto_final)
+    if not _es_url_segura(url) or url is None:
+        return etiqueta
+    return f'<a href="{escape(url)}" target="_blank" rel="noopener noreferrer">{etiqueta}</a>'
+
+
 @dataclass(frozen=True, slots=True)
 class DatosInformeOSINT:
     """Datos de entrada del informe de una investigacion OSINT (ver modules/osint/)."""
@@ -634,10 +690,12 @@ class DatosInformeOSINT:
     autorizado_datos_personales: bool
     estado_general: str
     fuentes_utilizadas: tuple[str, ...]
+    fuentes_consultadas: tuple[EtapaInforme, ...]
     limitaciones: tuple[str, ...]
     hallazgos: list[HallazgoOSINTGuardado]
     resumen_exposicion: ResumenExposicion
     recomendaciones: tuple[str, ...]
+    totales_por_categoria: tuple[tuple[str, int], ...]
 
 
 def _variantes_objetivo(objetivo_real: str) -> list[str]:
@@ -696,6 +754,16 @@ def _minimizar_hallazgo(
     )
 
 
+def _etapa_informe(etapa_dict: dict, detalle: str) -> EtapaInforme:
+    adaptador = FUENTES_OSINT.get(etapa_dict["fuente"])
+    return EtapaInforme(
+        fuente=etapa_dict["fuente"],
+        nombre=adaptador.nombre if adaptador is not None else etapa_dict["fuente"],
+        estado=etapa_dict["estado"],
+        detalle=detalle,
+    )
+
+
 def construir_datos_informe_osint(
     proyecto: str,
     investigacion: InvestigacionOSINT,
@@ -728,8 +796,20 @@ def construir_datos_informe_osint(
             _minimizar_texto(lim, investigacion.objetivo_saneado, objetivo_mostrado) or lim
             for lim in limitaciones
         )
+        # El 'detalle' de una etapa fallida/omitida puede repetir el objetivo (p. ej. un
+        # mensaje de error que cita la URL de consulta con el correo codificado): se
+        # minimiza igual que el resto del texto libre del informe.
+        etapas_mostradas = tuple(
+            _etapa_informe(
+                e,
+                _minimizar_texto(e["detalle"], investigacion.objetivo_saneado, objetivo_mostrado)
+                or e["detalle"],
+            )
+            for e in etapas
+        )
     else:
         objetivo_mostrado = investigacion.objetivo_saneado
+        etapas_mostradas = tuple(_etapa_informe(e, e["detalle"]) for e in etapas)
 
     categorias_presentes = {h.categoria for h in hallazgos}
     recomendaciones = tuple(
@@ -740,6 +820,11 @@ def construir_datos_informe_osint(
         )
     )
 
+    conteo_categorias: dict[str, int] = {}
+    for h in hallazgos:
+        conteo_categorias[h.categoria] = conteo_categorias.get(h.categoria, 0) + 1
+    totales_por_categoria = tuple(sorted(conteo_categorias.items()))
+
     return DatosInformeOSINT(
         proyecto=proyecto,
         generado_en=datetime.now(UTC).isoformat(),
@@ -749,10 +834,12 @@ def construir_datos_informe_osint(
         autorizado_datos_personales=investigacion.autorizado_datos_personales,
         estado_general=investigacion.estado_general,
         fuentes_utilizadas=fuentes_utilizadas,
+        fuentes_consultadas=etapas_mostradas,
         limitaciones=limitaciones,
         hallazgos=hallazgos,
         resumen_exposicion=construir_resumen_exposicion(hallazgos),
         recomendaciones=recomendaciones,
+        totales_por_categoria=totales_por_categoria,
     )
 
 
@@ -766,6 +853,15 @@ def generar_json_osint(datos: DatosInformeOSINT) -> str:
         "autorizacion_datos_personales": datos.autorizado_datos_personales,
         "estado_general": datos.estado_general,
         "fuentes_utilizadas": list(datos.fuentes_utilizadas),
+        "fuentes_consultadas": [
+            {
+                "fuente": e.fuente,
+                "nombre": e.nombre,
+                "estado": e.estado,
+                "detalle": e.detalle,
+            }
+            for e in datos.fuentes_consultadas
+        ],
         "limitaciones": list(datos.limitaciones),
         "resumen_exposicion": {
             "total_hallazgos": datos.resumen_exposicion.total_hallazgos,
@@ -773,14 +869,19 @@ def generar_json_osint(datos: DatosInformeOSINT) -> str:
             "fuentes_con_indicador": list(datos.resumen_exposicion.fuentes_con_indicador),
             "indicadores": list(datos.resumen_exposicion.indicadores),
         },
+        "totales_por_categoria": dict(datos.totales_por_categoria),
         "recomendaciones": list(datos.recomendaciones),
         "hallazgos": [
             {
+                "id": h.id,
                 "fuente": h.fuente,
                 "categoria": h.categoria,
                 "titulo": h.titulo,
                 "descripcion": h.descripcion,
                 "nivel_confianza": h.nivel_confianza,
+                "estado_verificacion": _ESTADOS_VERIFICACION_INFORME.get(
+                    h.nivel_confianza, "Sin clasificar."
+                ),
                 "indicador_exposicion": h.indicador_exposicion,
                 "evidencias": json.loads(h.evidencias_json),
                 "creado_en": h.creado_en,
@@ -798,19 +899,57 @@ def generar_json_osint(datos: DatosInformeOSINT) -> str:
     return json.dumps(cuerpo, ensure_ascii=False, indent=2)
 
 
-def generar_html_osint(datos: DatosInformeOSINT) -> str:
-    filas = "\n".join(
-        f"<tr><td>{escape(h.fuente)}</td><td>{escape(h.categoria)}</td>"
-        f"<td>{escape(h.titulo)}</td>"
-        f"<td class=\"severidad-{escape(h.nivel_confianza)}\">{escape(h.nivel_confianza)}</td>"
-        f"<td>{escape(h.indicador_exposicion or '-')}</td>"
-        f"<td>{escape(h.descripcion)}</td><td>{escape(h.creado_en)}</td></tr>"
-        for h in datos.hallazgos
+def _evidencia_html(evidencia: dict) -> str:
+    observada = evidencia.get("fecha_observada")
+    fecha_html = (
+        f"Observado: {escape(str(observada))} &middot; Consultado el: "
+        f"{escape(str(evidencia.get('fecha_consulta')))}"
+        if observada
+        else f"Consultado el: {escape(str(evidencia.get('fecha_consulta')))}"
     )
-    if not filas:
-        filas = "<tr><td colspan=\"7\">No hay hallazgos OSINT registrados.</td></tr>"
+    return (
+        "<li>"
+        f"<strong>{escape(str(evidencia.get('fuente')))}:</strong> "
+        f"{escape(str(evidencia.get('valor')))} "
+        f"(referencia: {_enlace_html(evidencia.get('referencia'))}) "
+        f"<span class=\"resumen\">[{fecha_html}]</span>"
+        "</li>"
+    )
+
+
+def _hallazgo_html(h: HallazgoOSINTGuardado) -> str:
+    evidencias = json.loads(h.evidencias_json)
+    evidencias_html = (
+        "<ul>" + "".join(_evidencia_html(e) for e in evidencias) + "</ul>"
+        if evidencias
+        else "<p class=\"resumen\">Sin evidencias individuales para este hallazgo.</p>"
+    )
+    estado_verificacion = _ESTADOS_VERIFICACION_INFORME.get(h.nivel_confianza, "Sin clasificar.")
+    return f"""<details class="hallazgo">
+<summary>#{h.id} &middot; {escape(h.fuente)} &middot; {escape(h.titulo)}
+<span class="severidad-{escape(h.nivel_confianza)}">[{escape(h.nivel_confianza)}]</span></summary>
+<p><strong>Categoria:</strong> {escape(h.categoria)} &middot;
+<strong>Fecha:</strong> {escape(h.creado_en)}</p>
+<p><strong>Descripcion:</strong> {escape(h.descripcion)}</p>
+<p><strong>Indicador de exposicion:</strong> {escape(h.indicador_exposicion or '(ninguno)')}</p>
+<p><strong>Estado de verificacion:</strong> {escape(estado_verificacion)}</p>
+<p><strong>Evidencias:</strong></p>
+{evidencias_html}
+</details>"""
+
+
+def generar_html_osint(datos: DatosInformeOSINT) -> str:
+    hallazgos_html = "\n".join(_hallazgo_html(h) for h in datos.hallazgos) or (
+        "<p>No hay hallazgos OSINT registrados.</p>"
+    )
 
     fuentes_html = ", ".join(escape(f) for f in datos.fuentes_utilizadas) or "(ninguna)"
+    fuentes_consultadas_filas = "\n".join(
+        f"<tr><td>{escape(e.nombre)}</td>"
+        f"<td class=\"estado-{escape(e.estado)}\">{escape(e.estado)}</td>"
+        f"<td>{escape(e.detalle) or '-'}</td></tr>"
+        for e in datos.fuentes_consultadas
+    ) or "<tr><td colspan=\"3\">(ninguna)</td></tr>"
     limitaciones_html = (
         "".join(f"<li>{escape(limite)}</li>" for limite in datos.limitaciones)
         or "<li>(ninguna)</li>"
@@ -822,6 +961,10 @@ def generar_html_osint(datos: DatosInformeOSINT) -> str:
     recomendaciones_html = (
         "".join(f"<li>{escape(r)}</li>" for r in datos.recomendaciones)
         or "<li>Sin recomendaciones especificas: revisa igualmente las limitaciones.</li>"
+    )
+    totales_categoria_html = (
+        "".join(f"<li>{escape(cat)}: {total}</li>" for cat, total in datos.totales_por_categoria)
+        or "<li>(ninguna)</li>"
     )
     autorizacion_html = (
         "Confirmada por el usuario antes de consultar cualquier fuente."
@@ -841,17 +984,28 @@ def generar_html_osint(datos: DatosInformeOSINT) -> str:
 <li>Indicadores de exposicion: {datos.resumen_exposicion.total_indicadores}</li>
 </ul>
 
+<h2>Totales por categoria</h2>
+<ul>{totales_categoria_html}</ul>
+
+<h2>Fuentes consultadas</h2>
+<p class="resumen">Cada fuente muestra su estado real: una fuente "omitida" (sin
+configurar) o "fallida" (error de conexion/limite de tasa) nunca se confunde con "sin
+hallazgos" -- son situaciones distintas, ver la columna Detalle.</p>
+<table>
+<thead><tr><th>Fuente</th><th>Estado</th><th>Detalle</th></tr></thead>
+<tbody>
+{fuentes_consultadas_filas}
+</tbody>
+</table>
+
 <h2>Indicadores de exposicion</h2>
 <ul>{indicadores_html}</ul>
 
 <h2>Hallazgos verificados</h2>
-<table>
-<thead><tr><th>Fuente</th><th>Categoria</th><th>Titulo</th><th>Confianza</th>
-<th>Indicador de exposicion</th><th>Descripcion</th><th>Fecha</th></tr></thead>
-<tbody>
-{filas}
-</tbody>
-</table>
+<p class="resumen">Cada hallazgo incluye su descripcion completa, todas sus evidencias
+(con la URL o referencia original cuando existe, y la fecha en que la fuente observo
+el dato frente a cuando AST la consulto) y su estado de verificacion.</p>
+{hallazgos_html}
 
 <h2>Recomendaciones</h2>
 <ul>{recomendaciones_html}</ul>

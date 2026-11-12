@@ -78,6 +78,45 @@ def test_agregar_y_listar_hallazgos_osint(tmp_path):
     assert len(por_proyecto) == 2
 
 
+def test_listar_hallazgos_osint_pagina_con_desplazamiento(tmp_path):
+    base_datos = BaseDatos(tmp_path / "est.db")
+    proyecto = base_datos.crear_proyecto("laboratorio")
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "ejemplo.com", "ejemplo.com", False, ["dns"]
+    )
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id,
+        proyecto.id,
+        "dns",
+        [_hallazgo(f"Hallazgo {i}") for i in range(5)],
+    )
+
+    total = base_datos.contar_hallazgos_osint(investigacion_id=investigacion.id)
+    assert total == 5
+
+    pagina_1 = base_datos.listar_hallazgos_osint(
+        investigacion_id=investigacion.id, limite=2, desplazamiento=0
+    )
+    pagina_2 = base_datos.listar_hallazgos_osint(
+        investigacion_id=investigacion.id, limite=2, desplazamiento=2
+    )
+    pagina_3 = base_datos.listar_hallazgos_osint(
+        investigacion_id=investigacion.id, limite=2, desplazamiento=4
+    )
+    assert len(pagina_1) == 2
+    assert len(pagina_2) == 2
+    assert len(pagina_3) == 1
+    # Sin solapamientos ni huecos entre paginas.
+    ids_pagina_1 = {h.id for h in pagina_1}
+    ids_pagina_2 = {h.id for h in pagina_2}
+    ids_pagina_3 = {h.id for h in pagina_3}
+    assert not (ids_pagina_1 & ids_pagina_2)
+    assert not (ids_pagina_2 & ids_pagina_3)
+    assert ids_pagina_1 | ids_pagina_2 | ids_pagina_3 == {h.id for h in (
+        base_datos.listar_hallazgos_osint(investigacion_id=investigacion.id, limite=100)
+    )}
+
+
 def test_listar_investigaciones_osint_filtra_por_proyecto(tmp_path):
     base_datos = BaseDatos(tmp_path / "est.db")
     proyecto_a = base_datos.crear_proyecto("alfa")

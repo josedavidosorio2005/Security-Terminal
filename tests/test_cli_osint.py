@@ -268,3 +268,245 @@ def test_osint_reporte_formato_invalido_falla(runner):
         app, ["osint", "reporte", str(investigacion.id), "--formato", "pdf"]
     )
     assert resultado.exit_code != 0
+
+
+def _hallazgo_con_evidencias(titulo: str, evidencias: list[dict]) -> dict:
+    return {
+        "categoria": "historial_escaneos",
+        "titulo": titulo,
+        "descripcion": "Descripcion completa de prueba.",
+        "nivel_confianza": "probable",
+        "indicador_exposicion": None,
+        "evidencias": evidencias,
+    }
+
+
+def _investigacion_con_hallazgos(runner, evidencias_hallazgo_1, evidencias_hallazgo_2=None):
+    from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
+
+    _preparar_proyecto(runner)
+    base_datos = obtener_base_datos()
+    proyecto = resolver_proyecto(base_datos, None)
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, "dominio", "ejemplo.com", "ejemplo.com", False, []
+    )
+    hallazgos = [_hallazgo_con_evidencias("Hallazgo 1", evidencias_hallazgo_1)]
+    if evidencias_hallazgo_2 is not None:
+        hallazgos.append(_hallazgo_con_evidencias("Hallazgo 2", evidencias_hallazgo_2))
+    base_datos.agregar_hallazgos_osint(
+        investigacion.id, proyecto.id, "urlscan_historial", hallazgos
+    )
+    return investigacion
+
+
+def test_osint_resultados_detallado_muestra_descripcion_y_evidencias(runner, monkeypatch):
+    # Un ancho de consola amplio evita que Rich trunque con '...' las URL largas al
+    # renderizar la tabla de evidencias (en una terminal real, el usuario controla ese
+    # ancho; aqui se fija para poder comprobar el contenido completo, no un resumen).
+    monkeypatch.setenv("COLUMNS", "200")
+    evidencias = [
+        {
+            "fuente": "urlscan_historial",
+            "fecha_consulta": "2026-01-01T00:00:00+00:00",
+            "referencia": "https://urlscan.io/result/abc/",
+            "valor": "https://ejemplo.com/pagina",
+            "fecha_observada": "2025-12-01T00:00:00+00:00",
+        }
+    ]
+    investigacion = _investigacion_con_hallazgos(runner, evidencias)
+    resultado = runner.invoke(
+        app, ["osint", "resultados", "--investigacion", str(investigacion.id), "--detallado"]
+    )
+    assert resultado.exit_code == 0
+    assert "Descripcion completa de prueba" in resultado.stdout
+    assert "https://ejemplo.com/pagina" in resultado.stdout
+    assert "https://urlscan.io/result/abc/" in resultado.stdout
+    assert "Estado de verificacion" in resultado.stdout
+
+
+def test_osint_resultados_solo_urls_deduplica(runner):
+    evidencias = [
+        {
+            "fuente": "urlscan_historial",
+            "fecha_consulta": "x",
+            "referencia": "https://urlscan.io/result/abc/",
+            "valor": "https://ejemplo.com/pagina",
+            "fecha_observada": "2025-12-01",
+        },
+        {
+            "fuente": "urlscan_historial",
+            "fecha_consulta": "x",
+            "referencia": "https://urlscan.io/result/abc/",
+            "valor": "https://ejemplo.com/pagina",
+            "fecha_observada": "2025-12-02",
+        },
+    ]
+    investigacion = _investigacion_con_hallazgos(runner, evidencias)
+    resultado = runner.invoke(
+        app, ["osint", "resultados", "--investigacion", str(investigacion.id), "--solo-urls"]
+    )
+    assert resultado.exit_code == 0
+    lineas = [linea for linea in resultado.stdout.splitlines() if linea.strip()]
+    assert lineas.count("https://ejemplo.com/pagina") == 1
+    assert lineas.count("https://urlscan.io/result/abc/") == 1
+
+
+def test_osint_resultados_solo_urls_nunca_inventa_una_url_de_un_subdominio(runner):
+    """Un 'valor' que no empieza por http(s):// (p. ej. un subdominio de Certificate
+    Transparency, o un metadato de telefono) nunca debe listarse como si fuera una URL
+    observada (seccion 2: "no convertir automaticamente un subdominio en una URL")."""
+    evidencias = [
+        {
+            "fuente": "certificados",
+            "fecha_consulta": "x",
+            "referencia": "https://crt.sh/?id=1",
+            "valor": "api.ejemplo.com",
+            "fecha_observada": None,
+        }
+    ]
+    investigacion = _investigacion_con_hallazgos(runner, evidencias)
+    resultado = runner.invoke(
+        app, ["osint", "resultados", "--investigacion", str(investigacion.id), "--solo-urls"]
+    )
+    assert resultado.exit_code == 0
+    assert "api.ejemplo.com" not in resultado.stdout
+    assert "https://crt.sh/?id=1" in resultado.stdout
+
+
+def test_osint_resultados_guardar_json_conserva_evidencias(runner, tmp_path):
+    evidencias = [
+        {
+            "fuente": "urlscan_historial",
+            "fecha_consulta": "2026-01-01T00:00:00+00:00",
+            "referencia": "https://urlscan.io/result/abc/",
+            "valor": "https://ejemplo.com/pagina",
+            "fecha_observada": "2025-12-01T00:00:00+00:00",
+        }
+    ]
+    investigacion = _investigacion_con_hallazgos(runner, evidencias)
+    ruta_salida = tmp_path / "detalle.json"
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "resultados",
+            "--investigacion",
+            str(investigacion.id),
+            "--detallado",
+            "--guardar",
+            str(ruta_salida),
+        ],
+    )
+    assert resultado.exit_code == 0
+    assert ruta_salida.exists()
+    import json
+
+    datos = json.loads(ruta_salida.read_text(encoding="utf-8"))
+    assert datos[0]["evidencias"][0]["valor"] == "https://ejemplo.com/pagina"
+    assert datos[0]["evidencias"][0]["referencia"] == "https://urlscan.io/result/abc/"
+
+
+def test_osint_resultados_guardar_urls_txt(runner, tmp_path):
+    evidencias = [
+        {
+            "fuente": "urlscan_historial",
+            "fecha_consulta": "x",
+            "referencia": "https://urlscan.io/result/abc/",
+            "valor": "https://ejemplo.com/pagina",
+            "fecha_observada": None,
+        }
+    ]
+    investigacion = _investigacion_con_hallazgos(runner, evidencias)
+    ruta_salida = tmp_path / "urls.txt"
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "resultados",
+            "--investigacion",
+            str(investigacion.id),
+            "--solo-urls",
+            "--guardar",
+            str(ruta_salida),
+        ],
+    )
+    assert resultado.exit_code == 0
+    contenido = ruta_salida.read_text(encoding="utf-8")
+    assert "https://ejemplo.com/pagina" in contenido
+    assert "https://urlscan.io/result/abc/" in contenido
+
+
+def test_osint_resultados_pagina_divide_los_hallazgos(runner, monkeypatch):
+    monkeypatch.setenv("COLUMNS", "200")
+    evidencias_vacias: list[dict] = []
+    investigacion = _investigacion_con_hallazgos(runner, evidencias_vacias, evidencias_vacias)
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "resultados",
+            "--investigacion",
+            str(investigacion.id),
+            "--limite",
+            "1",
+            "--pagina",
+            "2",
+        ],
+    )
+    assert resultado.exit_code == 0
+    assert "Hallazgo 1" in resultado.stdout or "Hallazgo 2" in resultado.stdout
+    assert "pagina 2/2" in resultado.stdout.lower()
+
+
+def test_osint_resultados_pagina_fuera_de_rango_avisa(runner):
+    investigacion = _investigacion_con_hallazgos(runner, [])
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "resultados",
+            "--investigacion",
+            str(investigacion.id),
+            "--pagina",
+            "99",
+        ],
+    )
+    assert resultado.exit_code == 0
+    assert "Aviso" in resultado.stdout
+
+
+def test_osint_resultados_pagina_invalida_falla(runner):
+    resultado = runner.invoke(app, ["osint", "resultados", "--pagina", "0"])
+    assert resultado.exit_code != 0
+
+
+def test_osint_telefono_con_twilio_avisa_el_costo(runner, monkeypatch):
+    _preparar_proyecto(runner)
+    monkeypatch.setattr(
+        commands.osint, "ejecutar_investigacion_osint", lambda *_a, **_k: _resultado_falso()
+    )
+    resultado = runner.invoke(
+        app,
+        [
+            "osint",
+            "telefono",
+            "+573001234567",
+            "--autorizo",
+            "--fuentes",
+            "twilio_lookup",
+        ],
+    )
+    assert resultado.exit_code == 0
+    assert "costo" in resultado.stdout.lower()
+
+
+def test_osint_telefono_sin_twilio_no_avisa_el_costo(runner, monkeypatch):
+    _preparar_proyecto(runner)
+    monkeypatch.setattr(
+        commands.osint, "ejecutar_investigacion_osint", lambda *_a, **_k: _resultado_falso()
+    )
+    resultado = runner.invoke(
+        app, ["osint", "telefono", "+573001234567", "--autorizo"]
+    )
+    assert resultado.exit_code == 0
+    assert "aviso de costo" not in resultado.stdout.lower()

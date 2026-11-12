@@ -96,6 +96,14 @@ def ejecutar_investigacion_osint(
         fuentes_aplicables = {
             k: v for k, v in fuentes_aplicables.items() if k in fuentes_seleccionadas
         }
+    else:
+        # Sin seleccion explicita del usuario, se excluye cualquier fuente que facture
+        # por consulta (ver integrations/osint/base.py:requiere_seleccion_explicita):
+        # tener sus credenciales configuradas nunca debe bastar para que se ejecute y
+        # genere un costo sin que el usuario lo pidiera en ESTA investigacion concreta.
+        fuentes_aplicables = {
+            k: v for k, v in fuentes_aplicables.items() if not v.requiere_seleccion_explicita
+        }
 
     investigacion = base_datos.crear_investigacion_osint(
         proyecto.id,

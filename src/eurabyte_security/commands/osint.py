@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 
 import typer
+from rich.console import Group
+from rich.panel import Panel
 from rich.table import Table
 
 from eurabyte_security.commands._comun import obtener_base_datos, resolver_proyecto
 from eurabyte_security.core.config import ruta_reportes
 from eurabyte_security.core.errores import ErrorValidacion
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
+from eurabyte_security.integrations.osint.twilio_lookup import AVISO_COSTO as AVISO_COSTO_TWILIO
 from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
@@ -20,10 +24,40 @@ from eurabyte_security.modules.reporting.generador import (
     generar_html_osint,
     generar_json_osint,
 )
-from eurabyte_security.storage.database import BaseDatos, Proyecto
+from eurabyte_security.storage.database import BaseDatos, HallazgoOSINTGuardado, Proyecto
 from eurabyte_security.ui.consola import consola, texto_seguro
 
 FORMATOS_INFORME_VALIDOS = {"html", "json"}
+
+# Sin paginacion real desde la CLI (ver BaseDatos.listar_hallazgos_osint), este limite
+# amplio cubre con holgura una investigacion OSINT real (nunca miles de hallazgos, ver
+# docs/OSINT.md) cuando se pide la vista completa ('--solo-urls') en vez de una pagina.
+_LIMITE_SIN_PAGINAR = 10_000
+
+_ESTADOS_VERIFICACION = {
+    "confirmado": "Dato confirmado directamente por la fuente.",
+    "probable": "Evidencia indirecta o historica: no confirma el estado actual.",
+    "no_verificado": "Asociacion no verificada: tratar como estimacion, no como hecho.",
+}
+
+
+def _es_url_http(texto: str | None) -> bool:
+    if not texto:
+        return False
+    return texto.strip().lower().startswith(("http://", "https://"))
+
+
+def _urls_de_hallazgo(hallazgo: HallazgoOSINTGuardado) -> list[str]:
+    """URL realmente observadas y guardadas en un hallazgo (nunca un subdominio o un
+    nombre convertido en URL por la propia CLI, ver seccion 2 de la especificacion de
+    evidencia completa: "no convertir automaticamente un subdominio en una URL")."""
+    urls: list[str] = []
+    for evidencia in json.loads(hallazgo.evidencias_json):
+        for campo in ("referencia", "valor"):
+            valor = evidencia.get(campo)
+            if _es_url_http(valor) and valor not in urls:
+                urls.append(valor)
+    return urls
 
 osint_app = typer.Typer(
     help="Investiga fuentes publicas (OSINT) sobre un objetivo autorizado.",
@@ -214,17 +248,31 @@ def telefono_cmd(
         None, "--region", help="Codigo de region ISO (ej. CO) si el numero no incluye '+pais'."
     ),
     proyecto: str | None = typer.Option(None, "--proyecto", help=_AYUDA_PROYECTO),
+    fuentes: str | None = typer.Option(
+        None,
+        "--fuentes",
+        help=(
+            _AYUDA_FUENTES
+            + " 'twilio_lookup' es de PAGO POR CONSULTA y solo corre si se nombra aqui."
+        ),
+    ),
 ) -> None:
-    """Normaliza y valida un numero de telefono (E.164, region, tipo de numero)."""
+    """Metadatos de numeracion (E.164, region, tipo de numero, zona horaria...).
+
+    Nunca identifica al titular de la linea: ver docs/OSINT.md, seccion de metadatos
+    telefonicos.
+    """
     base_datos = obtener_base_datos()
     proyecto_obj = resolver_proyecto(base_datos, proyecto)
+    if fuentes and "twilio_lookup" in {f.strip().lower() for f in fuentes.split(",")}:
+        consola.print(f"[bold yellow]Aviso de costo:[/bold yellow] {AVISO_COSTO_TWILIO}")
     _ejecutar_y_mostrar(
         base_datos,
         proyecto_obj,
         "telefono",
         telefono,
         autorizado=autorizo,
-        fuentes_txt=None,
+        fuentes_txt=fuentes,
         region=region,
     )
 
@@ -309,30 +357,12 @@ def investigaciones_cmd(
     consola.print(tabla)
 
 
-@osint_app.command("resultados")
-def resultados_cmd(
-    proyecto: str | None = typer.Option(None, "--proyecto", help=_AYUDA_PROYECTO),
-    investigacion: int | None = typer.Option(
-        None,
-        "--investigacion",
-        help="Limita a una investigacion concreta (ver 'est osint investigaciones').",
-    ),
-    limite: int = typer.Option(100, "--limite", help="Numero maximo de hallazgos a mostrar."),
-) -> None:
-    """Muestra los hallazgos OSINT guardados de un proyecto o investigacion."""
-    base_datos = obtener_base_datos()
-    proyecto_obj = resolver_proyecto(base_datos, proyecto)
-    hallazgos = base_datos.listar_hallazgos_osint(
-        investigacion_id=investigacion, proyecto_id=proyecto_obj.id, limite=limite
-    )
-
-    if not hallazgos:
-        consola.print(
-            f"No hay hallazgos OSINT guardados para '{proyecto_obj.nombre}' con esos filtros."
-        )
-        return
-
-    tabla = Table(title=f"Hallazgos OSINT - {proyecto_obj.nombre}")
+def _tabla_resultados(
+    hallazgos: list[HallazgoOSINTGuardado], titulo: str, *, pagina: int, total_paginas: int
+) -> Table:
+    sufijo_pagina = f" (pagina {pagina}/{total_paginas})" if total_paginas > 1 else ""
+    tabla = Table(title=f"{titulo}{sufijo_pagina}")
+    tabla.add_column("Id")
     tabla.add_column("Fuente")
     tabla.add_column("Categoria")
     tabla.add_column("Titulo")
@@ -345,6 +375,7 @@ def resultados_cmd(
             f"[{estilo}]{h.nivel_confianza}[/{estilo}]" if estilo else h.nivel_confianza
         )
         tabla.add_row(
+            str(h.id),
             h.fuente,
             h.categoria,
             texto_seguro(h.titulo),
@@ -352,7 +383,207 @@ def resultados_cmd(
             texto_seguro(h.indicador_exposicion) if h.indicador_exposicion else "-",
             h.creado_en,
         )
-    consola.print(tabla)
+    return tabla
+
+
+def _panel_detallado(h: HallazgoOSINTGuardado) -> Panel:
+    estilo = _ESTILOS_CONFIANZA.get(h.nivel_confianza, "")
+    confianza_texto = f"[{estilo}]{h.nivel_confianza}[/{estilo}]" if estilo else h.nivel_confianza
+    cuerpo = [
+        f"[bold]Categoria:[/bold] {texto_seguro(h.categoria)}",
+        f"[bold]Descripcion:[/bold] {texto_seguro(h.descripcion)}",
+        f"[bold]Indicador de exposicion:[/bold] "
+        f"{texto_seguro(h.indicador_exposicion) if h.indicador_exposicion else '(ninguno)'}",
+        f"[bold]Confianza:[/bold] {confianza_texto}",
+        f"[bold]Estado de verificacion:[/bold] "
+        f"{_ESTADOS_VERIFICACION.get(h.nivel_confianza, 'Sin clasificar.')}",
+        f"[bold]Fuente:[/bold] {texto_seguro(h.fuente)} · [bold]Fecha:[/bold] {h.creado_en}",
+    ]
+    evidencias = json.loads(h.evidencias_json)
+    if evidencias:
+        tabla_ev = Table(box=None, show_edge=False, pad_edge=False)
+        tabla_ev.add_column("Fuente")
+        tabla_ev.add_column("Fecha consulta")
+        tabla_ev.add_column("Fecha observada")
+        tabla_ev.add_column("Valor")
+        tabla_ev.add_column("Referencia (URL)")
+        for e in evidencias:
+            tabla_ev.add_row(
+                texto_seguro(e.get("fuente")),
+                texto_seguro(e.get("fecha_consulta")),
+                texto_seguro(e.get("fecha_observada")) if e.get("fecha_observada") else "-",
+                texto_seguro(e.get("valor")),
+                texto_seguro(e.get("referencia")) if e.get("referencia") else "-",
+            )
+        cuerpo.append("[bold]Evidencias:[/bold]")
+    else:
+        tabla_ev = None
+        cuerpo.append("[bold]Evidencias:[/bold] (ninguna)")
+
+    contenido = Group(*cuerpo) if tabla_ev is None else Group(*cuerpo, tabla_ev)
+    return Panel(contenido, title=f"Hallazgo #{h.id} - {texto_seguro(h.titulo)}", expand=True)
+
+
+@osint_app.command("resultados")
+def resultados_cmd(
+    proyecto: str | None = typer.Option(None, "--proyecto", help=_AYUDA_PROYECTO),
+    investigacion: int | None = typer.Option(
+        None,
+        "--investigacion",
+        help="Limita a una investigacion concreta (ver 'est osint investigaciones').",
+    ),
+    limite: int = typer.Option(
+        100, "--limite", help="Numero maximo de hallazgos a mostrar por pagina."
+    ),
+    pagina: int = typer.Option(
+        1, "--pagina", help="Numero de pagina (1 = la primera), usando --limite por pagina."
+    ),
+    detallado: bool = typer.Option(
+        False,
+        "--detallado",
+        help=(
+            "Muestra cada hallazgo completo: descripcion, evidencias, URL y estado de "
+            "verificacion."
+        ),
+    ),
+    solo_urls: bool = typer.Option(
+        False,
+        "--solo-urls",
+        help="Lista unicamente las URL observadas y guardadas, una por linea, sin duplicados.",
+    ),
+    guardar: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--guardar",
+        help="Guarda la salida de --detallado/--solo-urls en un archivo .txt o .json.",
+    ),
+) -> None:
+    """Muestra los hallazgos OSINT guardados de un proyecto o investigacion."""
+    if pagina < 1:
+        consola.print("[bold red]Error:[/bold red] --pagina debe ser al menos 1.")
+        raise typer.Exit(code=1)
+    if limite < 1:
+        consola.print("[bold red]Error:[/bold red] --limite debe ser al menos 1.")
+        raise typer.Exit(code=1)
+
+    base_datos = obtener_base_datos()
+    proyecto_obj = resolver_proyecto(base_datos, proyecto)
+
+    if solo_urls:
+        # Las URL se deduplican sobre TODO lo guardado (filtrado por proyecto/
+        # investigacion), no solo sobre una pagina: paginar aqui fragmentaria la
+        # deduplicacion de forma confusa para el usuario.
+        hallazgos = base_datos.listar_hallazgos_osint(
+            investigacion_id=investigacion, proyecto_id=proyecto_obj.id, limite=_LIMITE_SIN_PAGINAR
+        )
+        urls: list[str] = []
+        for h in hallazgos:
+            for url in _urls_de_hallazgo(h):
+                if url not in urls:
+                    urls.append(url)
+        if not urls:
+            consola.print("No hay URL observadas y guardadas con esos filtros.")
+            return
+        if guardar is not None:
+            _guardar_salida_urls(guardar, urls)
+            consola.print(f"Se guardaron {len(urls)} URL en: {texto_seguro(guardar)}")
+            return
+        for url in urls:
+            consola.print(url)
+        return
+
+    total = base_datos.contar_hallazgos_osint(
+        investigacion_id=investigacion, proyecto_id=proyecto_obj.id
+    )
+    if total == 0:
+        consola.print(
+            f"No hay hallazgos OSINT guardados para '{proyecto_obj.nombre}' con esos filtros."
+        )
+        return
+    total_paginas = max(1, (total + limite - 1) // limite)
+    if pagina > total_paginas:
+        consola.print(
+            f"[bold yellow]Aviso:[/bold yellow] solo hay {total_paginas} pagina(s) "
+            f"disponible(s) con --limite {limite}."
+        )
+        return
+
+    hallazgos = base_datos.listar_hallazgos_osint(
+        investigacion_id=investigacion,
+        proyecto_id=proyecto_obj.id,
+        limite=limite,
+        desplazamiento=(pagina - 1) * limite,
+    )
+
+    if detallado:
+        if guardar is not None:
+            _guardar_salida_detallada(guardar, hallazgos)
+            consola.print(f"Se guardaron {len(hallazgos)} hallazgo(s) en: {texto_seguro(guardar)}")
+            return
+        for h in hallazgos:
+            consola.print(_panel_detallado(h))
+        if total_paginas > 1:
+            consola.print(f"\nPagina {pagina}/{total_paginas} ({total} hallazgo(s) en total).")
+        return
+
+    consola.print(
+        _tabla_resultados(
+            hallazgos,
+            f"Hallazgos OSINT - {proyecto_obj.nombre}",
+            pagina=pagina,
+            total_paginas=total_paginas,
+        )
+    )
+
+
+def _guardar_salida_urls(ruta: Path, urls: list[str]) -> None:
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    if ruta.suffix.lower() == ".json":
+        ruta.write_text(json.dumps(urls, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        ruta.write_text("\n".join(urls) + ("\n" if urls else ""), encoding="utf-8")
+
+
+def _hallazgo_a_dict_completo(h: HallazgoOSINTGuardado) -> dict:
+    return {
+        "id": h.id,
+        "fuente": h.fuente,
+        "categoria": h.categoria,
+        "titulo": h.titulo,
+        "descripcion": h.descripcion,
+        "nivel_confianza": h.nivel_confianza,
+        "estado_verificacion": _ESTADOS_VERIFICACION.get(h.nivel_confianza, "Sin clasificar."),
+        "indicador_exposicion": h.indicador_exposicion,
+        "creado_en": h.creado_en,
+        "evidencias": json.loads(h.evidencias_json),
+    }
+
+
+def _guardar_salida_detallada(ruta: Path, hallazgos: list[HallazgoOSINTGuardado]) -> None:
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    datos = [_hallazgo_a_dict_completo(h) for h in hallazgos]
+    if ruta.suffix.lower() == ".json":
+        ruta.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+        return
+    lineas: list[str] = []
+    for d in datos:
+        lineas.append(f"# Hallazgo #{d['id']} - {d['titulo']}")
+        lineas.append(
+            f"Fuente: {d['fuente']} | Categoria: {d['categoria']} | Fecha: {d['creado_en']}"
+        )
+        lineas.append(f"Confianza: {d['nivel_confianza']} ({d['estado_verificacion']})")
+        lineas.append(f"Descripcion: {d['descripcion']}")
+        lineas.append(f"Indicador de exposicion: {d['indicador_exposicion'] or '(ninguno)'}")
+        lineas.append("Evidencias:")
+        for e in d["evidencias"]:
+            observado = e.get("fecha_observada") or "-"
+            referencia = e.get("referencia") or "-"
+            lineas.append(
+                f"  - [{e.get('fuente')}] {e.get('valor')} "
+                f"(consultado: {e.get('fecha_consulta')}, observado: {observado}, "
+                f"referencia: {referencia})"
+            )
+        lineas.append("")
+    ruta.write_text("\n".join(lineas), encoding="utf-8")
 
 
 @osint_app.command("reporte")

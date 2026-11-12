@@ -165,6 +165,39 @@ def test_fuentes_seleccionadas_filtra_el_catalogo(tmp_path, monkeypatch):
     assert fuente_b.llamadas == 0
 
 
+def test_fuente_de_seleccion_explicita_no_corre_por_defecto(tmp_path, monkeypatch):
+    """Una fuente que factura por consulta (``requiere_seleccion_explicita = True``,
+    ver integrations/osint/base.py) nunca debe ejecutarse solo porque este configurada:
+    sin que el usuario la nombre con '--fuentes', queda fuera del conjunto por defecto."""
+    base_datos, proyecto = _proyecto(tmp_path)
+    fuente_gratuita = _FuenteFalsa("f1", hallazgos=[_hallazgo()])
+    fuente_de_pago = _FuenteFalsa("f2", hallazgos=[_hallazgo()])
+    fuente_de_pago.requiere_seleccion_explicita = True
+    monkeypatch.setattr(
+        motor, "fuentes_para_tipo", lambda tipo: {"f1": fuente_gratuita, "f2": fuente_de_pago}
+    )
+
+    resultado = motor.ejecutar_investigacion_osint(base_datos, proyecto, "dominio", "ejemplo.com")
+
+    assert fuente_gratuita.llamadas == 1
+    assert fuente_de_pago.llamadas == 0
+    assert all(e.fuente != "f2" for e in resultado.etapas)
+
+
+def test_fuente_de_seleccion_explicita_corre_si_se_nombra(tmp_path, monkeypatch):
+    base_datos, proyecto = _proyecto(tmp_path)
+    fuente_de_pago = _FuenteFalsa("f2", hallazgos=[_hallazgo()])
+    fuente_de_pago.requiere_seleccion_explicita = True
+    monkeypatch.setattr(motor, "fuentes_para_tipo", lambda tipo: {"f2": fuente_de_pago})
+
+    resultado = motor.ejecutar_investigacion_osint(
+        base_datos, proyecto, "dominio", "ejemplo.com", fuentes_seleccionadas=frozenset({"f2"})
+    )
+
+    assert fuente_de_pago.llamadas == 1
+    assert resultado.etapas[0].fuente == "f2"
+
+
 def test_fuente_seleccionada_no_aplicable_rechazada(tmp_path, monkeypatch):
     base_datos, proyecto = _proyecto(tmp_path)
     monkeypatch.setattr(motor, "fuentes_para_tipo", lambda tipo: {})

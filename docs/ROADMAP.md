@@ -740,6 +740,66 @@ funcionalidad que quedaba pendiente de PR C:
       resultados, pestanas, informe, resize en caliente, navegar fuera y volver,
       recuperar del historial) en 80x24 y 160x45.
 
+### Evidencia completa, URL y telefonos (CLI + informes)
+
+Corrige perdida real de informacion en la CLI y el informe HTML, y amplia la
+investigacion telefonica (prioridad: PowerShell + informes; sin tocar la interfaz
+Textual en esta entrega):
+
+- [x] Bug real corregido: `est osint resultados` omitia la descripcion y las
+      evidencias de cada hallazgo (ya persistidas en `EvidenciaOSINT`); el informe HTML
+      tampoco las mostraba ni enlazaba sus URL (el JSON si las incluia).
+- [x] `est osint resultados --investigacion ID --detallado`: cada hallazgo completo
+      (descripcion, evidencias, URL/referencia, fecha de consulta vs. fecha observada
+      por la fuente, estado de verificacion segun su nivel de confianza).
+- [x] `est osint resultados --investigacion ID --solo-urls`: unicamente las URL
+      REALMENTE observadas y guardadas, una por linea, deduplicadas -- nunca convierte
+      un subdominio u otro metadato en una URL inventada.
+- [x] `--guardar RUTA.txt|RUTA.json` en ambos modos anteriores, sin perder ninguna
+      evidencia. `est osint resultados --pagina N` pagina los hallazgos (nuevo
+      `BaseDatos.listar_hallazgos_osint(desplazamiento=...)`/`contar_hallazgos_osint`).
+- [x] `certificados.py` (Certificate Transparency): cada evidencia ahora enlaza el
+      certificado real (`https://crt.sh/?id=...`) con su fecha de observacion, en vez
+      de un enlace de busqueda generico sin fecha. Tope subido de 50 a 500 subdominios,
+      con el recorte documentado en la propia descripcion si se supera.
+- [x] `urlscan.py`: `valor` ahora es la URL observada LIMPIA (antes iba combinada con
+      la fecha como texto); `referencia` enlaza el resultado de urlscan.io; nueva
+      paginacion acotada (hasta 3 paginas de 100, cancelable entre paginas) con
+      deduplicacion defensiva y el recorte documentado si se supera.
+- [x] `infraestructura_ip`: ahora tambien resuelve el ASN y la organizacion de la IP
+      via el servicio DNS publico y pasivo de Team Cymru (nunca bloquea el resto del
+      hallazgo si Cymru no responde).
+- [x] **Fuente nueva** `telefono_metadatos`: metadatos completos de numeracion
+      (`phonenumbers`/libphonenumber, sin ninguna peticion de red) para `est osint
+      telefono` -- E.164, formatos, codigo de pais, region, prefijo nacional,
+      posibilidad/validez, tipo de linea, descripcion geografica aproximada, zonas
+      horarias y un operador sugerido SIEMPRE en un hallazgo separado marcado
+      `no_verificado`.
+- [x] **Fuente opcional nueva** `twilio_lookup` (Twilio Lookup v2): validacion de pago
+      por consulta. Nuevo contrato `AdaptadorFuenteOSINT.requiere_seleccion_explicita`
+      (`modules/osint/motor.py`): una fuente asi marcada nunca corre por estar
+      configurada, solo si el usuario la nombra explicitamente con `--fuentes
+      twilio_lookup` en esa investigacion concreta; la CLI muestra un aviso de costo
+      potencial antes de ejecutarla.
+- [x] Informe HTML: cada hallazgo (en un bloque `<details>` plegable) ahora muestra su
+      descripcion completa y TODAS sus evidencias, con sus URL como enlaces reales
+      (solo `http`/`https`; cualquier otro esquema -- `javascript:` incluido -- se
+      escapa como texto plano, nunca como enlace clicable) y la fecha observada por la
+      fuente junto a la fecha de consulta. Nueva seccion "Fuentes consultadas" con el
+      estado real de cada una (completada/omitida/fallida/cancelada) para no confundir
+      "sin informacion" con "fallo" o "no configurada"; nueva seccion "Totales por
+      categoria". El JSON incorpora los mismos campos (`fuentes_consultadas`,
+      `totales_por_categoria`, `estado_verificacion` por hallazgo) y `--minimizar`
+      tambien cubre ahora el detalle de cada etapa (antes solo titulo/descripcion/
+      evidencias/limitaciones).
+- [x] Pruebas nuevas (718 en total): evidencias/URL completas en CLI, enlaces seguros
+      y rechazo de esquemas peligrosos en HTML, paginacion/deduplicacion de urlscan,
+      metadatos y validez telefonica, fuente de pago ausente/configurada y su exclusion
+      por defecto, ASN opcional via Cymru, y la minimizacion extendida. Ninguna prueba
+      consulta una fuente OSINT real ni un numero de telefono real de un tercero.
+- [x] `python -m pytest -q` y `python -m ruff check .` en verde; no se toco la
+      interfaz Textual en esta entrega (seccion anterior de este documento).
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

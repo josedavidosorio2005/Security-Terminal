@@ -21,7 +21,11 @@ from eurabyte_security.integrations.osint.cliente_http import peticion_json
 from eurabyte_security.modules.osint.modelos import EvidenciaOSINT, HallazgoOSINT
 
 URL_DOCUMENTACION_CT = "https://crt.sh/"
-MAXIMO_SUBDOMINIOS = 50
+# crt.sh devuelve TODAS las coincidencias en una sola respuesta (no pagina): este tope
+# es solo para no construir un hallazgo con miles de evidencias en un dominio con
+# certificados wildcard muy reemitidos. Si se supera, el hallazgo lo dice explicitamente
+# (nunca se oculta el recorte, ver seccion 2 de la especificacion de evidencia completa).
+MAXIMO_SUBDOMINIOS = 500
 
 
 class AdaptadorCertificateTransparency(AdaptadorFuenteOSINT):
@@ -45,9 +49,16 @@ class AdaptadorCertificateTransparency(AdaptadorFuenteOSINT):
 
         fecha = _ahora()
         objetivo_bajo = objetivo.lower()
-        subdominios: set[str] = set()
+        # Por subdominio: el certificado MAS RECIENTE visto (segun 'entry_timestamp',
+        # cuando crt.sh lo reporta) para poder enlazar una referencia real y una fecha
+        # de observacion historica concreta, en vez de un enlace generico de busqueda.
+        mas_reciente: dict[str, tuple[str, str | None]] = {}
         for entrada in datos:
             nombres = str(entrada.get("name_value", ""))
+            id_certificado = entrada.get("id")
+            marca_tiempo = entrada.get("entry_timestamp") or entrada.get("not_before")
+            marca_tiempo = str(marca_tiempo) if marca_tiempo else None
+            referencia_cert = f"https://crt.sh/?id={id_certificado}" if id_certificado else None
             for nombre in nombres.splitlines():
                 # Solo quita UN prefijo de comodin literal ('*.'), nunca cualquier
                 # combinacion de '*'/'.' (lstrip() recortaria tambien puntos legitimos
@@ -59,21 +70,39 @@ class AdaptadorCertificateTransparency(AdaptadorFuenteOSINT):
                 # sea en absoluto un subdominio real (ver revision de seguridad). El
                 # propio dominio (sin subdominio) se excluye a proposito: esto busca
                 # SUBdominios, no vuelve a reportar el objetivo que el usuario ya dio.
-                if nombre and nombre != objetivo_bajo and nombre.endswith(f".{objetivo_bajo}"):
-                    subdominios.add(nombre)
+                es_subdominio = (
+                    nombre and nombre != objetivo_bajo and nombre.endswith(f".{objetivo_bajo}")
+                )
+                if not es_subdominio:
+                    continue
+                anterior = mas_reciente.get(nombre)
+                if anterior is None or (marca_tiempo and (anterior[1] or "") < marca_tiempo):
+                    mas_reciente[nombre] = (referencia_cert or url, marca_tiempo)
 
-        if not subdominios:
+        if not mas_reciente:
             return []
 
-        ordenados = sorted(subdominios)[:MAXIMO_SUBDOMINIOS]
+        total_observados = len(mas_reciente)
+        nombres_ordenados = sorted(mas_reciente)[:MAXIMO_SUBDOMINIOS]
+        recortado = total_observados > len(nombres_ordenados)
+        descripcion = (
+            "Nombres observados en certificados TLS emitidos para el dominio (deduplicados). "
+            "No implica que el subdominio este actualmente activo ni accesible."
+        )
+        if recortado:
+            descripcion += (
+                f" Mostrando {len(nombres_ordenados)} de {total_observados} subdominios "
+                "observados en total (limite de evidencias por hallazgo); crt.sh no "
+                "pagina su respuesta, por lo que el resto no se recupero en esta consulta."
+            )
         return [
             HallazgoOSINT(
                 categoria="certificados",
-                titulo=f"{len(ordenados)} subdominio(s) observado(s) en Certificate Transparency",
-                descripcion=(
-                    "Nombres observados en certificados TLS emitidos para el dominio. No "
-                    "implica que el subdominio este actualmente activo ni accesible."
+                titulo=(
+                    f"{len(nombres_ordenados)} subdominio(s) observado(s) en "
+                    "Certificate Transparency"
                 ),
+                descripcion=descripcion,
                 nivel_confianza="probable",
                 indicador_exposicion=(
                     "Revisa si alguno de estos subdominios expone un servicio que no deberia "
@@ -81,9 +110,13 @@ class AdaptadorCertificateTransparency(AdaptadorFuenteOSINT):
                 ),
                 evidencias=tuple(
                     EvidenciaOSINT(
-                        fuente="certificados", fecha_consulta=fecha, referencia=url, valor=s
+                        fuente="certificados",
+                        fecha_consulta=fecha,
+                        referencia=mas_reciente[nombre][0],
+                        valor=nombre,
+                        fecha_observada=mas_reciente[nombre][1],
                     )
-                    for s in ordenados
+                    for nombre in nombres_ordenados
                 ),
             )
         ]

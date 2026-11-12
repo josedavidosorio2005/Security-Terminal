@@ -17,6 +17,8 @@ from eurabyte_security.integrations.osint.rdap import (
     AdaptadorInfraestructuraIP,
     AdaptadorRDAPDominio,
 )
+from eurabyte_security.integrations.osint.telefono_metadatos import AdaptadorMetadatosTelefono
+from eurabyte_security.integrations.osint.twilio_lookup import AdaptadorTwilioLookup
 from eurabyte_security.integrations.osint.urlscan import AdaptadorUrlscan
 from eurabyte_security.integrations.osint.virustotal import AdaptadorVirusTotal
 
@@ -29,6 +31,8 @@ FUENTES_OSINT: dict[str, AdaptadorFuenteOSINT] = {
     "urlscan_historial": AdaptadorUrlscan(),
     "hibp": AdaptadorHIBP(),
     "virustotal": AdaptadorVirusTotal(),
+    "telefono_metadatos": AdaptadorMetadatosTelefono(),
+    "twilio_lookup": AdaptadorTwilioLookup(),
 }
 
 

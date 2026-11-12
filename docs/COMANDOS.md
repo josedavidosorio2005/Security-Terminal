@@ -224,11 +224,13 @@ limitaciones en [docs/OSINT.md](OSINT.md).
 ```bash
 est osint dominio DOMINIO [--proyecto NOMBRE] [--fuentes dns,rdap_dominio,...]
 est osint correo CORREO --autorizo [--proyecto NOMBRE] [--fuentes ...]
-est osint telefono "+573000000000" --autorizo [--region CO] [--proyecto NOMBRE]
+est osint telefono "+573000000000" --autorizo [--region CO] [--proyecto NOMBRE] [--fuentes ...]
 est osint usuario NOMBRE_USUARIO --autorizo [--proyecto NOMBRE] [--fuentes ...]
 est osint fuentes [--tipo dominio|correo|telefono|usuario]
 est osint investigaciones [--proyecto NOMBRE] [--limite 20]
-est osint resultados [--proyecto NOMBRE] [--investigacion ID] [--limite 100]
+est osint resultados [--proyecto NOMBRE] [--investigacion ID] [--limite 100] [--pagina 1]
+est osint resultados --investigacion ID --detallado [--guardar RUTA.txt|RUTA.json]
+est osint resultados --investigacion ID --solo-urls [--guardar RUTA.txt|RUTA.json]
 est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar] [--salida RUTA]
 est osint eliminar INVESTIGACION_ID --confirmar
 est osint purgar [--dias 90] --confirmar
@@ -236,14 +238,14 @@ est osint purgar [--dias 90] --confirmar
 
 | Comando | Descripcion |
 |---|---|
-| `est osint dominio` | DNS publico, RDAP, infraestructura IP, Certificate Transparency y urlscan.io. |
+| `est osint dominio` | DNS publico, RDAP, infraestructura IP (con ASN via Team Cymru), Certificate Transparency y urlscan.io. |
 | `est osint correo` | Sintaxis del correo, MX/SPF/DMARC de su dominio y brechas conocidas (si `EST_HIBP_API_KEY` esta configurada). |
-| `est osint telefono` | Normaliza a E.164 y describe region/tipo de numero (sin red, sin afirmar operador). |
+| `est osint telefono` | Metadatos completos de numeracion (`phonenumbers`, sin red) y, si se nombra con `--fuentes twilio_lookup`, validacion de pago contra Twilio Lookup v2. |
 | `est osint usuario` | Coincidencias de nombre de usuario en perfiles publicos (GitHub, GitLab). |
 | `est osint fuentes` | Lista el catalogo de fuentes y si cada una esta configurada. |
 | `est osint investigaciones` | Lista las investigaciones guardadas de un proyecto. |
-| `est osint resultados` | Muestra los hallazgos guardados (de un proyecto o de una investigacion). |
-| `est osint reporte` | Genera el informe (HTML/JSON) de una investigacion; `--minimizar` enmascara el objetivo. |
+| `est osint resultados` | Tabla resumen (paginada); `--detallado` muestra cada hallazgo completo con todas sus evidencias; `--solo-urls` lista solo las URL observadas y guardadas, sin duplicados; `--guardar` exporta a TXT/JSON. |
+| `est osint reporte` | Genera el informe (HTML/JSON) de una investigacion, con todas las evidencias y enlaces; `--minimizar` enmascara el objetivo. |
 | `est osint eliminar` | Borra una investigacion y todos sus hallazgos (irreversible; exige `--confirmar`). |
 | `est osint purgar` | Aplica retencion: borra investigaciones mas antiguas que `--dias` (irreversible; exige `--confirmar`). |
 

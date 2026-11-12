@@ -91,9 +91,12 @@ storage/database.py      Tablas `investigaciones_osint` y `hallazgos_osint`.
 | `telefono` | Normalizacion E.164 con `phonenumbers` (libphonenumber). | Si |
 | `usuario` | Caracteres permitidos (letras, numeros, `.`, `-`, `_`; maximo 39). | Si |
 
-`telefono` solo describe region y tipo de numero segun los metadatos publicos de
-numeracion: **nunca afirma que el prefijo identifica con certeza al operador actual**
-(los numeros portados o reasignados pueden no coincidir con esos metadatos).
+`telefono` describe region, tipo de numero, formato E.164/nacional/internacional, zona
+horaria y (si `phonenumbers` lo tiene en su catalogo) una descripcion geografica
+aproximada y un operador sugerido -- este ultimo SIEMPRE en un hallazgo separado con
+nivel de confianza `no_verificado`: **nunca afirma que el prefijo identifica con
+certeza al operador actual** (los numeros portados o reasignados pueden no coincidir
+con esos metadatos), y nunca identifica al titular de la linea.
 
 ## Fuentes incluidas sin configuracion (gratuitas)
 
@@ -104,7 +107,13 @@ numeracion: **nunca afirma que el prefijo identifica con certeza al operador act
 | `infraestructura_ip` | RDAP (ICANN) | `dominio`, `correo` | Red/ASN/organizacion de la primera IP publicada por el dominio. |
 | `certificados` | Certificate Transparency (crt.sh) | `dominio`, `correo` | Subdominios observados en certificados TLS emitidos (pasivo, nunca confirma que esten activos). |
 | `perfiles_publicos` | API publica de GitHub/GitLab | `usuario` | Coincidencia de nombre de usuario (nunca una identidad confirmada). |
-| `urlscan_historial` | Busqueda publica de urlscan.io | `dominio`, `correo` | Escaneos publicos ya existentes del dominio (pasivo, nivel `probable`). |
+| `urlscan_historial` | Busqueda publica de urlscan.io | `dominio`, `correo` | Escaneos publicos ya existentes del dominio (pasivo, nivel `probable`, con paginacion acotada -- ver limitaciones). |
+| `telefono_metadatos` | Catalogo local de `phonenumbers` (libphonenumber) | `telefono` | E.164, formato nacional/internacional, codigo de pais, region, prefijo nacional, posibilidad/validez, tipo de linea, descripcion geografica aproximada y zona(s) horaria(s). Nunca hace una peticion de red. |
+
+`infraestructura_ip` tambien intenta resolver el ASN y la organizacion de la IP via el
+servicio DNS publico y pasivo de Team Cymru (`origin.asn.cymru.com`): si Cymru no
+responde, el resto del hallazgo de infraestructura sigue siendo valido sin esa
+evidencia adicional (nunca bloquea ni falla la investigacion por esto).
 
 Ninguna de estas fuentes necesita credenciales ni suscripcion: `est osint fuentes`
 las muestra siempre como "Disponible".
@@ -120,9 +129,15 @@ decide que proveedor recibe la consulta al configurar (o no) cada variable.
 |---|---|---|---|
 | `hibp` (Have I Been Pwned) | Brechas conocidas de un correo: nombre, fecha y categorias de datos expuestas (nunca contrasenas/hashes). | `EST_HIBP_API_KEY` | https://haveibeenpwned.com/API/v3 |
 | `virustotal` (VirusTotal) | Reputacion de un dominio (motores que lo marcan como malicioso/sospechoso). | `EST_VIRUSTOTAL_API_KEY` | https://docs.virustotal.com/reference/domain-info |
+| `twilio_lookup` (Twilio Lookup v2) | Validacion de un telefono y tipo de linea/operador segun Twilio. **Factura por consulta.** | `EST_TWILIO_ACCOUNT_SID` + `EST_TWILIO_AUTH_TOKEN` | https://www.twilio.com/docs/lookup/v2-api |
 
-Ambas requieren suscripcion/registro propio en el proveedor correspondiente: AST nunca
-incluye una clave propia ni comparte una clave entre usuarios.
+`hibp` y `virustotal` requieren suscripcion/registro propio en el proveedor
+correspondiente: AST nunca incluye una clave propia ni comparte una clave entre
+usuarios. `twilio_lookup` ademas **nunca se ejecuta automaticamente aunque este
+configurada**: al facturar por consulta, exige nombrarla explicitamente cada vez con
+`--fuentes twilio_lookup` (`AdaptadorFuenteOSINT.requiere_seleccion_explicita`, ver
+`modules/osint/motor.py`); la CLI muestra un aviso de costo potencial antes de
+ejecutarla.
 
 ## Lo que este modulo NO hace
 
@@ -165,17 +180,43 @@ casilla equivalente en la pestana "Informe" de la interfaz visual) las aplica al
 generar el informe de esa investigacion; un dominio nunca se minimiza (se trata como
 informacion corporativa, no personal).
 
+## Resultados detallados desde la CLI
+
+`est osint resultados --investigacion ID [--limite N] [--pagina N]` muestra una tabla
+resumen (paginada con `--limite`/`--pagina` si hay mas hallazgos de los que caben en
+una pagina). Dos modos adicionales, pensados para no perder ninguna evidencia:
+
+- `--detallado`: un panel Rich por hallazgo con su descripcion integra, indicador de
+  exposicion, nivel de confianza, **estado de verificacion** (una frase que explica que
+  implica "confirmado"/"probable"/"no_verificado") y la tabla completa de evidencias
+  (fuente, fecha de consulta, fecha observada por la fuente si es distinta, valor y
+  referencia/URL).
+- `--solo-urls`: lista, una por linea y sin duplicados, unicamente las URL
+  REALMENTE observadas y guardadas (nunca convierte un subdominio o un metadato en una
+  URL inventada).
+
+Ambos modos admiten `--guardar RUTA.txt` o `--guardar RUTA.json` para exportar la
+salida completa (con todas las evidencias) a un archivo, sin necesidad de generar el
+informe completo.
+
 ## Informe (HTML/JSON)
 
 `est osint reporte INVESTIGACION_ID [--formato html|json] [--minimizar] [--salida RUTA]`
 genera el informe de UNA investigacion OSINT concreta -- siempre separado del informe
 global de hallazgos tecnicos (`est reporte generar`), nunca mezclado. Contiene: tipo de
 objetivo, objetivo (saneado o minimizado), estado de autorizacion sobre datos
-personales, fuentes utilizadas, resumen ejecutivo (total de hallazgos e indicadores de
-exposicion), cada hallazgo verificado con su nivel de confianza y evidencia,
-recomendaciones generales (segun las categorias de hallazgos presentes), limitaciones
-de la investigacion y una nota metodologica. Reutiliza el mismo esqueleto HTML/CSS que
-el resto de informes de AST (`modules/reporting/generador.py`), sin duplicarlo.
+personales, **fuentes consultadas con su estado real** (completada/omitida/fallida/
+cancelada, nunca "sin informacion" cuando en realidad una fuente fallo o no estaba
+configurada), totales de hallazgos por categoria, resumen ejecutivo, cada hallazgo
+verificado con su descripcion completa, TODAS sus evidencias (URL como enlaces reales
+y seguros -- solo `http`/`https`, cualquier otro esquema se escapa como texto plano,
+nunca como enlace clicable -- y la fecha en que la fuente observo el dato frente a
+cuando AST la consulto), su estado de verificacion, recomendaciones generales (segun
+las categorias de hallazgos presentes), limitaciones de la investigacion y una nota
+metodologica. Reutiliza el mismo esqueleto HTML/CSS que el resto de informes de AST
+(`modules/reporting/generador.py`), sin duplicarlo. El JSON conserva la misma
+informacion de forma estructurada (incluye `fuentes_consultadas`,
+`totales_por_categoria` y `estado_verificacion` por hallazgo).
 
 ## Interfaz visual
 
@@ -206,3 +247,14 @@ el hilo principal de Textual.
 - Las recomendaciones del informe son generales por categoria de hallazgo (no una
   recomendacion tecnica individual por cada uno): sirven como punto de partida, no
   como un analisis de riesgo completo.
+- `certificados` (Certificate Transparency) reporta hasta 500 subdominios por
+  investigacion; `urlscan_historial` recorre hasta 3 paginas de 100 resultados (300 en
+  total). crt.sh no pagina su respuesta (la devuelve completa en una sola peticion), asi
+  que su limite es solo sobre cuantos se MUESTRAN; si alguno de los dos recorta
+  resultados, el propio hallazgo lo dice explicitamente (nunca en silencio).
+- El operador sugerido por `telefono_metadatos`/`twilio_lookup` depende de que la
+  biblioteca o el proveedor tengan ese bloque numerico en su catalogo: para muchos
+  numeros simplemente no hay dato (no se inventa uno).
+- El ASN de `infraestructura_ip` depende de que Team Cymru tenga esa IP en su tabla de
+  rutas BGP en el momento de la consulta; si no, el resto del hallazgo de
+  infraestructura sigue siendo valido sin esa evidencia.
