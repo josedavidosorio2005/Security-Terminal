@@ -22,13 +22,60 @@ import socket
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+import dns.exception
+import dns.resolver
+
 from eurabyte_security.core.errores import ErrorFuenteOSINTError, ErrorFuenteOSINTNoDisponible
 from eurabyte_security.integrations.osint.base import AdaptadorFuenteOSINT
 from eurabyte_security.integrations.osint.cliente_http import peticion_json
 from eurabyte_security.modules.osint.modelos import EvidenciaOSINT, HallazgoOSINT
 
 URL_DOCUMENTACION_RDAP = "https://www.icann.org/rdap"
+URL_DOCUMENTACION_CYMRU = "https://team-cymru.com/community-services/ip-asn-mapping/"
 _BASE_RDAP = "https://rdap.org"
+
+
+def _consultar_asn_por_ip(ip: str, tiempo_limite: float) -> dict[str, str] | None:
+    """Resuelve el ASN y la organizacion de una IPv4 via el servicio DNS publico y
+    pasivo de Team Cymru (``origin.asn.cymru.com``): NUNCA se conecta a la IP en si,
+    solo lee la tabla de rutas BGP que Cymru publica por DNS, el mismo mecanismo
+    documentado que usan herramientas como 'whois -h whois.cymru.com'. Devuelve
+    ``None`` (nunca lanza) si el ASN no se pudo resolver: es informacion adicional, no
+    critica para el resto del hallazgo de infraestructura."""
+    try:
+        octetos = str(ipaddress.IPv4Address(ip)).split(".")
+    except ValueError:
+        return None
+
+    resolver = dns.resolver.Resolver()
+    resolver.timeout = tiempo_limite
+    resolver.lifetime = tiempo_limite
+    consulta_origen = f"{'.'.join(reversed(octetos))}.origin.asn.cymru.com"
+    try:
+        respuesta = resolver.resolve(consulta_origen, "TXT")
+    except (dns.exception.DNSException, OSError):
+        return None
+
+    registro = next(iter(respuesta), None)
+    if registro is None:
+        return None
+    partes = [p.strip() for p in registro.to_text().strip('"').split("|")]
+    if len(partes) < 4:
+        return None
+    asn = partes[0].split()[0]  # puede listar varios ASN separados por espacio
+    resultado = {"asn": asn, "prefijo_bgp": partes[1], "pais": partes[2], "registro": partes[3]}
+
+    try:
+        respuesta_nombre = resolver.resolve(f"AS{asn}.asn.cymru.com", "TXT")
+        registro_nombre = next(iter(respuesta_nombre), None)
+        if registro_nombre is not None:
+            partes_nombre = [p.strip() for p in registro_nombre.to_text().strip('"').split("|")]
+            if len(partes_nombre) >= 5 and partes_nombre[4]:
+                resultado["organizacion"] = partes_nombre[4]
+    except (dns.exception.DNSException, OSError):
+        pass  # el ASN numerico ya es util sin el nombre de la organizacion
+
+    return resultado
 
 
 def _ahora() -> str:
@@ -176,6 +223,37 @@ class AdaptadorInfraestructuraIP(AdaptadorFuenteOSINT):
         if organizacion:
             descripcion += f" Organizacion: {organizacion}."
 
+        evidencias = [
+            EvidenciaOSINT(
+                fuente="infraestructura_ip", fecha_consulta=fecha, referencia=url, valor=ip
+            )
+        ]
+
+        # El ASN es informacion ADICIONAL: si Cymru no responde (red, timeout...) el
+        # hallazgo de infraestructura RDAP sigue siendo valido sin el (ver
+        # '_consultar_asn_por_ip', que nunca lanza).
+        if debe_cancelar is None or not debe_cancelar():
+            asn_info = _consultar_asn_por_ip(ip, tiempo_limite)
+            if asn_info is not None:
+                asn = asn_info["asn"]
+                descripcion += f" ASN: AS{asn}"
+                if asn_info.get("organizacion"):
+                    descripcion += f" ({asn_info['organizacion']})"
+                descripcion += "."
+                organizacion_asn = asn_info.get("organizacion", "sin nombre publicado")
+                valor_asn = (
+                    f"ASN: AS{asn} ({organizacion_asn}) - prefijo BGP "
+                    f"{asn_info['prefijo_bgp']} - registro {asn_info['registro']}"
+                )
+                evidencias.append(
+                    EvidenciaOSINT(
+                        fuente="infraestructura_ip",
+                        fecha_consulta=fecha,
+                        referencia=URL_DOCUMENTACION_CYMRU,
+                        valor=valor_asn,
+                    )
+                )
+
         return [
             HallazgoOSINT(
                 categoria="infraestructura",
@@ -183,10 +261,6 @@ class AdaptadorInfraestructuraIP(AdaptadorFuenteOSINT):
                 descripcion=descripcion,
                 nivel_confianza="confirmado",
                 indicador_exposicion=None,
-                evidencias=(
-                    EvidenciaOSINT(
-                        fuente="infraestructura_ip", fecha_consulta=fecha, referencia=url, valor=ip
-                    ),
-                ),
+                evidencias=tuple(evidencias),
             )
         ]

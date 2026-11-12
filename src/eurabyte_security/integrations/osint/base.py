@@ -37,6 +37,17 @@ class AdaptadorFuenteOSINT(ABC):
     # recibir ``objetivo_saneado`` sin derivar nada (ver modules/osint/motor.py).
     requiere_objetivo_original: bool = False
 
+    # Una fuente gratuita (DNS, RDAP, Certificate Transparency...) o con suscripcion
+    # fija (HIBP, VirusTotal) se consulta automaticamente en cuanto esta configurada,
+    # junto con el resto de fuentes aplicables, si el usuario no eligio un subconjunto
+    # explicito con '--fuentes'. Una fuente que factura POR CONSULTA (p. ej. Twilio
+    # Lookup) nunca debe ejecutarse solo porque sus credenciales esten presentes: debe
+    # fijar esto en ``True`` para quedar excluida del conjunto por defecto y exigir que
+    # el usuario la nombre explicitamente cada vez (ver modules/osint/motor.py y
+    # seccion 4 de la especificacion de metadatos telefonicos, "no hagas consultas de
+    # pago por defecto").
+    requiere_seleccion_explicita: bool = False
+
     def configurada(self) -> bool:
         """``True`` si la fuente puede usarse ya mismo (gratuita, o con su clave presente)."""
         if not self.requiere_clave:

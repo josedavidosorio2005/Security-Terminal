@@ -27,12 +27,21 @@ NIVELES_CONFIANZA_OSINT: frozenset[str] = frozenset({"confirmado", "probable", "
 
 @dataclass(frozen=True, slots=True)
 class EvidenciaOSINT:
-    """Un dato concreto, ya saneado, observado en una fuente, con su procedencia."""
+    """Un dato concreto, ya saneado, observado en una fuente, con su procedencia.
+
+    ``fecha_consulta`` es SIEMPRE cuando AST consulto la fuente (momento de la
+    investigacion). ``fecha_observada`` es la fecha que la propia fuente le atribuye al
+    dato en si -- p. ej. cuando crt.sh registro un certificado, o cuando urlscan.io
+    escaneo una pagina -- que casi siempre es anterior a ``fecha_consulta`` y que una
+    fuente puramente local (sin consulta de red, p. ej. metadatos de numeracion
+    telefonica) no tiene: ``None`` cuando la fuente no distingue ambos momentos.
+    """
 
     fuente: str
     fecha_consulta: str  # ISO-8601 (UTC)
     referencia: str | None  # URL de la fuente/documentacion oficial, si existe
     valor: str
+    fecha_observada: str | None = None  # fecha historica que reporta la propia fuente
 
     def como_dict(self) -> dict[str, str | None]:
         return {
@@ -40,6 +49,7 @@ class EvidenciaOSINT:
             "fecha_consulta": self.fecha_consulta,
             "referencia": self.referencia,
             "valor": self.valor,
+            "fecha_observada": self.fecha_observada,
         }
 
     @staticmethod
@@ -49,6 +59,7 @@ class EvidenciaOSINT:
             fecha_consulta=datos["fecha_consulta"],
             referencia=datos.get("referencia"),
             valor=datos["valor"],
+            fecha_observada=datos.get("fecha_observada"),
         )
 
 

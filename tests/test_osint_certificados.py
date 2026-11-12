@@ -44,12 +44,52 @@ def test_respuesta_malformada_lanza_error(monkeypatch):
 
 
 def test_limite_de_subdominios_respetado(monkeypatch):
-    entradas = [{"name_value": f"host{i}.ejemplo.com"} for i in range(80)]
+    total = certificados.MAXIMO_SUBDOMINIOS + 50
+    entradas = [{"name_value": f"host{i}.ejemplo.com"} for i in range(total)]
     monkeypatch.setattr(certificados, "peticion_json", lambda *_a, **_k: entradas)
     hallazgos = certificados.AdaptadorCertificateTransparency().investigar(
         "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
     )
     assert len(hallazgos[0].evidencias) == certificados.MAXIMO_SUBDOMINIOS
+    # El recorte se documenta en la descripcion, nunca se oculta (seccion 2 de la
+    # especificacion de evidencia completa: "documenta limites y resultados no
+    # recuperados").
+    assert str(total) in hallazgos[0].descripcion
+    assert str(certificados.MAXIMO_SUBDOMINIOS) in hallazgos[0].descripcion
+
+
+def test_referencia_usa_el_id_real_del_certificado(monkeypatch):
+    monkeypatch.setattr(
+        certificados,
+        "peticion_json",
+        lambda *_a, **_k: [
+            {
+                "name_value": "www.ejemplo.com",
+                "id": 123456,
+                "entry_timestamp": "2025-03-01T10:00:00",
+            }
+        ],
+    )
+    hallazgos = certificados.AdaptadorCertificateTransparency().investigar(
+        "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
+    )
+    evidencia = hallazgos[0].evidencias[0]
+    assert evidencia.referencia == "https://crt.sh/?id=123456"
+    assert evidencia.fecha_observada == "2025-03-01T10:00:00"
+
+
+def test_referencia_cae_a_la_url_de_busqueda_sin_id_de_certificado(monkeypatch):
+    monkeypatch.setattr(
+        certificados,
+        "peticion_json",
+        lambda *_a, **_k: [{"name_value": "www.ejemplo.com"}],
+    )
+    hallazgos = certificados.AdaptadorCertificateTransparency().investigar(
+        "ejemplo.com", tipo_objetivo="dominio", tiempo_limite=5.0, debe_cancelar=None
+    )
+    evidencia = hallazgos[0].evidencias[0]
+    assert evidencia.referencia == "https://crt.sh/?q=%25.ejemplo.com&output=json"
+    assert evidencia.fecha_observada is None
 
 
 def test_dominio_no_relacionado_con_sufijo_coincidente_se_descarta(monkeypatch):
