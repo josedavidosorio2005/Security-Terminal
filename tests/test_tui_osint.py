@@ -67,6 +67,29 @@ def _resultado_falso(investigacion_id=1, estado_general="completada", limitacion
     )
 
 
+def _resultado_persistido(
+    base_datos, proyecto, tipo, objetivo, estado_general="completada", etapas=()
+):
+    """Como ``_resultado_falso``, pero crea de verdad la fila en
+    ``investigaciones_osint`` -- el motor real siempre persiste antes de devolver su
+    resultado, y ``PanelOSINT._mostrar_resultado`` vuelve a leer de la base de datos
+    (en vez de confiar ciegamente en el objeto en memoria) para mostrar exactamente lo
+    guardado y para poder recuperar la misma investigacion mas tarde desde el
+    historial. Un doble que no persiste nada no refleja ese comportamiento real. Las
+    ``etapas`` deben coincidir con las que el doble haya reportado por
+    ``callback_progreso``: el motor real persiste esa misma lista antes de devolver el
+    resultado (ver ``modulo/osint/motor.py``), asi que la tabla de etapas que ya se
+    poblo en vivo durante la ejecucion no debe quedar vacia al recargar desde la base
+    de datos al terminar."""
+    investigacion = base_datos.crear_investigacion_osint(
+        proyecto.id, tipo, objetivo, objetivo, False, []
+    )
+    base_datos.actualizar_investigacion_osint(
+        investigacion.id, estado_general=estado_general, etapas=list(etapas), limitaciones=[]
+    )
+    return _resultado_falso(investigacion_id=investigacion.id, estado_general=estado_general)
+
+
 async def test_panel_osint_requiere_objetivo():
     app = AuraByteApp()
     async with app.run_test(size=TAMANO) as pilot:
@@ -104,12 +127,10 @@ async def test_panel_osint_correo_sin_autorizar_muestra_aviso():
 async def test_panel_osint_dominio_no_requiere_autorizacion_y_ejecuta(monkeypatch):
     def _fake(base_datos, proyecto, tipo, objetivo, **kwargs):
         progreso = kwargs.get("callback_progreso")
+        etapa = {"fuente": "dns", "estado": "completada", "detalle": "1 hallazgo(s)."}
         if progreso is not None:
-            etapa = types.SimpleNamespace(
-                fuente="dns", estado="completada", detalle="1 hallazgo(s)."
-            )
-            progreso(etapa)
-        return _resultado_falso()
+            progreso(types.SimpleNamespace(**etapa))
+        return _resultado_persistido(base_datos, proyecto, tipo, objetivo, etapas=[etapa])
 
     monkeypatch.setattr(modulo_paneles, "ejecutar_investigacion_osint", _fake)
 
@@ -159,7 +180,7 @@ async def test_panel_osint_cancelar_detiene_la_investigacion(monkeypatch):
         await pilot.pause()
 
         mensaje = str(app.query_one("#osint-mensaje").render()).lower()
-        assert "cancelacion" in mensaje
+        assert "cancelada" in mensaje
 
 
 async def test_panel_osint_error_inesperado_no_cierra_la_interfaz(monkeypatch):
@@ -229,7 +250,7 @@ async def test_panel_osint_generar_informe_sin_investigacion_muestra_aviso():
 
 async def test_panel_osint_generar_informe_genera_archivo(monkeypatch, tmp_path):
     def _fake(base_datos, proyecto, tipo, objetivo, **kwargs):
-        return _resultado_falso()
+        return _resultado_persistido(base_datos, proyecto, tipo, objetivo)
 
     def _fake_reporte(
         base_datos, proyecto, investigacion_id, formato, *, minimizar=False, salida=None

@@ -260,3 +260,140 @@ TabbedContent Tab.-active {
     color: $ast-borde;
     text-style: bold;
 }
+
+/* ---- Panel OSINT: encabezado compacto + formulario fijo + resultados con scroll ----
+   PanelOSINT ya no es el contenedor que se desplaza (a diferencia de los demas
+   paneles con formulario): solo #osint-resultados tiene scroll propio, para que
+   "Investigar"/"Cancelar" nunca queden fuera de pantalla al revisar hallazgos
+   extensos (ver docs/INTERFAZ.md y la seccion 2 de la especificacion del rediseno). */
+PanelOSINT {
+    height: 1fr;
+}
+
+#osint-encabezado {
+    height: auto;
+}
+
+#osint-encabezado > * {
+    width: auto;
+    margin-right: 2;
+}
+
+/* Limite defensivo: si el nombre del proyecto fuera inusualmente largo, se recorta
+   aqui en vez de seguir creciendo y empujar '#osint-estado' fuera de la pantalla. */
+#osint-proyecto {
+    max-width: 28;
+}
+
+/* En paneles angostos (ver ANCHO_COMPACTO_OSINT), titulo+proyecto+estado ya no caben
+   en una sola fila y el estado (el dato mas importante para saber que esta pasando)
+   quedaba empujado fuera del panel sin que nada avisara del recorte. Se oculta el
+   nombre del proyecto -- visible en la barra lateral -- para que el estado siempre
+   quede dentro del area visible, igual que '#encabezado.compacto' oculta version/so. */
+#osint-encabezado.compacto #osint-proyecto {
+    display: none;
+}
+
+.osint-titulo {
+    text-style: bold;
+    color: $ast-borde;
+}
+
+/* Sin padding-bottom/margin-bottom (solo el borde como separador): en terminales
+   bajos (80x24, 100x30) cada fila que se le agrega a este formulario fijo le resta
+   altura a #osint-resultados, que ya recorta su propio contenido con scroll propio. */
+#osint-formulario {
+    height: auto;
+    border-bottom: solid $ast-borde;
+}
+
+/* Los Collapsible de Ayuda y de Fuentes viven dentro del formulario fijo: su borde
+   superior y su padding inferior (del DEFAULT_CSS de Textual) suman 2 filas extra
+   por cada uno aunque esten colapsados, lo que en 80x24/100x30 era la diferencia
+   entre que #osint-resultados tuviera una altura usable o quedara en 1 fila. */
+#osint-ayuda,
+#osint-fuentes-colapsable {
+    border-top: none;
+    padding-bottom: 0;
+}
+
+/* El 'Contents' interno de un Collapsible expandido suma 1 fila de padding superior
+   por defecto (ver DEFAULT_CSS de Textual): otra fila que, sumada al resto, le
+   faltaba a #osint-resultados cuando el usuario expandia "Fuentes a consultar". */
+#osint-ayuda > Contents,
+#osint-fuentes-colapsable > Contents {
+    padding: 0 0 0 1;
+}
+
+#osint-resultados {
+    height: 1fr;
+}
+
+/* Sin esto, TabbedContent/TabPane se quedan en su altura 'auto' (la minima para su
+   contenido) y dejan un hueco vacio hasta el borde de #osint-resultados en vez de
+   ocupar el espacio restante: cada tabla de hallazgos debe aprovechar toda la zona de
+   resultados, con su propio scroll interno si el contenido es mas largo. */
+#osint-tabs,
+#osint-tabs TabPane {
+    height: 1fr;
+}
+
+/* Cada pestana necesita su propio scroll independiente: en terminales bajos (o en
+   modo compacto, donde "Fuentes a consultar" o la fila de Informe se apilan en
+   vertical) su contenido puede superar la altura fija de 1fr sin que el scroll de
+   #osint-resultados (que envuelve a todo #osint-tabs) lo revele, dejando el boton
+   "Generar informe" o filas finales de una tabla inaccesibles ni por scroll ni por
+   teclado. */
+#osint-tabs TabPane {
+    overflow-y: auto;
+}
+
+#osint-tabs DataTable {
+    height: 1fr;
+    min-height: 5;
+}
+
+/* Una fila de controles (tipo+objetivo, botones, historial, informe): horizontal por
+   defecto; '.compacta' la apila verticalmente en terminales angostas
+   (PanelOSINT._ajustar_responsivo) para que ningun campo quede recortado. */
+.osint-fila {
+    height: auto;
+}
+
+.osint-fila.compacta {
+    layout: vertical;
+    height: auto;
+}
+
+.osint-fila.compacta > * {
+    width: 1fr;
+    margin-bottom: 0;
+}
+
+#osint-region,
+#osint-autorizo {
+    margin-top: 1;
+}
+
+/* Mismo bug que #encabezado > * (ver comentario arriba): sin 'width: auto' explicito,
+   el Static de la etiqueta "Investigacion guardada:" reclama casi todo el ancho de su
+   fila horizontal y deja el Select de historial reducido a 1 columna (inutilizable). */
+#osint-fila-historial > Static {
+    width: auto;
+    margin-right: 1;
+}
+
+#osint-cargando {
+    width: 5;
+    height: 1;
+}
+
+/* Un objetivo puede tener bastantes fuentes aplicables (hasta 6-8): sin un tope bajo,
+   expandir "Fuentes a consultar" en una terminal de 24-30 filas por si solo llegaba a
+   consumir toda la altura del formulario y dejaba #osint-resultados en 1 fila (igual
+   que el bug original, pero disparado por esta interaccion normal del usuario en vez
+   de por el formulario en reposo). La lista sigue siendo scrollable por su cuenta. */
+#osint-fuentes {
+    height: auto;
+    max-height: 4;
+}

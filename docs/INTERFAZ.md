@@ -47,7 +47,7 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
 | OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
-| OSINT | Implementada | Investigacion de fuentes publicas (dominio, correo, telefono, usuario), con pestanas de Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe y boton de cancelar. Ver [docs/OSINT.md](OSINT.md). |
+| OSINT | Implementada | Investigacion de fuentes publicas (dominio, correo, telefono, usuario), con formulario fijo y resultados con scroll propio, pestanas de Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe, recuperacion de investigaciones guardadas desde el propio panel, y boton de cancelar. Ver [docs/OSINT.md](OSINT.md). |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
 | Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
@@ -198,19 +198,34 @@ fuentes publicas ya documentadas (DNS, RDAP, Certificate Transparency, APIs publ
 GitHub/GitLab/urlscan.io y, si estan configuradas, Have I Been Pwned/VirusTotal). Detalle
 completo de cada fuente y sus limitaciones en [docs/OSINT.md](OSINT.md).
 
-Elige el tipo de objetivo, escribe el objetivo, y si es correo/telefono/usuario marca
-**"Confirmo que el objetivo es propio o su revision esta autorizada"** -- el boton
-"Iniciar investigacion" rechaza continuar sin esa confirmacion para esos tipos (un
-dominio se trata como informacion corporativa y no la exige). La seccion plegable
-"Fuentes a consultar" se repuebla segun el tipo elegido; si no marcas ninguna, se
-consultan todas las aplicables. "Cancelar" detiene la investigacion de verdad: la
-fuente en curso en ese momento no persiste nada, las ya completadas se conservan.
+El formulario (tipo, objetivo, campos condicionales, fuentes, botones) queda siempre
+visible encima de los resultados, que tienen su propio scroll independiente: revisar
+una pestana con hallazgos extensos nunca empuja "Investigar"/"Cancelar" fuera de
+pantalla. En terminales angostas las filas se apilan en vertical (sin recortar ningun
+texto) y el encabezado oculta el nombre del proyecto activo para que el indicador de
+estado ("Sin investigacion", "Investigando...", "Completada", "Cancelada", "Error" --
+nunca una barra de progreso inventada) siempre sea visible.
+
+Elige el tipo de objetivo, escribe el objetivo (el campo de region ISO solo aparece
+para telefono), y si es correo/telefono/usuario marca **"Confirmo que el objetivo es
+propio o su revision esta autorizada"** -- el boton **"Investigar"** rechaza continuar
+sin esa confirmacion para esos tipos (un dominio se trata como informacion corporativa
+y no la exige). La seccion plegable "Fuentes a consultar" se repuebla segun el tipo
+elegido; si no marcas ninguna, se consultan todas las aplicables. "Cancelar" detiene la
+investigacion de verdad: la fuente en curso en ese momento no persiste nada, las ya
+completadas se conservan.
+
+En la pestana **Resumen**, el selector **"Investigacion guardada"** permite recuperar
+cualquier investigacion anterior del proyecto activo (hallazgos, etapas y resumen) sin
+volver a ejecutar nada y sin salir a la CLI -- "Investigacion actual" vuelve a la que se
+acaba de ejecutar en esta sesion.
 
 Los resultados se organizan en pestanas:
 
-- **Resumen**: estado de cada fuente consultada (`pendiente`, `ejecutando`,
-  `completada`, `omitida`, `fallida` o `cancelada` -- nunca un porcentaje inventado) y
-  el resumen final (total de hallazgos, indicadores de exposicion, limitaciones).
+- **Resumen**: selector de investigacion guardada, estado de cada fuente consultada
+  (`pendiente`, `ejecutando`, `completada`, `omitida`, `fallida` o `cancelada` -- nunca
+  un porcentaje inventado) y el resumen final (total de hallazgos, indicadores de
+  exposicion, limitaciones).
 - **Infraestructura**: DNS, RDAP, Certificate Transparency e historial de escaneos.
 - **Perfiles publicos**: coincidencias de nombre de usuario (GitHub, GitLab) -- nunca
   se presentan como una identidad confirmada.

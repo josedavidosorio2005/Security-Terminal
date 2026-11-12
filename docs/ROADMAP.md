@@ -680,11 +680,65 @@ docs/OSINT.md).
       una fuente OSINT real.
 - [x] CI verificado en Windows y Linux.
 
-**Limitaciones conocidas**: el panel no incluye un selector para ver investigaciones
-anteriores guardadas (siempre muestra la que se acaba de ejecutar); para consultar el
-historial completo se usa `est osint investigaciones`/`est osint resultados`. Queda
-para una iteracion futura si se necesita ese historial tambien desde la interfaz
-visual.
+**Limitaciones conocidas (PR C)**: el panel no incluye un selector para ver
+investigaciones anteriores guardadas (siempre muestra la que se acaba de ejecutar);
+para consultar el historial completo se usa `est osint investigaciones`/
+`est osint resultados`. Cerrada en el rediseno siguiente (ver abajo).
+
+### Rediseno responsivo del panel OSINT (correccion funcional, no solo cosmetica)
+
+Diagnostico y correccion de bugs reales de layout en `PanelOSINT` (medidos de forma
+empirica con `Widget.region`, no solo verificando que un control existiera), mas la
+funcionalidad que quedaba pendiente de PR C:
+
+- [x] Formulario fijo (`#osint-formulario`) separado del area de resultados con scroll
+      propio (`#osint-resultados`): "Investigar"/"Cancelar" ya no pueden quedar fuera
+      de pantalla al revisar hallazgos extensos.
+- [x] Bug real corregido: en 80x24/100x30 el formulario fijo (filas del tipo+objetivo,
+      acciones, mas el borde/padding/margen de cada `Collapsible`) llegaba a consumir
+      mas altura que el propio panel, dejando `#osint-tabs` en 1 sola fila
+      (practicamente inutilizable). Se recorto el "peso" en filas de los Collapsible de
+      Ayuda/Fuentes (sin su borde y padding por defecto) y se le puso un tope bajo
+      (`max-height: 4`) a la lista de fuentes para que expandirla no vuelva a repetir
+      el mismo problema.
+- [x] Bug real corregido: sin un proyecto activo, la etiqueta de proyecto en el
+      encabezado mostraba el mensaje completo de la CLI ("No hay un proyecto activo.
+      Usa --proyecto NOMBRE...", 92 columnas) y empujaba el indicador de estado
+      (`#osint-estado`) fuera de la pantalla. Ahora muestra "Sin proyecto activo" y el
+      encabezado oculta el nombre del proyecto en paneles angostos para que el estado
+      siempre quede visible.
+- [x] Bug real corregido: la etiqueta "Investigacion guardada:" (sin `width: auto`)
+      reclamaba casi todo el ancho de su fila y dejaba el selector de historial en 1
+      columna (inutilizable).
+- [x] Bug real corregido: cada `TabPane` tenia una altura fija (`1fr`) sin scroll
+      propio, asi que en modo compacto (Select+Checkbox+Boton apilados en la pestana
+      "Informe") el boton "Generar informe" podia quedar recortado sin ningun aviso ni
+      forma de alcanzarlo. Cada pestana ahora tiene su propio `overflow-y: auto`.
+- [x] Bug real corregido: la fila de la pestana "Informe" (Select+Checkbox+Boton en
+      horizontal) no cabia en 60 columnas porque la casilla "Minimizar objetivo en el
+      informe" era demasiado larga: el Select de formato quedaba comprimido a 1
+      columna y el boton se salia por el borde derecho.
+- [x] Bug real corregido: al completar una investigacion nueva, preseleccionar su id en
+      el selector de historial disparaba el mismo manejador que usa seleccionar una
+      investigacion guardada, pisando el mensaje "Investigacion completada." con
+      "Mostrando la investigacion guardada #N.".
+- [x] Bug real corregido: si la recarga desde la base de datos tras completar una
+      investigacion fallaba (nunca deberia pasar en produccion: el motor persiste
+      antes de devolver su resultado), el panel igual mostraba "Investigacion
+      completada." en vez del error real, y dejaba el id de investigacion actual en
+      `None` sin que "Generar informe" lo reflejara.
+- [x] Mensaje de cancelacion ya no expone el texto crudo de la excepcion del motor
+      (pensado para logs): siempre antepone "Investigacion cancelada: ...".
+- [x] **Funcionalidad nueva que cierra la limitacion de PR C**: selector "Investigacion
+      guardada" (en la pestana Resumen) para recuperar hallazgos de investigaciones
+      anteriores del proyecto activo directamente desde el panel, sin salir a la CLI.
+- [x] 22 pruebas nuevas de Pilot (676 en total) verificando con `Widget.region` que los
+      controles esenciales, el indicador de estado y el selector de historial quedan
+      dentro de pantalla en 80x24/100x30/120x35/160x45, que "Generar informe" es
+      alcanzable con scroll real (no solo existe en el DOM), y un guion de interaccion
+      de 14 pasos (tipos, fuentes, autorizacion, ejecutar, progreso, cancelar,
+      resultados, pestanas, informe, resize en caliente, navegar fuera y volver,
+      recuperar del historial) en 80x24 y 160x45.
 
 ## Fase 4 - Asistente inteligente
 
