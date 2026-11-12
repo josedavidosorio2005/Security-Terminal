@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 from dataclasses import replace
 
-from textual import on, work
+from textual import events, on, work
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
@@ -13,6 +14,7 @@ from textual.widgets import (
     Collapsible,
     DataTable,
     Input,
+    LoadingIndicator,
     Select,
     SelectionList,
     Static,
@@ -40,7 +42,11 @@ from eurabyte_security.commands.web import TIPOS_VALIDOS as TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web
 from eurabyte_security.commands.zap import ejecutar_zap_pasivo
 from eurabyte_security.core.config import directorio_datos, ruta_base_datos, ruta_historial
-from eurabyte_security.core.errores import ErrorEscaneoCancelado, ErrorEST
+from eurabyte_security.core.errores import (
+    ErrorEscaneoCancelado,
+    ErrorEST,
+    ErrorInvestigacionOSINTCancelada,
+)
 from eurabyte_security.core.objetivo import interpretar_entrada, resolver_y_autorizar
 from eurabyte_security.core.osint.validacion import (
     requiere_autorizacion_datos_personales,
@@ -49,7 +55,7 @@ from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
 from eurabyte_security.integrations.zap import AdaptadorZAP
-from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII
+from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII, ESCUDO_COMPACTO
 from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
@@ -1689,14 +1695,42 @@ _CATEGORIAS_INFRAESTRUCTURA_OSINT = frozenset(
     {"dns", "rdap", "infraestructura", "certificados", "correo", "historial_escaneos"}
 )
 
+# Estado general de la investigacion mostrado en el indicador fijo del encabezado del
+# panel (ver PanelOSINT._fijar_estado_investigacion): etiqueta + clase de color, nunca
+# un porcentaje inventado -- solo los estados reales que ya reporta el motor OSINT o la
+# propia interaccion del formulario.
+_ESTADOS_INVESTIGACION_OSINT = {
+    "sin_investigacion": ("Sin investigacion", "ast-tenue"),
+    "listo": ("Formulario listo", "ast-tenue"),
+    "ejecutando": ("Investigando...", "ast-aviso"),
+    "completada": ("Completada", "ast-exito"),
+    "cancelada": ("Cancelada", "ast-aviso"),
+    "fallida": ("Error", "ast-error"),
+}
 
-class PanelOSINT(VerticalScroll):
+# Umbral de anchura (columnas disponibles DENTRO del panel) por debajo del cual las
+# filas de controles del formulario OSINT pasan de horizontal a vertical para que
+# ningun campo quede recortado (ver PanelOSINT._ajustar_responsivo). Medido de forma
+# empirica con Textual Pilot (ver tests/test_tui_osint.py): por debajo de ~50 columnas,
+# un Select y un Input compartiendo la fila a partes iguales (ej. 20/20) ya no dejan
+# espacio comodo para la opcion mas larga ("Nombre de usuario"); por encima, repartir
+# el ancho a partes iguales sigue siendo legible sin apilar innecesariamente (lo que
+# apilar de mas sí hace es robar altura a la zona de resultados, ver estilos.tcss).
+ANCHO_COMPACTO_OSINT = 52
+
+
+class PanelOSINT(Vertical):
     """Investigacion de fuentes publicas (OSINT) sobre un objetivo autorizado.
 
     Reutiliza integramente ``modules/osint/motor.py`` (igual que ``PanelReconocimiento``
     reutiliza su propio orquestador): este panel solo construye el formulario, lanza la
     investigacion en un worker y presenta sus hallazgos ya guardados, nunca duplica la
     logica de validacion, autorizacion ni persistencia.
+
+    Tres zonas fijas (ver docs/INTERFAZ.md): un encabezado compacto, un formulario
+    SIEMPRE visible (``#osint-formulario``, nunca dentro del area que se desplaza) y una
+    zona de resultados con su propio scroll independiente (``#osint-resultados``) -- asi
+    "Investigar"/"Cancelar" nunca quedan fuera de pantalla al revisar hallazgos extensos.
     """
 
     _OPCIONES_TIPO = [
@@ -1706,72 +1740,117 @@ class PanelOSINT(VerticalScroll):
         ("Nombre de usuario", "usuario"),
     ]
 
+    _TEXTO_AYUDA = (
+        "Investiga fuentes publicas verificables sobre un dominio, correo, telefono o "
+        "nombre de usuario. Nunca ejecuta un escaneo activo contra el objetivo: solo "
+        "consulta fuentes publicas ya documentadas (DNS, RDAP, Certificate "
+        "Transparency, APIs publicas de GitHub/GitLab/urlscan.io y, si estan "
+        "configuradas, Have I Been Pwned/VirusTotal). Correo, telefono y usuario exigen "
+        "confirmar que el objetivo es propio o su revision esta autorizada; un dominio "
+        "se trata como informacion corporativa y no lo exige."
+    )
+
+    _AVISO_SIN_OBJETIVO = "Escribe un objetivo antes de investigar."
+    _AVISO_SIN_AUTORIZACION = (
+        "Este tipo de objetivo puede exponer datos personales: marca la casilla de "
+        "autorizacion antes de investigar."
+    )
+
+    # Limite generoso pero acotado de hallazgos cargados a la vez en las tablas de la
+    # TUI: una investigacion OSINT real produce decenas de hallazgos, nunca miles (ver
+    # seccion 6 de la especificacion de este rediseno); 500 deja margen de sobra sin
+    # arriesgar un renderizado lento si alguna fuente devolviera un numero inusual.
+    _LIMITE_HALLAZGOS_TUI = 500
+
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._worker = None
         self._secuencia = 0
         self._investigacion_actual_id: int | None = None
         self._hallazgos: list = []
+        self._historial_recien_completado = False
 
     def compose(self):
-        yield Static("OSINT: investigacion de fuentes publicas", classes="titulo-panel")
-        yield Static("", id="osint-proyecto", classes="ast-tenue")
-        yield Static(
-            "Investiga fuentes publicas verificables sobre un dominio, correo, telefono "
-            "o nombre de usuario. Nunca ejecuta un escaneo activo contra el objetivo: solo "
-            "consulta fuentes publicas ya documentadas (DNS, RDAP, Certificate "
-            "Transparency, APIs publicas...). Correo/telefono/usuario exigen confirmar "
-            "que el objetivo es propio o su revision esta autorizada.",
-            classes="ast-caja",
-        )
-        with Horizontal():
-            yield Select(self._OPCIONES_TIPO, value="dominio", allow_blank=False, id="osint-tipo")
-            yield Input(placeholder="Objetivo a investigar", id="osint-objetivo")
-        yield Input(
-            placeholder="Region ISO (opcional, solo para telefono sin '+pais', ej. CO)",
-            id="osint-region",
-        )
-        yield Checkbox(
-            "Confirmo que el objetivo es propio o su revision esta autorizada "
-            "(obligatorio para correo/telefono/usuario)",
-            id="osint-autorizo",
-        )
-        with Collapsible(title="Fuentes a consultar (todas las aplicables si no eliges)"):
-            yield SelectionList(id="osint-fuentes")
-        with Horizontal():
-            yield Button("Iniciar investigacion", id="osint-iniciar", variant="primary")
-            yield Button("Cancelar", id="osint-cancelar")
-        yield Static("", id="osint-mensaje", classes="ast-tenue")
+        with Horizontal(id="osint-encabezado"):
+            yield Static(ESCUDO_COMPACTO, classes="logo")
+            yield Static("Centro OSINT", classes="osint-titulo")
+            yield Static("", id="osint-proyecto", classes="dato ast-tenue")
+            yield Static("Sin investigacion", id="osint-estado", classes="dato ast-tenue")
 
-        with TabbedContent(id="osint-tabs"):
-            with TabPane("Resumen", id="osint-tab-resumen"):
-                yield DataTable(id="osint-tabla-etapas", cursor_type="row")
-                yield Static("", id="osint-resumen", classes="ast-caja")
-            with TabPane("Infraestructura", id="osint-tab-infraestructura"):
-                yield DataTable(id="osint-tabla-infraestructura", cursor_type="row")
-                yield Static("", id="osint-detalle-infraestructura", classes="ast-caja")
-            with TabPane("Perfiles publicos", id="osint-tab-perfiles"):
-                yield DataTable(id="osint-tabla-perfiles", cursor_type="row")
-                yield Static("", id="osint-detalle-perfiles", classes="ast-caja")
-            with TabPane("Exposicion", id="osint-tab-exposicion"):
-                yield DataTable(id="osint-tabla-exposicion", cursor_type="row")
-                yield Static("", id="osint-detalle-exposicion", classes="ast-caja")
-            with TabPane("Fuentes", id="osint-tab-fuentes"):
-                yield DataTable(id="osint-tabla-fuentes", cursor_type="row")
-            with TabPane("Informe", id="osint-tab-informe"):
-                with Horizontal():
-                    yield Select(
-                        [("HTML", "html"), ("JSON", "json")],
-                        value="html",
-                        allow_blank=False,
-                        id="osint-informe-formato",
-                    )
-                    yield Checkbox(
-                        "Minimizar objetivo (correo/telefono/usuario) en el informe",
-                        id="osint-informe-minimizar",
-                    )
-                    yield Button("Generar informe", id="osint-informe-generar", variant="primary")
-                yield Static("", id="osint-informe-mensaje", classes="ast-tenue")
+        with Vertical(id="osint-formulario"):
+            with Collapsible(
+                title="Fuentes publicas, nunca un escaneo activo (Ayuda)",
+                collapsed=True,
+                id="osint-ayuda",
+            ):
+                yield Static(self._TEXTO_AYUDA)
+
+            with Horizontal(id="osint-fila-tipo", classes="osint-fila"):
+                yield Select(
+                    self._OPCIONES_TIPO, value="dominio", allow_blank=False, id="osint-tipo"
+                )
+                yield Input(placeholder="Objetivo a investigar", id="osint-objetivo")
+            yield Input(
+                placeholder="Region ISO (ej. CO) si el numero no incluye '+pais'",
+                id="osint-region",
+            )
+            yield Checkbox(
+                "Confirmo que el objetivo es propio o esta autorizado", id="osint-autorizo"
+            )
+            with Collapsible(
+                title="Fuentes a consultar (todas si no eliges ninguna)",
+                collapsed=True,
+                id="osint-fuentes-colapsable",
+            ):
+                yield SelectionList(id="osint-fuentes")
+
+            with Horizontal(id="osint-fila-acciones", classes="osint-fila"):
+                yield Button("Investigar", id="osint-iniciar", variant="primary")
+                yield Button("Cancelar", id="osint-cancelar", disabled=True)
+                yield LoadingIndicator(id="osint-cargando")
+            yield Static("", id="osint-mensaje", classes="ast-tenue")
+
+        with VerticalScroll(id="osint-resultados"):
+            with TabbedContent(id="osint-tabs"):
+                with TabPane("Resumen", id="osint-tab-resumen"):
+                    with Horizontal(id="osint-fila-historial", classes="osint-fila"):
+                        yield Static("Investigacion guardada:", classes="ast-tenue")
+                        yield Select(
+                            [("Investigacion actual", "actual")],
+                            value="actual",
+                            allow_blank=False,
+                            id="osint-historial",
+                        )
+                    yield DataTable(id="osint-tabla-etapas", cursor_type="row")
+                    yield Static("", id="osint-resumen", classes="ast-caja")
+                with TabPane("Infraestructura", id="osint-tab-infraestructura"):
+                    yield DataTable(id="osint-tabla-infraestructura", cursor_type="row")
+                    yield Static("", id="osint-detalle-infraestructura", classes="ast-caja")
+                with TabPane("Perfiles", id="osint-tab-perfiles"):
+                    yield DataTable(id="osint-tabla-perfiles", cursor_type="row")
+                    yield Static("", id="osint-detalle-perfiles", classes="ast-caja")
+                with TabPane("Exposicion", id="osint-tab-exposicion"):
+                    yield DataTable(id="osint-tabla-exposicion", cursor_type="row")
+                    yield Static("", id="osint-detalle-exposicion", classes="ast-caja")
+                with TabPane("Fuentes", id="osint-tab-fuentes"):
+                    yield DataTable(id="osint-tabla-fuentes", cursor_type="row")
+                with TabPane("Informe", id="osint-tab-informe"):
+                    with Horizontal(id="osint-fila-informe", classes="osint-fila"):
+                        yield Select(
+                            [("HTML", "html"), ("JSON", "json")],
+                            value="html",
+                            allow_blank=False,
+                            id="osint-informe-formato",
+                        )
+                        yield Checkbox(
+                            "Minimizar objetivo", id="osint-informe-minimizar"
+                        )
+                        yield Button(
+                            "Generar informe", id="osint-informe-generar", variant="primary"
+                        )
+                    yield Static("", id="osint-informe-mensaje", classes="ast-tenue")
+
+    # -- Montaje, refresco y adaptacion responsiva -----------------------
 
     def on_mount(self) -> None:
         for id_tabla, columnas in (
@@ -1785,27 +1864,117 @@ class PanelOSINT(VerticalScroll):
             ("osint-tabla-fuentes", ("Id", "Nombre", "Tipos de objetivo", "Estado")),
         ):
             self.query_one(f"#{id_tabla}", DataTable).add_columns(*columnas)
+        self.query_one("#osint-cargando", LoadingIndicator).display = False
         self._repoblar_fuentes()
+        self._actualizar_visibilidad_campos()
         self._refrescar_catalogo_fuentes()
+        self._ajustar_responsivo(self.size.width)
         self.refrescar()
 
+    def on_resize(self, event: events.Resize) -> None:
+        self._ajustar_responsivo(event.size.width)
+
+    def _ajustar_responsivo(self, ancho: int) -> None:
+        """Pasa las filas de controles de horizontal a vertical cuando el ancho
+        disponible DENTRO del panel es pequeno, para que ningun campo quede recortado
+        (ver seccion 4 de la especificacion de este rediseno). El propio ancho del
+        panel ya refleja el espacio real restante tras la barra lateral y el panel
+        contextual (que la app pliega por su cuenta en terminales angostas)."""
+        clase = "osint-fila compacta" if ancho < ANCHO_COMPACTO_OSINT else "osint-fila"
+        for id_fila in (
+            "osint-fila-tipo",
+            "osint-fila-acciones",
+            "osint-fila-historial",
+            "osint-fila-informe",
+        ):
+            try:
+                self.query_one(f"#{id_fila}").set_classes(clase)
+            except Exception:  # noqa: BLE001 - puede no estar montado aun (pestana Informe)
+                pass
+        try:
+            self.query_one("#osint-encabezado").set_classes(
+                "compacto" if ancho < ANCHO_COMPACTO_OSINT else ""
+            )
+        except Exception:  # noqa: BLE001 - puede no estar montado aun
+            pass
+
     def refrescar(self) -> None:
-        self._refrescar_proyecto()
+        proyecto = self._refrescar_proyecto()
+        if proyecto is not None:
+            self._refrescar_historial(proyecto)
 
     def _refrescar_proyecto(self):
         etiqueta = self.query_one("#osint-proyecto", Static)
         try:
             proyecto = resolver_proyecto(obtener_base_datos(), None)
-            etiqueta.update(f"Proyecto activo: {texto_seguro(proyecto.nombre)}")
+            etiqueta.update(f"Proyecto: {texto_seguro(proyecto.nombre)}")
             return proyecto
-        except ErrorEST as exc:
-            etiqueta.update(texto_seguro(exc))
+        except ErrorEST:
+            # El texto completo de la excepcion (pensado para la CLI, con sugerencias
+            # de comandos) es demasiado largo para esta etiqueta de ancho automatico:
+            # sin proyecto activo, "#osint-proyecto" llegaba a medir 92 columnas y
+            # empujaba "#osint-estado" fuera de la pantalla (bug real, detectado con
+            # un proyecto EST_HOME vacio -- el caso de un usuario que recien instala).
+            etiqueta.update("Sin proyecto activo")
             return None
+
+    def _fijar_estado_investigacion(self, estado: str) -> None:
+        etiqueta, clase = _ESTADOS_INVESTIGACION_OSINT.get(
+            estado, _ESTADOS_INVESTIGACION_OSINT["sin_investigacion"]
+        )
+        indicador = self.query_one("#osint-estado", Static)
+        indicador.update(etiqueta)
+        indicador.set_classes(f"dato {clase}")
 
     def _mensaje(self, texto: str, clase: str = "ast-tenue") -> None:
         msg = self.query_one("#osint-mensaje", Static)
         msg.update(texto)
         msg.set_classes(clase)
+
+    def _fijar_ejecutando(self, ejecutando: bool) -> None:
+        self.query_one("#osint-iniciar", Button).disabled = ejecutando
+        self.query_one("#osint-cancelar", Button).disabled = not ejecutando
+        self.query_one("#osint-cargando", LoadingIndicator).display = ejecutando
+
+    # -- Campos segun el tipo de objetivo y aviso dinamico ----------------
+
+    def _actualizar_visibilidad_campos(self) -> None:
+        """Oculta por completo los campos que no aplican al tipo elegido (seccion 2.B
+        de la especificacion): la region telefonica solo tiene sentido para telefono,
+        y la casilla de autorizacion solo para los tipos que pueden exponer datos
+        personales (correo/telefono/usuario); un dominio nunca la necesita."""
+        tipo = str(self.query_one("#osint-tipo", Select).value)
+        self.query_one("#osint-region").display = tipo == "telefono"
+        self.query_one("#osint-autorizo").display = requiere_autorizacion_datos_personales(tipo)
+
+    def _limpiar_aviso_obsoleto(self) -> None:
+        """Si el usuario ya corrigio lo que el aviso mostrado pedia, lo retira (seccion
+        2.B: nunca dejar 'Escribe un objetivo' visible sobre una entrada ya valida)."""
+        msg = self.query_one("#osint-mensaje", Static)
+        if str(msg.content) not in (self._AVISO_SIN_OBJETIVO, self._AVISO_SIN_AUTORIZACION):
+            return
+        tipo = str(self.query_one("#osint-tipo", Select).value)
+        objetivo = self.query_one("#osint-objetivo", Input).value.strip()
+        autorizado = self.query_one("#osint-autorizo", Checkbox).value
+        if not objetivo:
+            return
+        if requiere_autorizacion_datos_personales(tipo) and not autorizado:
+            return
+        self._mensaje("")
+
+    @on(Select.Changed, "#osint-tipo")
+    def _tipo_cambiado(self, _evento: Select.Changed) -> None:
+        self._repoblar_fuentes()
+        self._actualizar_visibilidad_campos()
+        self._limpiar_aviso_obsoleto()
+
+    @on(Input.Changed, "#osint-objetivo")
+    def _objetivo_cambiado(self, _evento: Input.Changed) -> None:
+        self._limpiar_aviso_obsoleto()
+
+    @on(Checkbox.Changed, "#osint-autorizo")
+    def _autorizo_cambiado(self, _evento: Checkbox.Changed) -> None:
+        self._limpiar_aviso_obsoleto()
 
     def _repoblar_fuentes(self) -> None:
         tipo = str(self.query_one("#osint-tipo", Select).value)
@@ -1830,9 +1999,63 @@ class PanelOSINT(VerticalScroll):
                 estado,
             )
 
-    @on(Select.Changed, "#osint-tipo")
-    def _tipo_cambiado(self, _evento: Select.Changed) -> None:
-        self._repoblar_fuentes()
+    # -- Historial de investigaciones guardadas del proyecto --------------
+
+    def _refrescar_historial(self, proyecto) -> None:
+        """Repuebla el selector de investigaciones guardadas: el historial se
+        consulta DESDE OSINT, sin obligar a usar comandos externos (seccion 5)."""
+        selector = self.query_one("#osint-historial", Select)
+        valor_actual = selector.value
+        investigaciones = obtener_base_datos().listar_investigaciones_osint(
+            proyecto.id, limite=50
+        )
+        opciones = [("Investigacion actual", "actual")] + [
+            (
+                f"#{inv.id} {inv.tipo_objetivo}: {inv.objetivo_saneado[:28]} "
+                f"({inv.estado_general}, {inv.creado_en[:10]})",
+                str(inv.id),
+            )
+            for inv in investigaciones
+        ]
+        selector.set_options(opciones)
+        valores_validos = {valor for _etiqueta, valor in opciones}
+        selector.value = valor_actual if valor_actual in valores_validos else "actual"
+
+    def _refrescar_historial_tras_nueva(self, investigacion_id: int) -> None:
+        """Tras completar una investigacion nueva, la deja preseleccionada en el
+        selector de historial (que ``_refrescar_historial`` ya repoblo con ella)."""
+        proyecto = self._refrescar_proyecto()
+        if proyecto is not None:
+            self._refrescar_historial(proyecto)
+        try:
+            # 'Select.Changed' se despacha como mensaje (se procesa en una vuelta
+            # posterior del bucle de eventos, no en esta misma llamada): el flag le
+            # avisa a '_historial_cambiado' que esta preseleccion es automatica, para
+            # que no pise el mensaje de "Investigacion completada." con el generico
+            # de "Mostrando la investigacion guardada #N." cuando de verdad reacciona.
+            self._historial_recien_completado = True
+            self.query_one("#osint-historial", Select).value = str(investigacion_id)
+        except Exception:  # noqa: BLE001 - valor no presente en las opciones; se deja "actual"
+            self._historial_recien_completado = False
+
+    @on(Select.Changed, "#osint-historial")
+    def _historial_cambiado(self, evento: Select.Changed) -> None:
+        recien_completado = self._historial_recien_completado
+        self._historial_recien_completado = False
+        valor = str(evento.value)
+        if valor == "actual":
+            if self._investigacion_actual_id is not None:
+                self._cargar_investigacion(self._investigacion_actual_id)
+            return
+        try:
+            investigacion_id = int(valor)
+        except ValueError:
+            return
+        self._cargar_investigacion(investigacion_id)
+        if not recien_completado:
+            self._mensaje(f"Mostrando la investigacion guardada #{investigacion_id}.", "ast-tenue")
+
+    # -- Ejecucion de una investigacion nueva ------------------------------
 
     @on(Button.Pressed, "#osint-iniciar")
     def _iniciar(self, _evento: Button.Pressed) -> None:
@@ -1844,14 +2067,10 @@ class PanelOSINT(VerticalScroll):
         fuentes_ids = set(self.query_one("#osint-fuentes", SelectionList).selected)
 
         if not objetivo:
-            self._mensaje("Escribe un objetivo antes de iniciar.", "ast-aviso")
+            self._mensaje(self._AVISO_SIN_OBJETIVO, "ast-aviso")
             return
         if requiere_autorizacion_datos_personales(tipo) and not autorizado:
-            self._mensaje(
-                "Este tipo de objetivo puede exponer datos personales: marca la casilla "
-                "de autorizacion antes de iniciar.",
-                "ast-aviso",
-            )
+            self._mensaje(self._AVISO_SIN_AUTORIZACION, "ast-aviso")
             return
 
         self._secuencia += 1
@@ -1861,11 +2080,9 @@ class PanelOSINT(VerticalScroll):
         self.query_one("#osint-tabla-etapas", DataTable).clear()
         self._limpiar_tablas_resultados()
         self.query_one("#osint-resumen", Static).update("")
-
-        self._mensaje(
-            "Ejecutando investigacion OSINT... (puedes cancelar mientras se ejecuta)",
-            "ast-aviso",
-        )
+        self._fijar_ejecutando(True)
+        self._fijar_estado_investigacion("ejecutando")
+        self._mensaje("Investigando... puedes cancelar mientras se ejecuta.", "ast-aviso")
         self._worker = self._ejecutar(
             secuencia,
             tipo,
@@ -1915,52 +2132,73 @@ class PanelOSINT(VerticalScroll):
                 callback_progreso=_progreso,
                 debe_cancelar=lambda: worker.is_cancelled,
             )
+        except ErrorInvestigacionOSINTCancelada as exc:
+            if secuencia == self._secuencia:
+                # El mensaje visible NO es el texto crudo de la excepcion (viene del
+                # motor, pensado para logs, no para el usuario, y no garantiza
+                # mencionar la palabra "cancelacion"): se antepone un mensaje fijo y
+                # claro, igual que hacia la version anterior al pulsar 'Cancelar'.
+                self.app.call_from_thread(
+                    self._finalizar_ejecucion,
+                    "cancelada",
+                    f"Investigacion cancelada: {texto_seguro(exc)}",
+                    "ast-aviso",
+                )
+            return
         except ErrorEST as exc:
-            if not worker.is_cancelled and secuencia == self._secuencia:
-                self.app.call_from_thread(self._mensaje, texto_seguro(exc), "ast-error")
+            if secuencia == self._secuencia:
+                self.app.call_from_thread(
+                    self._finalizar_ejecucion, "fallida", texto_seguro(exc), "ast-error"
+                )
             return
         except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
-            if not worker.is_cancelled and secuencia == self._secuencia:
+            if secuencia == self._secuencia:
                 self.app.call_from_thread(
-                    self._mensaje, f"Error inesperado: {texto_seguro(exc)}", "ast-error"
+                    self._finalizar_ejecucion,
+                    "fallida",
+                    f"Error inesperado: {texto_seguro(exc)}",
+                    "ast-error",
                 )
             return
 
-        if worker.is_cancelled:
-            return
-        self.app.call_from_thread(self._mostrar_resultado, secuencia, resultado)
+        if secuencia == self._secuencia:
+            self.app.call_from_thread(self._fijar_ejecutando, False)
+            self.app.call_from_thread(self._mostrar_resultado, secuencia, resultado)
+
+    def _finalizar_ejecucion(self, estado: str, mensaje: str, clase: str) -> None:
+        """Punto unico para cerrar una ejecucion que no termino en exito (cancelada o
+        fallida): siempre reactiva 'Investigar' -- un error o una cancelacion nunca
+        deben dejar al usuario sin forma de intentarlo de nuevo."""
+        self._fijar_ejecutando(False)
+        self._fijar_estado_investigacion(estado)
+        self._mensaje(mensaje, clase)
 
     def _actualizar_etapa(self, etapa: EtapaFuenteOSINT) -> None:
+        self._agregar_fila_etapa(etapa.fuente, etapa.estado, etapa.detalle)
+
+    def _agregar_fila_etapa(self, fuente: str, estado: str, detalle: str) -> None:
         tabla = self.query_one("#osint-tabla-etapas", DataTable)
-        estilo = _ESTILOS_ESTADO_FUENTE_OSINT.get(etapa.estado, "")
+        estilo = _ESTILOS_ESTADO_FUENTE_OSINT.get(estado, "")
         estado_texto = (
-            f"[{estilo}]{texto_seguro(etapa.estado)}[/{estilo}]"
-            if estilo
-            else texto_seguro(etapa.estado)
+            f"[{estilo}]{texto_seguro(estado)}[/{estilo}]" if estilo else texto_seguro(estado)
         )
-        adaptador = FUENTES_OSINT.get(etapa.fuente)
-        nombre_fuente = texto_seguro(adaptador.nombre if adaptador is not None else etapa.fuente)
+        adaptador = FUENTES_OSINT.get(fuente)
+        nombre_fuente = texto_seguro(adaptador.nombre if adaptador is not None else fuente)
         try:
-            tabla.remove_row(etapa.fuente)
+            tabla.remove_row(fuente)
         except Exception:  # noqa: BLE001 - la fila puede no existir todavia
             pass
-        tabla.add_row(nombre_fuente, estado_texto, texto_seguro(etapa.detalle), key=etapa.fuente)
+        tabla.add_row(nombre_fuente, estado_texto, texto_seguro(detalle), key=fuente)
 
     def _limpiar_tablas_resultados(self) -> None:
         for id_tabla in (
-            "osint-tabla-infraestructura", "osint-tabla-perfiles", "osint-tabla-exposicion",
+            "osint-tabla-infraestructura",
+            "osint-tabla-perfiles",
+            "osint-tabla-exposicion",
         ):
             self.query_one(f"#{id_tabla}", DataTable).clear()
 
-    def _mostrar_resultado(self, secuencia: int, resultado) -> None:
-        if secuencia != self._secuencia:
-            return
-        self._investigacion_actual_id = resultado.investigacion_id
-        base_datos = obtener_base_datos()
-        self._hallazgos = base_datos.listar_hallazgos_osint(
-            investigacion_id=resultado.investigacion_id, limite=10_000
-        )
-
+    def _poblar_tablas_resultados(self) -> None:
         self._limpiar_tablas_resultados()
         tabla_infra = self.query_one("#osint-tabla-infraestructura", DataTable)
         tabla_perfiles = self.query_one("#osint-tabla-perfiles", DataTable)
@@ -1989,19 +2227,63 @@ class PanelOSINT(VerticalScroll):
                     key=str(h.id),
                 )
 
+    def _mostrar_resultado(self, secuencia: int, resultado) -> None:
+        if secuencia != self._secuencia:
+            return
+        if not self._cargar_investigacion(resultado.investigacion_id):
+            # '_cargar_investigacion' ya dejo su propio mensaje de error -- no lo
+            # pisamos con un falso "completada" si la recarga desde la base de datos
+            # fallo (en produccion no deberia pasar: el motor persiste antes de
+            # devolver el resultado, pero si pasara, 'investigacion_actual_id' debe
+            # seguir en None para que 'Generar informe' no intente usar un id invalido).
+            return
+        # El orden importa: preseleccionar la investigacion recien creada en el
+        # selector de historial dispara su propio 'Select.Changed' (_historial_cambiado),
+        # que pisaria el mensaje de exito con "Mostrando la investigacion guardada #N."
+        # si se fijara despues. El mensaje de finalizacion real va SIEMPRE al final.
+        self._refrescar_historial_tras_nueva(resultado.investigacion_id)
+        self._mensaje("Investigacion completada.", "ast-exito")
+        self.app.refrescar_estado()  # type: ignore[attr-defined]
+
+    def _cargar_investigacion(self, investigacion_id: int) -> bool:
+        """Carga en las pestanas de resultados los hallazgos de una investigacion ya
+        guardada -- la que se acaba de completar, o una del historial -- sin volver a
+        ejecutar nada (seccion 5: 'Recuperar investigaciones anteriores desde la
+        interfaz'). Devuelve ``False`` (y deja su propio mensaje de error) si la
+        investigacion ya no existe en la base de datos."""
+        base_datos = obtener_base_datos()
+        try:
+            investigacion = base_datos.obtener_investigacion_osint(investigacion_id)
+        except ErrorEST as exc:
+            self._mensaje(texto_seguro(exc), "ast-error")
+            return False
+
+        self._investigacion_actual_id = investigacion_id
+        self._hallazgos = base_datos.listar_hallazgos_osint(
+            investigacion_id=investigacion_id, limite=self._LIMITE_HALLAZGOS_TUI
+        )
+
+        self.query_one("#osint-tabla-etapas", DataTable).clear()
+        for etapa_dict in json.loads(investigacion.etapas_json):
+            self._agregar_fila_etapa(
+                etapa_dict["fuente"], etapa_dict["estado"], etapa_dict["detalle"]
+            )
+        self._poblar_tablas_resultados()
+        return True
+
         resumen = construir_resumen_exposicion(self._hallazgos)
+        limitaciones = json.loads(investigacion.limitaciones_json)
         texto_resumen = (
-            f"Estado general: {texto_seguro(resultado.estado_general)}  |  "
+            f"Estado general: {texto_seguro(investigacion.estado_general)}  |  "
             f"Total de hallazgos: {resumen.total_hallazgos}  |  "
             f"Indicadores de exposicion: {resumen.total_indicadores}"
         )
-        if resultado.limitaciones:
+        if limitaciones:
             texto_resumen += "\n\n[bold yellow]Limitaciones:[/bold yellow]\n" + "\n".join(
-                f"- {texto_seguro(lim)}" for lim in resultado.limitaciones
+                f"- {texto_seguro(lim)}" for lim in limitaciones
             )
         self.query_one("#osint-resumen", Static).update(texto_resumen)
-        self._mensaje("Investigacion OSINT completa.", "ast-exito")
-        self.app.refrescar_estado()  # type: ignore[attr-defined]
+        self._fijar_estado_investigacion(investigacion.estado_general)
 
     @staticmethod
     def _confianza_coloreada(nivel: str) -> str:
@@ -2045,21 +2327,24 @@ class PanelOSINT(VerticalScroll):
         )
         self.query_one("#osint-detalle-exposicion", Static).update(detalle)
 
+    # -- Informe -----------------------------------------------------------
+
     @on(Button.Pressed, "#osint-informe-generar")
     def _generar_informe_click(self, _evento: Button.Pressed) -> None:
         if self._investigacion_actual_id is None:
-            self.query_one("#osint-informe-mensaje", Static).update(
-                "Ejecuta una investigacion primero."
-            )
-            self.query_one("#osint-informe-mensaje", Static).set_classes("ast-aviso")
+            msg = self.query_one("#osint-informe-mensaje", Static)
+            msg.update("Ejecuta o elige una investigacion primero.")
+            msg.set_classes("ast-aviso")
             return
         formato = str(self.query_one("#osint-informe-formato", Select).value)
         minimizar = self.query_one("#osint-informe-minimizar", Checkbox).value
+        self.query_one("#osint-informe-generar", Button).disabled = True
         self._generar_informe(self._investigacion_actual_id, formato, minimizar)
 
     @work(thread=True, exclusive=True, group="osint-informe", exit_on_error=False)
     def _generar_informe(self, investigacion_id: int, formato: str, minimizar: bool) -> None:
         msg = self.query_one("#osint-informe-mensaje", Static)
+        boton = self.query_one("#osint-informe-generar", Button)
         try:
             base_datos = obtener_base_datos()
             proyecto = resolver_proyecto(base_datos, None)
@@ -2069,13 +2354,16 @@ class PanelOSINT(VerticalScroll):
         except ErrorEST as exc:
             self.app.call_from_thread(msg.update, texto_seguro(exc))
             self.app.call_from_thread(msg.set_classes, "ast-error")
+            self.app.call_from_thread(setattr, boton, "disabled", False)
             return
         except Exception as exc:  # noqa: BLE001 - frontera de la interfaz visual
             self.app.call_from_thread(msg.update, f"Error inesperado: {texto_seguro(exc)}")
             self.app.call_from_thread(msg.set_classes, "ast-error")
+            self.app.call_from_thread(setattr, boton, "disabled", False)
             return
         self.app.call_from_thread(msg.update, f"Informe generado en: {texto_seguro(ruta)}")
         self.app.call_from_thread(msg.set_classes, "ast-exito")
+        self.app.call_from_thread(setattr, boton, "disabled", False)
 
 
 class PanelReportes(Vertical):
