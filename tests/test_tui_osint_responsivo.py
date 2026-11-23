@@ -9,7 +9,9 @@ investigacion. Ninguna prueba de este archivo consulta una fuente OSINT real.
 
 from __future__ import annotations
 
+import asyncio
 import types
+from threading import Event
 
 import pytest
 from textual.widgets import (
@@ -23,6 +25,7 @@ from textual.widgets import (
     TabbedContent,
 )
 
+from eurabyte_security.core.errores import ErrorInvestigacionOSINTCancelada
 from eurabyte_security.core.osint.validacion import requiere_autorizacion_datos_personales
 from eurabyte_security.ui.tui.app import AuraByteApp
 from eurabyte_security.ui.tui.widgets import paneles as modulo_paneles
@@ -156,22 +159,19 @@ async def test_guion_interaccion_completo(ancho, alto, monkeypatch):
     fuera y volver sin perder el estado ni congelar la interfaz."""
 
     eventos: list[str] = []
+    permitir_completar = Event()
 
     def _investigacion_lenta(base_datos, proyecto, tipo, objetivo, **kwargs):
-        import time
-
-        debe_cancelar = kwargs.get("debe_cancelar")
-        progreso = kwargs.get("callback_progreso")
+        debe_cancelar = kwargs["debe_cancelar"]
+        progreso = kwargs["callback_progreso"]
         etapa = {"fuente": "dns", "estado": "completada", "detalle": "1 hallazgo(s)."}
-        if progreso is not None:
-            progreso(types.SimpleNamespace(**etapa))
-        for _ in range(50):
-            if debe_cancelar is not None and debe_cancelar():
-                from eurabyte_security.core.errores import ErrorInvestigacionOSINTCancelada
-
+        progreso(types.SimpleNamespace(**etapa))
+        for _ in range(500):
+            if debe_cancelar():
                 raise ErrorInvestigacionOSINTCancelada("cancelado por el usuario")
-            time.sleep(0.02)
-        return _resultado_persistido(base_datos, proyecto, tipo, objetivo, etapas=[etapa])
+            if permitir_completar.wait(0.02):
+                return _resultado_persistido(base_datos, proyecto, tipo, objetivo, etapas=[etapa])
+        raise AssertionError("La prueba no canceló ni autorizó completar la investigación.")
 
     monkeypatch.setattr(modulo_paneles, "ejecutar_investigacion_osint", _investigacion_lenta)
 
@@ -223,6 +223,9 @@ async def test_guion_interaccion_completo(ancho, alto, monkeypatch):
 
         # 7. Observar progreso: la etapa simulada ya debe figurar en la tabla.
         tabla_etapas = app.query_one("#osint-tabla-etapas", DataTable)
+        async with asyncio.timeout(5):
+            while tabla_etapas.row_count == 0:
+                await asyncio.sleep(0.01)
         assert tabla_etapas.row_count == 1
         eventos.append("progreso-observado")
 
@@ -257,6 +260,7 @@ async def test_guion_interaccion_completo(ancho, alto, monkeypatch):
         eventos.append("navegado-fuera-y-vuelto")
 
         # 11. Repetir la investigacion, esta vez dejandola completar con exito.
+        permitir_completar.set()
         await _clic_centro(pilot, "#osint-iniciar")
         await app.workers.wait_for_complete()
         await pilot.pause()
