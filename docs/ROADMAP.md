@@ -800,6 +800,15 @@ Textual en esta entrega):
 - [x] `python -m pytest -q` y `python -m ruff check .` en verde; no se toco la
       interfaz Textual en esta entrega (seccion anterior de este documento).
 
+### Inicio, navegación y distribución de la interfaz
+
+- [x] Inicio adaptable con accesos directos a Proyectos, Alcance, Resultados y Reportes.
+- [x] Módulos abre los paneles existentes mediante un catálogo de accesos.
+- [x] Aprendizaje integra las explicaciones de `est explicar`. Los laboratorios se contemplan en la Fase 5.
+- [x] El recuento del proyecto activo incluye las cinco fuentes de Resultados.
+- [x] La distribución de Python incluye la hoja de estilos de `est interfaz`.
+- [x] El formulario OSINT usa la API de widgets disponible desde Textual 1.0 para gestionar sus avisos de entrada.
+
 ## Fase 4 - Asistente inteligente
 
 - Implementacion concreta sobre el contrato de `assistant/base.py`.

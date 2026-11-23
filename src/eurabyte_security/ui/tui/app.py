@@ -20,9 +20,9 @@ from eurabyte_security.ui.tui.widgets.paneles import (
     PanelConfiguracion,
     PanelHerramientas,
     PanelInicio,
+    PanelModulos,
     PanelOSINT,
     PanelOWASPZAP,
-    PanelProximamente,
     PanelProyectos,
     PanelReconocimiento,
     PanelRedes,
@@ -71,7 +71,7 @@ class AuraByteApp(App[None]):
                         yield PanelAyuda(id="ayuda-en-terminal")
                 yield PanelProyectos(id="panel-proyectos")
                 yield PanelAlcance(id="panel-alcance")
-                yield PanelProximamente("Modulos", "Fase 3", id="panel-modulos")
+                yield PanelModulos(id="panel-modulos")
                 yield PanelReconocimiento(id="panel-reconocimiento")
                 yield PanelAuditoriaWeb(id="panel-web")
                 yield PanelVulnerabilidades(id="panel-vulnerabilidades")
@@ -81,10 +81,10 @@ class AuraByteApp(App[None]):
                 yield PanelHerramientas(id="panel-herramientas")
                 yield PanelResultados(id="panel-resultados")
                 yield PanelReportes(id="panel-reportes")
-                yield PanelProximamente("Aprendizaje", "Fase 5", id="panel-aprendizaje")
+                yield PanelAyuda(id="panel-aprendizaje")
                 yield PanelConfiguracion(id="panel-configuracion")
             yield PanelInfoComando(id="panel-info")
-        yield BarraEstado(id="barra-estado")
+        yield BarraEstado(id="barra-estado", markup=False)
 
     def on_mount(self) -> None:
         self.refrescar_estado()
@@ -110,11 +110,23 @@ class AuraByteApp(App[None]):
         self.query_one(PanelInicio).actualizar_estado(estado)
         self.query_one(PanelInfoComando).actualizar_estado(estado)
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if not event.option_id:
-            return
-        self.query_one("#switcher-central", ContentSwitcher).current = event.option_id
-        self._refrescar_panel(event.option_id)
+    @on(OptionList.OptionSelected, "#barra-lateral")
+    def _seleccionar_panel(self, evento: OptionList.OptionSelected) -> None:
+        if evento.option_id:
+            self._mostrar_panel(evento.option_id)
+
+    @on(Button.Pressed, ".acceso-panel")
+    def _abrir_acceso(self, evento: Button.Pressed) -> None:
+        destino = evento.button.name
+        if destino:
+            barra = self.query_one(BarraLateral)
+            barra.highlighted = barra.get_option_index(destino)
+            barra.focus()
+            self._mostrar_panel(destino)
+
+    def _mostrar_panel(self, id_panel: str) -> None:
+        self.query_one("#switcher-central", ContentSwitcher).current = id_panel
+        self._refrescar_panel(id_panel)
 
     def _refrescar_panel(self, id_panel: str) -> None:
         try:

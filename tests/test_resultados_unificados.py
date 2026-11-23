@@ -13,8 +13,10 @@ from eurabyte_security.cli.app import app
 from eurabyte_security.commands._comun import obtener_base_datos
 from eurabyte_security.commands.reporte import generar_reporte
 from eurabyte_security.commands.resultados import obtener_resultados_unificados
+from eurabyte_security.core import config
 from eurabyte_security.core.errores import ErrorValidacion
 from eurabyte_security.storage.database import BaseDatos
+from eurabyte_security.ui.tui.estado import construir_estado
 
 
 def _proyecto_con_las_cinco_fuentes(base_datos: BaseDatos, nombre: str = "laboratorio"):
@@ -74,6 +76,18 @@ def test_unifica_las_cinco_fuentes(tmp_path):
     resultados = base_datos.listar_resultados_unificados(proyecto.id)
     assert {r.fuente for r in resultados} == {"tcp", "nmap", "web", "nuclei", "zap"}
     assert len(resultados) == 5
+
+
+def test_estado_de_la_interfaz_cuenta_las_cinco_fuentes_solo_del_proyecto_activo():
+    base_datos = BaseDatos()
+    proyecto = _proyecto_con_las_cinco_fuentes(base_datos)
+    otro = base_datos.crear_proyecto("otro")
+    base_datos.agregar_resultado(otro.id, "127.0.0.1", 443, "abierto")
+
+    config.establecer_proyecto_activo(proyecto.nombre)
+    assert construir_estado().total_resultados == 5
+    config.establecer_proyecto_activo(otro.nombre)
+    assert construir_estado().total_resultados == 1
 
 
 def test_tcp_y_nmap_nunca_tienen_severidad_fabricada(tmp_path):

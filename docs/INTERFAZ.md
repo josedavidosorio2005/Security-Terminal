@@ -38,11 +38,11 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 
 | Seccion | Estado | Que hace |
 |---|---|---|
-| Inicio | Implementada | Panel de bienvenida con un resumen del proyecto activo. |
+| Inicio | Implementada | Resumen del proyecto activo y accesos a Proyectos, Alcance, Resultados y Reportes. |
 | Terminal | Implementada | Terminal AST (ver abajo), mas las pestanas Resultados y Ayuda. |
 | Proyectos | Implementada | Crear proyectos, listarlos y marcar uno como activo. |
 | Alcance | Implementada | Registrar y consultar el alcance autorizado (IP/CIDR). |
-| Modulos | Proximamente (Fase 3) | Punto de entrada futuro a los modulos de auditoria. |
+| Módulos | Implementada | Accesos a Redes, Reconocimiento, Análisis web, Vulnerabilidades, OWASP ZAP y OSINT. |
 | Reconocimiento | Implementada | Pantalla principal de auditoria: un objetivo, reconocimiento automatico (Nmap, web, Nuclei, ZAP); el formulario manual de Nmap sigue disponible en una seccion avanzada. |
 | Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
 | Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
@@ -52,11 +52,11 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
 | Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
 | Reportes | Implementada | Genera el informe global (HTML o JSON) del proyecto activo, combinando las cinco herramientas. |
-| Aprendizaje | Proximamente (Fase 5) | Reservado para laboratorios y contenido educativo. |
+| Aprendizaje | Implementada | Guía integrada en español sobre herramientas y comandos de AST. |
 | Configuracion | Implementada | Muestra las rutas de datos y permite cambiar el proyecto activo. |
 
-Una seccion marcada como "Proximamente" lo dice explicitamente en pantalla: AST nunca simula
-datos ni resultados en una funcionalidad que todavia no existe.
+El contador de Inicio y de la barra inferior suma las cinco fuentes de Resultados del proyecto
+activo. Las investigaciones OSINT tienen su historial en el panel OSINT.
 
 ## La Terminal AST
 

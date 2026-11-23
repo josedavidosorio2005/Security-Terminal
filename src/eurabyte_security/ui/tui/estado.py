@@ -36,9 +36,7 @@ def construir_estado() -> EstadoAST:
             try:
                 proyecto = base_datos.obtener_proyecto_por_nombre(proyecto_activo)
                 total_alcances = len(base_datos.listar_alcance(proyecto.id))
-                total_resultados = len(
-                    base_datos.listar_resultados(proyecto.id, limite=100_000)
-                )
+                total_resultados = base_datos.contar_resultados_unificados(proyecto.id)
             except ErrorEST:
                 pass
     except Exception:

@@ -39,10 +39,11 @@ async def test_encabezado_muestra_el_escudo_compacto():
 
 async def test_panel_inicio_muestra_el_escudo_ampliado():
     app = AuraByteApp()
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(160, 40)) as pilot:
         await pilot.pause()
         escudo = app.query_one("#inicio-escudo")
         assert str(escudo.render()) == ESCUDO_ASCII
+        assert escudo.display
 
 
 async def test_titulo_de_la_app_usa_el_nombre_completo():

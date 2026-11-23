@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from textual.widgets import ContentSwitcher, DataTable, Input, OptionList
+from textual.widgets import Button, ContentSwitcher, DataTable, Input, OptionList
 
 from eurabyte_security.core import config
 from eurabyte_security.storage.database import BaseDatos
@@ -52,19 +52,32 @@ async def test_navegacion_entre_secciones_cambia_el_panel_activo():
         assert app.query_one("#switcher-central", ContentSwitcher).current == "panel-proyectos"
 
 
-@pytest.mark.parametrize("id_panel", ["panel-modulos", "panel-aprendizaje"])
-async def test_secciones_no_implementadas_muestran_proximamente(id_panel: str):
+@pytest.mark.parametrize(
+    "origen,destino",
+    [("panel-inicio", "panel-proyectos"), ("panel-modulos", "panel-web")],
+)
+async def test_accesos_abren_el_panel_y_sincronizan_la_barra_lateral(origen, destino):
     app = AuraByteApp()
-    async with app.run_test(size=(120, 40)) as pilot:
+    async with app.run_test(size=(80, 24)) as pilot:
+        switcher = app.query_one("#switcher-central", ContentSwitcher)
+        switcher.current = origen
         await pilot.pause()
+        panel = app.query_one(f"#{origen}")
+        boton = next(b for b in panel.query(Button) if b.name == destino)
+        assert await pilot.click(boton)
+        await pilot.pause()
+        assert switcher.current == destino
         opciones = app.query_one("#barra-lateral", OptionList)
-        opciones.focus()
-        opciones.highlighted = opciones.get_option_index(id_panel)
-        await pilot.press("enter")
+        assert opciones.highlighted == opciones.get_option_index(destino)
+
+
+async def test_aprendizaje_muestra_las_explicaciones_integradas():
+    app = AuraByteApp()
+    async with app.run_test() as pilot:
+        app.query_one("#switcher-central", ContentSwitcher).current = "panel-aprendizaje"
         await pilot.pause()
-        panel = app.query_one(f"#{id_panel}")
-        textos = " ".join(str(estatico.render()) for estatico in panel.query("Static"))
-        assert "Proximamente" in textos
+        panel = app.query_one("#panel-aprendizaje")
+        assert any("nmap" in str(estatico.render()).lower() for estatico in panel.query("Static"))
 
 
 async def test_autocompletado_con_tab_en_la_terminal():

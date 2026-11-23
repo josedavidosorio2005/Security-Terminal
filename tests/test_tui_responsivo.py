@@ -41,6 +41,17 @@ async def test_encabezado_nombre_siempre_visible(ancho, alto):
 
 
 @pytest.mark.parametrize("ancho,alto", TAMANOS)
+async def test_inicio_muestra_todos_los_accesos_sin_recorte(ancho, alto):
+    app = AuraByteApp()
+    async with app.run_test(size=(ancho, alto)) as pilot:
+        await pilot.pause()
+        panel = app.query_one("#panel-inicio")
+        for acceso in panel.query(".acceso-panel"):
+            assert _dentro_de_pantalla(acceso.region, ancho, alto)
+            assert acceso.region.bottom <= panel.content_region.bottom
+
+
+@pytest.mark.parametrize("ancho,alto", TAMANOS)
 async def test_barra_lateral_y_switcher_no_se_superponen(ancho, alto):
     app = AuraByteApp()
     async with app.run_test(size=(ancho, alto)) as pilot:
