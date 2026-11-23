@@ -163,3 +163,17 @@ autorizacion y las restricciones de uso.
 ## Licencia
 
 MIT. Ver [LICENSE](LICENSE).
+
+### Operaciones Red Team y Blue Team
+
+En `est interfaz`, abre **Operaciones** dentro de un proyecto. Crea un caso por activo,
+vincula evidencias con el identificador que aparece en Resultados y registra el
+responsable, la corrección y su verificación. Para un ejercicio acordado puedes
+registrar su hora y asociar manualmente una alerta para medir el tiempo hasta la detección.
+
+Desde la terminal, `est operaciones --help` muestra las acciones.
+`est operaciones vigilar --muestras 3 --segundos 2 --umbral 100` guarda tres muestras
+de las interfaces del equipo y marca las que llegan a 100 Mbps en algún sentido.
+Consulta el historial con `est operaciones mediciones`. El monitoreo dura mientras
+se ejecuta la aplicación. Para exportar la cronología de un caso usa
+`est operaciones informe ID`, sustituyendo ID por el número del caso.

@@ -134,20 +134,26 @@ def test_escanear_tcp_sin_parametro_debe_cancelar_mantiene_compatibilidad(tmp_pa
     assert base_datos.listar_resultados(proyecto.id) == resultados
 
 
-def test_escanear_tcp_cancelado_a_mitad_de_camino_no_persiste(tmp_path):
+def test_escanear_tcp_cancelado_a_mitad_de_camino_no_persiste(tmp_path, monkeypatch):
     """Cancelar tras resolverse algunos puertos tambien descarta todo (todo o nada)."""
     from eurabyte_security.storage.database import BaseDatos
 
     base_datos = BaseDatos(tmp_path / "est.db")
     proyecto = crear_proyecto(base_datos, "parcial")
     base_datos.agregar_alcance(proyecto.id, "127.0.0.1/32")
-    puertos = [_puerto_libre() for _ in range(6)]
+    from threading import Event
 
-    contador = {"n": 0}
+    from eurabyte_security.modules.network import tcp_scanner
 
-    def debe_cancelar() -> bool:
-        contador["n"] += 1
-        return contador["n"] > 2  # cancela despues de que resuelvan los primeros puertos
+    puertos = list(range(10001, 10007))
+    cancelado = Event()
+
+    def comprobar(objetivo, puerto, tiempo_espera):
+        if puerto == puertos[1]:
+            cancelado.set()
+        return tcp_scanner.ResultadoPuerto(puerto=puerto, estado="cerrado")
+
+    monkeypatch.setattr(tcp_scanner, "_comprobar_puerto", comprobar)
 
     with pytest.raises(ErrorEscaneoCancelado):
         escanear_tcp(
@@ -157,7 +163,7 @@ def test_escanear_tcp_cancelado_a_mitad_de_camino_no_persiste(tmp_path):
             ",".join(str(p) for p in puertos),
             tiempo_espera=1.0,
             concurrencia=1,
-            debe_cancelar=debe_cancelar,
+            debe_cancelar=cancelado.is_set,
         )
 
     assert base_datos.listar_resultados(proyecto.id) == []
