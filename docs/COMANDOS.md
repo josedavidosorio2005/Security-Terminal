@@ -214,6 +214,34 @@ exactamente igual que si se hubieran ejecutado por separado (`est resultados`, `
 resultados`, `est zap resultados`...), y el informe final es el mismo informe global de
 `est reporte generar`.
 
+## `est trafico`
+
+```powershell
+est trafico equipo --segundos 5
+est trafico red "C:\Datos\conn.log" --lan 192.168.1.0/24 --dns "C:\Datos\dns.log"
+est trafico red "C:\Datos\conn.log" --lan 192.168.1.0/24 --web "C:\Datos\ssl.log"
+```
+
+- **Equipo** mide el tráfico de cada interfaz durante el intervalo (0,2 a 10 segundos).
+  Los MB y GB son decimales, y la velocidad se expresa en Mbit/s. Las aplicaciones se
+  agrupan por conexiones abiertas observadas al terminar la muestra. Su identificación
+  depende de los permisos del sistema. La muestra no asigna volumen a cada aplicación.
+- **Red** usa registros JSON de Zeek con un objeto por línea y direcciones de origen
+  visibles del lado LAN. Indica las subredes reales en `--lan` como CIDR (IPv4 o IPv6,
+  separadas por comas). El informe excluye flujos entre dos dispositivos LAN, suma los
+  bytes IP registrados cuando cruza el límite de la LAN y señala flujos con contadores
+  incompletos. El servicio corresponde a la clasificación del registro.
+- **Dominios** usa el `dns.log` opcional y cuenta consultas de clientes LAN. La resolución
+  DNS incluye actividad de fondo y puede quedar oculta por caché o DNS cifrado. El resumen
+  carece de URLs completas e historial exacto de visitas. Cada archivo admite hasta
+  128 MiB de JSON sin comprimir.
+- **Dominios web observados** acepta `http.log` o `ssl.log` en `--web`. Cuenta solicitudes
+  HTTP por `Host` o conexiones TLS por el nombre de servidor visible. Solo muestra dominios
+  y tipo de evento. Las rutas, parámetros y contenido de las páginas quedan fuera del informe.
+
+El análisis hace una lectura local. Requiere archivos ya generados para medir el conjunto de
+la red. Véase la documentación de [registros de Zeek](https://docs.zeek.org/en/current/tutorial/logs.html).
+
 ## `est osint`
 
 Investiga fuentes publicas (OSINT) sobre un dominio, correo, telefono o nombre de

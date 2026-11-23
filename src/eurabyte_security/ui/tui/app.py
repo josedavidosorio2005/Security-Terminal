@@ -31,6 +31,7 @@ from eurabyte_security.ui.tui.widgets.paneles import (
     PanelVulnerabilidades,
 )
 from eurabyte_security.ui.tui.widgets.terminal import PanelInfoComando, PanelTerminalAST
+from eurabyte_security.ui.tui.widgets.trafico import PanelTrafico
 
 _RUTA_CSS = Path(__file__).with_name("estilos.tcss")
 
@@ -78,6 +79,7 @@ class AuraByteApp(App[None]):
                 yield PanelOWASPZAP(id="panel-zap")
                 yield PanelOSINT(id="panel-osint")
                 yield PanelRedes(id="panel-redes")
+                yield PanelTrafico(id="panel-trafico")
                 yield PanelHerramientas(id="panel-herramientas")
                 yield PanelResultados(id="panel-resultados")
                 yield PanelReportes(id="panel-reportes")

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from rich.table import Table
@@ -28,6 +29,7 @@ from eurabyte_security.commands.reporte import generar_reporte as _generar_repor
 from eurabyte_security.commands.resultados import (
     obtener_resultados_unificados as _obtener_resultados_unificados,
 )
+from eurabyte_security.commands.trafico import mostrar_medicion, mostrar_red
 from eurabyte_security.commands.web import TIPOS_VALIDOS as _TIPOS_WEB_VALIDOS
 from eurabyte_security.commands.web import auditar_web as _auditar_web
 from eurabyte_security.commands.zap import ejecutar_zap_pasivo as _ejecutar_zap_pasivo
@@ -35,6 +37,7 @@ from eurabyte_security.core.errores import ErrorEST, ErrorValidacion
 from eurabyte_security.core.redaccion import redactar_url as _redactar_url
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS as _PLANTILLAS_NUCLEI
 from eurabyte_security.integrations.zap import AdaptadorZAP as _AdaptadorZAP
+from eurabyte_security.modules.network.trafico import medir_equipo, resumir_red
 from eurabyte_security.storage.database import agrupar_severidad as _agrupar_severidad
 
 COMANDOS_SALIDA = {"salir", "exit", "quit"}
@@ -48,6 +51,7 @@ ARBOL_COMANDOS: dict[str, dict[str, Any] | None] = {
     "zap": {"estado": None, "pasivo": None, "resultados": None},
     "explicar": dict.fromkeys(EXPLICACIONES),
     "resultados": None,
+    "trafico": {"equipo": None, "red": None},
     "reporte": {"generar": None},
     "ayuda": None,
     "salir": None,
@@ -244,6 +248,7 @@ class MotorComandos:
             "zap": self._zap,
             "explicar": self._explicar,
             "resultados": self._resultados,
+            "trafico": self._trafico,
             "reporte": self._reporte,
             "ayuda": lambda _r: ResultadoComando(True, self._ayuda()),
             "--ayuda": lambda _r: ResultadoComando(True, self._ayuda()),
@@ -266,6 +271,30 @@ class MotorComandos:
         lineas.append("")
         lineas.append("Usa 'explicar <tema>' para una explicacion detallada de cada uno.")
         return "\n".join(lineas)
+
+    def _trafico(self, resto: list[str]) -> ResultadoComando:
+        if resto and resto[0] == "equipo":
+            segundos, extras = _extraer_opcion(resto[1:], "--segundos")
+            if not extras:
+                try:
+                    intervalo = float(segundos) if segundos is not None else 1
+                except ValueError as exc:
+                    raise ErrorValidacion("Introduce un intervalo numérico en segundos.") from exc
+                return ResultadoComando(True, mostrar_medicion(medir_equipo(intervalo)))
+        if resto and resto[0] == "red":
+            lan, argumentos = _extraer_opcion(resto[1:], "--lan")
+            dns, argumentos = _extraer_opcion(argumentos, "--dns")
+            web, archivos = _extraer_opcion(argumentos, "--web")
+            if lan and len(archivos) == 1 and not archivos[0].startswith("--"):
+                ruta_dns = Path(dns).expanduser() if dns else None
+                ruta_web = Path(web).expanduser() if web else None
+                resumen = resumir_red(Path(archivos[0]).expanduser(), lan, ruta_dns, ruta_web)
+                return ResultadoComando(True, mostrar_red(resumen))
+        return ResultadoComando(
+            False,
+            "Uso: trafico equipo [--segundos N] | "
+            "trafico red CONN --lan CIDR [--dns DNS] [--web REGISTRO]",
+        )
 
     # -- proyecto --------------------------------------------------
     def _proyecto(self, resto: list[str]) -> ResultadoComando:

@@ -49,6 +49,7 @@ logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 | OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
 | OSINT | Implementada | Investigacion de fuentes publicas (dominio, correo, telefono, usuario), con formulario fijo y resultados con scroll propio, pestanas de Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe, recuperacion de investigaciones guardadas desde el propio panel, y boton de cancelar. Ver [docs/OSINT.md](OSINT.md). |
 | Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
+| Tráfico de red | Implementada | Carga, descarga y apps locales. Importa registros Zeek para obtener un resumen de equipos, servicios y DNS de la LAN. |
 | Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
 | Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
 | Reportes | Implementada | Genera el informe global (HTML o JSON) del proyecto activo, combinando las cinco herramientas. |
@@ -240,6 +241,18 @@ Los resultados se organizan en pestanas:
 Selecciona una fila de cualquiera de las tablas de hallazgos para ver su detalle
 completo (categoria, nivel de confianza, descripcion, indicador de exposicion y fecha
 de consulta) debajo de la tabla.
+
+### Tráfico de red
+
+- **Este equipo** toma una muestra de un segundo y presenta carga, descarga y velocidad por
+  interfaz. También lista las aplicaciones con conexiones identificadas al final de la muestra.
+- **Registros LAN** indica qué archivos y subredes necesita el análisis. Con `conn.log` muestra
+  el consumo por IP local y por servicio. En **Fuentes de dominios** puedes agregar `dns.log`
+  para el ranking DNS y `http.log` o `ssl.log` para ver dominios web observados.
+
+Los resultados de ambas vistas se muestran en pantalla. El panel no guarda automáticamente
+los archivos ni su contenido en el historial de proyectos. Consulta los formatos y detalles en
+[Comandos de tráfico](COMANDOS.md#est-trafico).
 
 ### Herramientas
 

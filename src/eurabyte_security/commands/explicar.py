@@ -8,6 +8,14 @@ from rich.panel import Panel
 from eurabyte_security.ui.consola import consola, texto_seguro
 
 EXPLICACIONES: dict[str, str] = {
+    "trafico": (
+        "Mide carga, descarga y velocidad por interfaz en tu equipo. Muestra también "
+        "las aplicaciones locales con conexiones abiertas.\n\n"
+        "- est trafico equipo --segundos 1\n"
+        "- est trafico red CONN --lan CIDR [--dns DNS] [--web REGISTRO]\n\n"
+        "El resumen LAN usa registros JSON de Zeek. El ranking DNS cuenta consultas "
+        "observadas en el archivo y depende de la cobertura del registro."
+    ),
     "proyecto": (
         "Gestiona proyectos de auditoria.\n\n"
         "- est proyecto crear NOMBRE   -> crea un proyecto y lo activa.\n"
