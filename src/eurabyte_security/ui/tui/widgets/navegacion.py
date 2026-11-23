@@ -17,9 +17,9 @@ SECCIONES: tuple[tuple[str, str], ...] = (
     ("Terminal", "panel-terminal"),
     ("Proyectos", "panel-proyectos"),
     ("Alcance", "panel-alcance"),
-    ("Modulos", "panel-modulos"),
+    ("Módulos", "panel-modulos"),
     ("Reconocimiento", "panel-reconocimiento"),
-    ("Analisis web", "panel-web"),
+    ("Análisis web", "panel-web"),
     ("Vulnerabilidades", "panel-vulnerabilidades"),
     ("OWASP ZAP", "panel-zap"),
     ("OSINT", "panel-osint"),
@@ -28,7 +28,7 @@ SECCIONES: tuple[tuple[str, str], ...] = (
     ("Resultados", "panel-resultados"),
     ("Reportes", "panel-reportes"),
     ("Aprendizaje", "panel-aprendizaje"),
-    ("Configuracion", "panel-configuracion"),
+    ("Configuración", "panel-configuracion"),
 )
 
 
@@ -39,8 +39,8 @@ class Encabezado(Horizontal):
         yield Static(ESCUDO_COMPACTO, classes="logo")
         yield Static(f" {NOMBRE_PRODUCTO} ({ABREVIATURA}) ", classes="nombre")
         yield Static(f"v{__version__}", id="encabezado-version", classes="dato")
-        yield Static("", id="encabezado-proyecto", classes="dato")
-        yield Static("", id="encabezado-so", classes="dato")
+        yield Static("", id="encabezado-proyecto", classes="dato", markup=False)
+        yield Static("", id="encabezado-so", classes="dato", markup=False)
         yield Button(
             "Info >>",
             id="encabezado-info-toggle",
@@ -73,8 +73,7 @@ class BarraEstado(Static):
         proyecto = estado.proyecto_activo or "(ninguno)"
         estado_bd = "BD ok" if estado.base_datos_ok else "BD con errores"
         self.update(
-            f"Proyecto: {proyecto}  |  Objetivos autorizados: {estado.total_alcances}  |  "
-            f"Resultados: {estado.total_resultados}  |  Base de datos: {estado_bd}  |  "
-            f"{NOMBRE_PRODUCTO} v{__version__}"
+            f"{estado.total_alcances} objetivos  ·  {estado.total_resultados} resultados  ·  "
+            f"{estado_bd}  |  Proyecto: {proyecto}"
         )
         self.set_classes("ok" if estado.base_datos_ok else "error")

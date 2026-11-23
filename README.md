@@ -18,7 +18,7 @@ Gestiono el alcance y los resultados de cada auditoría desde una interfaz en es
 
 [Ver la instalación](#instalacion) · [Abrir el manual de la interfaz](docs/INTERFAZ.md) · [Ver un informe HTML de ejemplo](docs/capturas/informe-ast.webp)
 
-![Panel de inicio de Aurabyte Security Terminal con navegación y terminal integrada](docs/capturas/01-inicio.svg)
+![Inicio de Aurabyte Security Terminal con resumen del proyecto y accesos directos](docs/capturas/01-inicio.svg)
 
 <details>
 <summary>Vista previa de un informe con datos ficticios</summary>

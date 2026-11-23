@@ -867,6 +867,22 @@ class BaseDatos:
             )
 
     # -- Vista unificada de resultados ----------------------------------
+    def contar_resultados_unificados(self, proyecto_id: int) -> int:
+        """Cuenta las filas del proyecto en las cinco fuentes de Resultados."""
+        with self._conectar() as conexion:
+            fila = conexion.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM resultados WHERE proyecto_id = :proyecto_id)
+                    + (SELECT COUNT(*) FROM resultados_nmap WHERE proyecto_id = :proyecto_id)
+                    + (SELECT COUNT(*) FROM resultados_web WHERE proyecto_id = :proyecto_id)
+                    + (SELECT COUNT(*) FROM resultados_nuclei WHERE proyecto_id = :proyecto_id)
+                    + (SELECT COUNT(*) FROM resultados_zap WHERE proyecto_id = :proyecto_id)
+                """,
+                {"proyecto_id": proyecto_id},
+            ).fetchone()
+        return int(fila[0])
+
     def listar_resultados_unificados(
         self,
         proyecto_id: int | None = None,

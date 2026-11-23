@@ -7,7 +7,7 @@ import json
 from dataclasses import replace
 
 from textual import events, on, work
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
     Checkbox,
@@ -55,7 +55,7 @@ from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
 from eurabyte_security.integrations.zap import AdaptadorZAP
-from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII, ESCUDO_COMPACTO
+from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII, ESCUDO_COMPACTO, NOMBRE_PRODUCTO
 from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
@@ -64,32 +64,54 @@ from eurabyte_security.ui.consola import texto_seguro
 from eurabyte_security.ui.tui.estado import EstadoAST
 
 
-class PanelInicio(Vertical):
+class PanelInicio(VerticalScroll):
     """Panel de bienvenida: escudo, banner, resumen y atajos de navegacion."""
 
     def compose(self):
         with Horizontal(id="inicio-marca"):
-            yield Static(ESCUDO_ASCII, id="inicio-escudo", classes="logo")
-            yield Static(BANNER_ASCII, classes="ast-acento")
-        yield Static("", id="inicio-resumen", classes="ast-caja")
-        yield Static(
-            "Sugerencias rapidas:\n"
-            "  - 'Terminal': usa comandos de texto (ayuda, proyecto, alcance...).\n"
-            "  - 'Proyectos': crea o activa un proyecto de auditoria.\n"
-            "  - 'Alcance': autoriza objetivos antes de poder escanearlos.\n"
-            "  - 'Redes': formulario de comprobacion TCP con cancelacion.\n"
-            "  - 'Resultados' / 'Reportes': consulta y exporta lo encontrado.",
-            classes="ast-tenue",
-        )
+            yield Static(ESCUDO_ASCII, id="inicio-escudo", classes="logo", markup=False)
+            yield Static(BANNER_ASCII, id="inicio-banner", classes="ast-acento", markup=False)
+            yield Static(
+                ESCUDO_COMPACTO, id="inicio-escudo-compacto", classes="logo", markup=False
+            )
+            yield Static(NOMBRE_PRODUCTO, id="inicio-marca-compacta", classes="ast-acento")
+        yield Static("", id="inicio-resumen", classes="ast-caja", markup=False)
+        with Grid(id="inicio-accesos"):
+            yield Button("Proyectos", name="panel-proyectos", classes="acceso-panel")
+            yield Button("Alcance", name="panel-alcance", classes="acceso-panel")
+            yield Button("Resultados", name="panel-resultados", classes="acceso-panel")
+            yield Button("Reportes", name="panel-reportes", classes="acceso-panel")
+
+    def on_resize(self, evento: events.Resize) -> None:
+        self.set_class(evento.size.width < 80, "compacto")
 
     def actualizar_estado(self, estado: EstadoAST) -> None:
-        proyecto = estado.proyecto_activo or "(ninguno)"
+        proyecto = estado.proyecto_activo or "Sin proyecto activo"
         self.query_one("#inicio-resumen", Static).update(
-            f"Proyecto activo: {proyecto}\n"
-            f"Objetivos autorizados: {estado.total_alcances}\n"
-            f"Resultados guardados: {estado.total_resultados}\n"
-            f"Sistema: {estado.sistema_operativo}"
+            f"{proyecto}\n"
+            f"{estado.total_alcances} objetivos autorizados  ·  "
+            f"{estado.total_resultados} resultados guardados"
         )
+
+
+class PanelModulos(VerticalScroll):
+    """Accesos a las herramientas y a las vistas de revisión de AST."""
+
+    _MODULOS = (
+        ("Redes", "panel-redes", "Comprobación de conectividad TCP."),
+        ("Reconocimiento", "panel-reconocimiento", "Consulta y seguimiento de sesiones."),
+        ("Análisis web", "panel-web", "Comprobaciones de cabeceras, TLS y cookies."),
+        ("Vulnerabilidades", "panel-vulnerabilidades", "Consulta de hallazgos de Nuclei."),
+        ("OWASP ZAP", "panel-zap", "Consulta de hallazgos del análisis pasivo."),
+        ("OSINT", "panel-osint", "Investigaciones guardadas y fuentes públicas."),
+    )
+
+    def compose(self):
+        yield Static("Módulos", classes="titulo-panel")
+        for etiqueta, destino, descripcion in self._MODULOS:
+            with Horizontal(classes="modulo-fila"):
+                yield Button(etiqueta, name=destino, classes="acceso-panel")
+                yield Static(descripcion, classes="ast-tenue")
 
 
 class PanelProyectos(Vertical):
@@ -1930,6 +1952,10 @@ class PanelOSINT(Vertical):
         msg = self.query_one("#osint-mensaje", Static)
         msg.update(texto)
         msg.set_classes(clase)
+        msg.set_class(
+            texto in (self._AVISO_SIN_OBJETIVO, self._AVISO_SIN_AUTORIZACION),
+            "osint-aviso-entrada",
+        )
 
     def _fijar_ejecutando(self, ejecutando: bool) -> None:
         self.query_one("#osint-iniciar", Button).disabled = ejecutando
@@ -1951,7 +1977,7 @@ class PanelOSINT(Vertical):
         """Si el usuario ya corrigio lo que el aviso mostrado pedia, lo retira (seccion
         2.B: nunca dejar 'Escribe un objetivo' visible sobre una entrada ya valida)."""
         msg = self.query_one("#osint-mensaje", Static)
-        if str(msg.content) not in (self._AVISO_SIN_OBJETIVO, self._AVISO_SIN_AUTORIZACION):
+        if not msg.has_class("osint-aviso-entrada"):
             return
         tipo = str(self.query_one("#osint-tipo", Select).value)
         objetivo = self.query_one("#osint-objetivo", Input).value.strip()
@@ -2407,13 +2433,13 @@ class PanelReportes(Vertical):
 
 
 class PanelHerramientas(Vertical):
-    """Deteccion (sin ejecucion) de herramientas externas de la Fase 3."""
+    """Detección de herramientas externas y versiones disponibles."""
 
     def compose(self):
         yield Static("Herramientas externas", classes="titulo-panel")
         yield Static(
-            "AST detecta si estan instaladas en el sistema, pero no las ejecuta "
-            "todavia (integracion prevista para la Fase 3, ver docs/ROADMAP.md).",
+            "Consulta la disponibilidad y la versión de las herramientas externas. "
+            "Las comprobaciones se inician desde el panel correspondiente.",
             classes="ast-tenue",
         )
         yield DataTable(id="herr-tabla")
@@ -2497,24 +2523,7 @@ class PanelAyuda(VerticalScroll):
     """Documentacion de todos los comandos, siempre disponible y desplazable."""
 
     def compose(self):
-        yield Static("Ayuda y documentacion", classes="titulo-panel")
+        titulo = "Aprendizaje" if self.id == "panel-aprendizaje" else "Ayuda y documentación"
+        yield Static(titulo, classes="titulo-panel")
         for tema, texto in sorted(EXPLICACIONES.items()):
             yield Static(f"[bold cyan]{tema}[/bold cyan]\n{texto}", classes="ast-caja")
-
-
-class PanelProximamente(Vertical):
-    """Marcador honesto para secciones aun no implementadas (nunca simula datos)."""
-
-    def __init__(self, nombre: str, fase: str = "Fase 3", **kwargs: object) -> None:
-        super().__init__(**kwargs)
-        self._nombre = nombre
-        self._fase = fase
-
-    def compose(self):
-        yield Static(self._nombre, classes="titulo-panel")
-        yield Static(
-            f"Proximamente ({self._fase} del roadmap).\n\n"
-            "Esta seccion todavia no esta implementada: no hay datos reales que "
-            "mostrar aqui. Consulta docs/ROADMAP.md para el detalle de cada fase.",
-            classes="ast-aviso",
-        )

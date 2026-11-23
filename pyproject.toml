@@ -47,6 +47,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "eurabyte_security.integrations" = ["plantillas_nuclei/*.yaml"]
+"eurabyte_security.ui.tui" = ["estilos.tcss"]
 
 [tool.ruff]
 line-length = 100

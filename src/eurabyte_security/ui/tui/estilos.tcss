@@ -48,6 +48,10 @@ Screen {
     color: $ast-texto-tenue;
 }
 
+#encabezado-proyecto {
+    max-width: 28;
+}
+
 /* En terminales angostas, 'version' y 'so' se ocultan primero (ver
    AuraByteApp._ajustar_responsivo): el nombre y el proyecto activo son la
    informacion que de verdad importa para saber donde esta el usuario. */
@@ -139,6 +143,52 @@ Screen {
     margin-right: 2;
 }
 
+#inicio-marca-compacta,
+#inicio-escudo-compacto,
+PanelInicio.compacto #inicio-banner,
+PanelInicio.compacto #inicio-escudo {
+    display: none;
+}
+
+PanelInicio.compacto #inicio-marca-compacta,
+PanelInicio.compacto #inicio-escudo-compacto {
+    display: block;
+    height: auto;
+}
+
+#inicio-escudo-compacto {
+    width: auto;
+    margin-right: 1;
+}
+
+#inicio-accesos {
+    height: auto;
+    grid-size: 2;
+    grid-rows: 3;
+    grid-gutter: 0 1;
+}
+
+#inicio-accesos Button {
+    width: 1fr;
+    min-width: 0;
+}
+
+.modulo-fila {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.modulo-fila Button {
+    width: 20;
+    margin-right: 1;
+}
+
+.modulo-fila Static {
+    width: 1fr;
+    height: auto;
+    padding-top: 1;
+}
+
 .ast-panel {
     background: $ast-panel;
     border: solid $ast-borde;
@@ -177,18 +227,18 @@ Screen {
 }
 
 #barra-estado {
-    height: 1;
+    height: 2;
     background: $ast-panel;
     color: $ast-texto-tenue;
     border-top: solid $ast-borde;
     padding: 0 1;
 }
 
-#barra-estado .ok {
+#barra-estado.ok {
     color: $ast-exito;
 }
 
-#barra-estado .error {
+#barra-estado.error {
     color: $ast-error;
 }
 
