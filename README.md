@@ -12,7 +12,20 @@ abierto y funciona igual en Windows y Linux. Toda la experiencia de usuario esta
 > puertos TCP) contra objetivos que hayas registrado explicitamente en el alcance de un proyecto.
 > Ver [docs/SEGURIDAD.md](docs/SEGURIDAD.md).
 
-![Panel de inicio de AST](docs/capturas/01-inicio.svg)
+## De la terminal al informe
+
+Gestiono el alcance y los resultados de cada auditoría desde una interfaz en español. La aplicación reúne los resultados por proyecto y permite exportarlos en HTML para revisar los hallazgos, o en JSON para procesarlos después.
+
+[Ver la instalación](#instalacion) · [Abrir el manual de la interfaz](docs/INTERFAZ.md) · [Ver un informe HTML de ejemplo](docs/capturas/informe-ast.webp)
+
+![Panel de inicio de Aurabyte Security Terminal con navegación y terminal integrada](docs/capturas/01-inicio.svg)
+
+<details>
+<summary>Vista previa de un informe con datos ficticios</summary>
+
+![Informe de auditoría de ejemplo con resumen ejecutivo, alcance y hallazgos](docs/capturas/informe-ast.webp)
+
+</details>
 
 ## Dos formas de usar AST
 
