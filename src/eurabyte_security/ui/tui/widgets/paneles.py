@@ -1693,6 +1693,7 @@ class PanelResultados(VerticalScroll):
         self.query_one("#res-detalle", Static).update(
             f"[bold]{texto_seguro(r.nombre)}[/bold] "
             f"({self._ETIQUETAS_FUENTE.get(r.fuente, r.fuente)})\n"
+            f"Referencia para Operaciones: {r.fuente}:{r.id_origen}\n"
             f"Tipo: {texto_seguro(r.tipo)}\n"
             f"Descripcion: {texto_seguro(r.descripcion or '-')}\n"
             f"Evidencia: {texto_seguro(r.evidencia or '-')}\n"

@@ -56,6 +56,8 @@ _ARBOL_COMPLETADO = {
             "trafico",
         )
     },
+    "operaciones": dict.fromkeys(("crear", "listar", "vincular", "registrar", "ver", "informe",
+                                 "vigilar", "mediciones")),
     "resultados": None,
     "trafico": {"equipo": None, "red": None},
     "reporte": {"generar": None},

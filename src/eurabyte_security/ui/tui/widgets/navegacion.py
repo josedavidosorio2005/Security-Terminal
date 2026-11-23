@@ -27,6 +27,7 @@ SECCIONES: tuple[tuple[str, str], ...] = (
     ("Tráfico de red", "panel-trafico"),
     ("Herramientas", "panel-herramientas"),
     ("Resultados", "panel-resultados"),
+    ("Operaciones", "panel-operaciones"),
     ("Reportes", "panel-reportes"),
     ("Aprendizaje", "panel-aprendizaje"),
     ("Configuración", "panel-configuracion"),

@@ -12,6 +12,7 @@ from eurabyte_security.commands.escanear import escanear_app
 from eurabyte_security.commands.explicar import explicar_cmd
 from eurabyte_security.commands.nmap import nmap_app
 from eurabyte_security.commands.nuclei import nuclei_app
+from eurabyte_security.commands.operaciones import operaciones_app
 from eurabyte_security.commands.osint import osint_app
 from eurabyte_security.commands.proyecto import proyecto_app
 from eurabyte_security.commands.reconocimiento import reconocimiento_app
@@ -41,6 +42,7 @@ app.add_typer(nuclei_app, name="nuclei")
 app.add_typer(zap_app, name="zap")
 app.add_typer(reconocimiento_app, name="reconocimiento")
 app.add_typer(osint_app, name="osint")
+app.add_typer(operaciones_app, name="operaciones")
 app.add_typer(trafico_app, name="trafico")
 app.command("explicar")(explicar_cmd)
 app.command("resultados")(resultados_cmd)

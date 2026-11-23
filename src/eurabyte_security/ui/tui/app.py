@@ -13,6 +13,7 @@ from eurabyte_security.integrations.deteccion import detectar_herramientas
 from eurabyte_security.marca import ABREVIATURA, NOMBRE_PRODUCTO
 from eurabyte_security.ui.tui.estado import construir_estado
 from eurabyte_security.ui.tui.widgets.navegacion import BarraEstado, BarraLateral, Encabezado
+from eurabyte_security.ui.tui.widgets.operaciones import PanelOperaciones
 from eurabyte_security.ui.tui.widgets.paneles import (
     PanelAlcance,
     PanelAuditoriaWeb,
@@ -82,6 +83,7 @@ class AuraByteApp(App[None]):
                 yield PanelTrafico(id="panel-trafico")
                 yield PanelHerramientas(id="panel-herramientas")
                 yield PanelResultados(id="panel-resultados")
+                yield PanelOperaciones(id="panel-operaciones")
                 yield PanelReportes(id="panel-reportes")
                 yield PanelAyuda(id="panel-aprendizaje")
                 yield PanelConfiguracion(id="panel-configuracion")
@@ -107,6 +109,7 @@ class AuraByteApp(App[None]):
     def refrescar_estado(self) -> None:
         """Vuelve a leer el estado (proyecto activo, conteos...) y lo propaga a la UI."""
         estado = construir_estado()
+        self.query_one(PanelOperaciones).cambiar_proyecto(estado.proyecto_activo)
         self.query_one(Encabezado).actualizar(estado)
         self.query_one(BarraEstado).actualizar(estado)
         self.query_one(PanelInicio).actualizar_estado(estado)
