@@ -53,9 +53,11 @@ _ARBOL_COMPLETADO = {
             "web",
             "nuclei",
             "zap",
+            "trafico",
         )
     },
     "resultados": None,
+    "trafico": {"equipo": None, "red": None},
     "reporte": {"generar": None},
     "ayuda": None,
     "salir": None,

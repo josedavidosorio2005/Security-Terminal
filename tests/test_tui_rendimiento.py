@@ -15,6 +15,7 @@ y ``ui/tui/app.py``).
 from __future__ import annotations
 
 import time
+from threading import Event
 
 from textual.widgets import ContentSwitcher, DataTable, Static
 
@@ -103,33 +104,27 @@ async def test_cambiar_a_herramientas_no_bloquea_aunque_la_deteccion_tarde(monke
 async def test_arranque_de_la_app_no_espera_la_deteccion_de_herramientas(monkeypatch):
     from eurabyte_security.ui.tui import app as modulo_app
 
-    # El retraso simulado es deliberadamente grande (3s) frente al umbral (2s): montar
-    # toda la app (parsear CSS, construir el DOM inicial...) ya tiene su propio costo
-    # base, variable segun la carga de la maquina -- en un runner de CI lento se ha
-    # observado hasta ~0.9s solo por eso. Un margen tan amplio entre el retraso
-    # simulado y el umbral evita falsos positivos por ruido de la maquina, mientras
-    # sigue detectando con claridad un bloqueo real (que haria 'duracion_montaje' se
-    # acercara a los 3s completos, muy por encima del umbral).
-    RETRASO_SIMULADO_SEGUNDOS = 3.0
-    UMBRAL_MONTAJE_SEGUNDOS = 2.0
+    iniciada = Event()
+    permitir_finalizar = Event()
+    finalizada = Event()
 
     def deteccion_lenta():
-        time.sleep(RETRASO_SIMULADO_SEGUNDOS)
+        iniciada.set()
+        permitir_finalizar.wait(timeout=10)
+        finalizada.set()
         return []
 
     monkeypatch.setattr(modulo_app, "detectar_herramientas", deteccion_lenta)
 
     app = AuraByteApp()
-    t0 = time.perf_counter()
     async with app.run_test(size=(120, 35)) as pilot:
-        duracion_montaje = time.perf_counter() - t0
-        assert duracion_montaje < UMBRAL_MONTAJE_SEGUNDOS, (
-            f"Montar la app tardo {duracion_montaje:.2f}s: la deteccion inicial de "
-            "herramientas deberia correr en un worker, no bloquear 'on_mount'."
-        )
-        await pilot.pause()
-        # Solo se espera el worker de deteccion inicial: otros paneles (ZAP, Nuclei,
-        # Herramientas) arrancan su propia deteccion al montarse y no se monkeypatchean
-        # aqui, asi que esperar TODOS los workers haria esta prueba lenta sin necesidad.
-        workers_inicio = [w for w in app.workers if w.group == "deteccion-inicial"]
+        try:
+            await _esperar_hasta(pilot, iniciada.is_set)
+            assert not finalizada.is_set(), "La interfaz esperó la detección antes de arrancar."
+            assert app.query_one("#switcher-central", ContentSwitcher).current == "panel-inicio"
+            workers_inicio = [w for w in app.workers if w.group == "deteccion-inicial"]
+            assert len(workers_inicio) == 1
+        finally:
+            permitir_finalizar.set()
         await app.workers.wait_for_complete(workers_inicio)
+        assert finalizada.is_set()

@@ -17,6 +17,7 @@ from eurabyte_security.commands.proyecto import proyecto_app
 from eurabyte_security.commands.reconocimiento import reconocimiento_app
 from eurabyte_security.commands.reporte import reporte_app
 from eurabyte_security.commands.resultados import resultados_cmd
+from eurabyte_security.commands.trafico import trafico_app
 from eurabyte_security.commands.web import web_app
 from eurabyte_security.commands.zap import zap_app
 from eurabyte_security.core.errores import ErrorEST
@@ -40,6 +41,7 @@ app.add_typer(nuclei_app, name="nuclei")
 app.add_typer(zap_app, name="zap")
 app.add_typer(reconocimiento_app, name="reconocimiento")
 app.add_typer(osint_app, name="osint")
+app.add_typer(trafico_app, name="trafico")
 app.command("explicar")(explicar_cmd)
 app.command("resultados")(resultados_cmd)
 

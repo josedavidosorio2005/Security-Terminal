@@ -24,6 +24,7 @@ SECCIONES: tuple[tuple[str, str], ...] = (
     ("OWASP ZAP", "panel-zap"),
     ("OSINT", "panel-osint"),
     ("Redes", "panel-redes"),
+    ("Tráfico de red", "panel-trafico"),
     ("Herramientas", "panel-herramientas"),
     ("Resultados", "panel-resultados"),
     ("Reportes", "panel-reportes"),

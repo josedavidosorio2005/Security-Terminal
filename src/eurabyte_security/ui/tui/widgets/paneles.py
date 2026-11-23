@@ -99,6 +99,7 @@ class PanelModulos(VerticalScroll):
 
     _MODULOS = (
         ("Redes", "panel-redes", "Comprobación de conectividad TCP."),
+        ("Tráfico de red", "panel-trafico", "Consumo del equipo y registros de la LAN."),
         ("Reconocimiento", "panel-reconocimiento", "Consulta y seguimiento de sesiones."),
         ("Análisis web", "panel-web", "Comprobaciones de cabeceras, TLS y cookies."),
         ("Vulnerabilidades", "panel-vulnerabilidades", "Consulta de hallazgos de Nuclei."),
