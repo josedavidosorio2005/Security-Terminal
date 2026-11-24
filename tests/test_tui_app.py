@@ -6,7 +6,7 @@ from textual.widgets import Button, ContentSwitcher, DataTable, Input, OptionLis
 from eurabyte_security.core import config
 from eurabyte_security.storage.database import BaseDatos
 from eurabyte_security.ui.tui.app import AuraByteApp
-from eurabyte_security.ui.tui.widgets.navegacion import SECCIONES
+from eurabyte_security.ui.tui.catalogo import GRUPOS, SECCIONES_POR_PANEL
 
 pytestmark = pytest.mark.asyncio
 
@@ -35,9 +35,15 @@ async def test_todos_los_paneles_estan_registrados():
         await pilot.pause()
         # Las secciones del roadmap deben existir como opciones de navegacion.
         opciones = app.query_one("#barra-lateral", OptionList)
-        assert opciones.option_count == len(SECCIONES)
-        for _etiqueta, id_panel in SECCIONES:
-            assert app.query_one(f"#{id_panel}") is not None
+        assert opciones.option_count == len(SECCIONES_POR_PANEL) + len(GRUPOS)
+        posicion = 0
+        for _, secciones in GRUPOS:
+            assert opciones.get_option_at_index(posicion).disabled
+            posicion += 1
+            for seccion in secciones:
+                assert opciones.get_option_at_index(posicion).id == seccion.panel
+                assert app.query_one(f"#{seccion.panel}").id == seccion.panel
+                posicion += 1
 
 
 async def test_navegacion_entre_secciones_cambia_el_panel_activo():
@@ -302,3 +308,26 @@ async def test_panel_info_comando_reacciona_a_la_escritura():
         await pilot.pause()
         cuerpo = str(app.query_one("#info-comando-cuerpo").render())
         assert "connect scan" in cuerpo.lower() or "tcp" in cuerpo.lower()
+
+
+async def test_atajos_y_ficha_de_requisitos_en_terminal_compacta():
+    app = AuraByteApp()
+    async with app.run_test(size=(80, 24)) as pilot:
+        switcher = app.query_one("#switcher-central", ContentSwitcher)
+        opciones = app.query_one("#barra-lateral", OptionList)
+        await pilot.press("f1", "f3")
+        assert switcher.current == "panel-modulos"
+        assert opciones.has_focus
+
+        # La primera opción del siguiente grupo debe saltar su encabezado.
+        await pilot.press("down", "enter", "f2")
+        assert switcher.current == "panel-web"
+        assert not switcher.display
+        assert app.query_one("#panel-info").display
+        assert "IPv4 autorizada" in str(app.query_one("#info-seccion").render())
+
+        await pilot.press("f4")
+        assert switcher.current == "panel-terminal"
+        assert switcher.display
+        assert not app.query_one("#panel-info").display
+        assert app.query_one("#entrada-terminal").has_focus

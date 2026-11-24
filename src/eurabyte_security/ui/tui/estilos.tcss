@@ -1,39 +1,40 @@
-/* Paleta AURABYTE Security Terminal (AST) */
-$ast-fondo: #060B18;
-$ast-panel: #0D172B;
-$ast-borde: #00D9F5;
-$ast-acento: #A855F7;
-$ast-exito: #22C55E;
-$ast-error: #EF4444;
-$ast-aviso: #FACC15;
-$ast-texto: #E5E7EB;
-$ast-texto-tenue: #8B98B4;
+/* Paleta AURABYTE Security Terminal */
+$ast-fondo: #0a111e;
+$ast-superficie: #0e1828;
+$ast-panel: #142136;
+$ast-linea: #2c405c;
+$ast-seleccion: #18394a;
+$ast-borde: #66e3cd;
+$ast-acento: #aebdff;
+$ast-exito: #66e3cd;
+$ast-error: #ff8d9a;
+$ast-aviso: #ffd680;
+$ast-texto: #e6edf6;
+$ast-texto-tenue: #a2b1c8;
 
 Screen {
     background: $ast-fondo;
     color: $ast-texto;
 }
 
-#encabezado {
-    height: 3;
-    background: $ast-panel;
-    border-bottom: solid $ast-borde;
-    color: $ast-texto;
-    padding: 0 1;
+VerticalScroll, DataTable, OptionList, RichLog {
+    scrollbar-color: $ast-linea;
+    scrollbar-color-hover: $ast-borde;
+    scrollbar-background: $ast-fondo;
 }
 
-/* Sin 'width: auto' explicito, un Static hijo de un Horizontal reclama TODO el
-   ancho restante del contenedor en vez de su ancho de contenido: con cinco
-   Static en #encabezado (logo, nombre, version, proyecto, so) eso empuja cada
-   uno tras el primero fuera de la pantalla visible (bug real, no solo
-   cosmetico: el nombre AURABYTE quedaba oculto). Cada hijo del encabezado
-   fija su propio ancho de contenido explicitamente para evitarlo. */
+#encabezado {
+    height: 3;
+    background: $ast-superficie;
+    border-bottom: solid $ast-linea;
+    color: $ast-texto;
+    padding: 1 1 0 1;
+}
+
 #encabezado > * {
     width: auto;
 }
 
-/* Escudo de marca (azul/cian): usado en la barra superior y en el panel
-   de inicio (ver eurabyte_security/marca.py: ESCUDO_COMPACTO/ESCUDO_ASCII). */
 .logo {
     color: $ast-borde;
     text-style: bold;
@@ -46,35 +47,52 @@ Screen {
 
 #encabezado .dato {
     color: $ast-texto-tenue;
+    height: 1;
 }
 
 #encabezado-proyecto {
     max-width: 28;
 }
 
-/* En terminales angostas, 'version' y 'so' se ocultan primero (ver
-   AuraByteApp._ajustar_responsivo): el nombre y el proyecto activo son la
-   informacion que de verdad importa para saber donde esta el usuario. */
 #encabezado.compacto #encabezado-version,
 #encabezado.compacto #encabezado-so {
     display: none;
 }
 
-/* Boton para plegar/desplegar el panel contextual derecho a demanda (no solo
-   automaticamente por ancho): ver AuraByteApp.action_alternar_info. */
-.boton-info {
-    dock: right;
+#encabezado.compacto #encabezado-proyecto {
+    width: 1fr;
+}
+
+#encabezado .boton-info {
     height: 1;
     min-width: 0;
     border: none;
-    background: transparent;
+    background: $ast-panel;
     color: $ast-texto-tenue;
     padding: 0 1;
+    margin-left: 1;
 }
 
-.boton-info:hover {
+#encabezado-acciones {
+    dock: right;
+    width: auto;
+    height: 1;
+}
+
+#encabezado-acciones > Button {
+    width: auto;
+}
+
+#encabezado.minimo #encabezado-menu,
+#encabezado.minimo #encabezado-proyecto {
+    display: none;
+}
+
+#encabezado .boton-info:hover,
+#encabezado .boton-info:focus,
+#encabezado .boton-info.visible {
     color: $ast-borde;
-    background: transparent;
+    background: $ast-seleccion;
 }
 
 #cuerpo {
@@ -82,39 +100,58 @@ Screen {
 }
 
 #barra-lateral {
-    width: 22;
-    background: $ast-panel;
-    border-right: solid $ast-borde;
+    width: 23;
+    height: 1fr;
+    padding: 1 1;
+    background: $ast-superficie;
+    color: $ast-texto;
+    border: none;
+    border-right: solid $ast-linea;
+    scrollbar-size-vertical: 1;
 }
 
 #barra-lateral.compacta {
-    width: 16;
+    width: 21;
+    padding: 1 0;
 }
 
-#barra-lateral OptionList {
-    background: $ast-panel;
-    color: $ast-texto;
+#barra-lateral > .option-list--option {
+    padding: 0;
 }
 
-#barra-lateral OptionList > .option-list--option-highlighted {
-    background: $ast-acento 40%;
-    color: $ast-texto;
+#barra-lateral > .option-list--option-highlighted {
+    background: $ast-seleccion;
+    color: $ast-borde;
 }
 
 #switcher-central {
     width: 1fr;
+    height: 1fr;
     background: $ast-fondo;
     padding: 1 2;
 }
 
 #panel-info {
-    width: 34;
-    background: $ast-panel;
-    border-left: solid $ast-borde;
-    padding: 1 2;
+    width: 32;
+    height: 1fr;
+    background: $ast-superficie;
+    border-left: solid $ast-linea;
+    padding: 1 1;
+    scrollbar-size-vertical: 1;
 }
 
-#panel-info.oculto {
+#info-seccion,
+.info-comando {
+    margin-bottom: 1;
+}
+
+#panel-info.ampliado {
+    width: 1fr;
+}
+
+#switcher-central.info-en-primer-plano,
+#panel-info.oculto,
+.info-comando.oculto {
     display: none;
 }
 
@@ -124,9 +161,6 @@ Screen {
     margin-bottom: 1;
 }
 
-/* Subtitulo de una seccion dentro de un panel (p. ej. "1. Elige las plantillas",
-   "2. Confirma el objetivo"): agrupa controles relacionados en pasos faciles de
-   seguir sin necesitar un titulo tan prominente como .titulo-panel. */
 .ast-subtitulo {
     text-style: bold;
     color: $ast-acento;
@@ -135,7 +169,16 @@ Screen {
 
 #inicio-marca {
     height: auto;
+    align-vertical: middle;
+    border-left: thick $ast-borde;
+    padding: 1 2;
     margin-bottom: 1;
+    background: $ast-panel;
+}
+
+#inicio-marca > Vertical {
+    width: 1fr;
+    height: auto;
 }
 
 #inicio-escudo {
@@ -143,62 +186,78 @@ Screen {
     margin-right: 2;
 }
 
-#inicio-marca-compacta,
-#inicio-escudo-compacto,
-PanelInicio.compacto #inicio-banner,
+#inicio-nombre {
+    text-style: bold;
+    color: $ast-texto;
+}
+
+PanelInicio.compacto #inicio-marca {
+    padding: 1 1 0 1;
+}
+
 PanelInicio.compacto #inicio-escudo {
     display: none;
 }
 
-PanelInicio.compacto #inicio-marca-compacta,
-PanelInicio.compacto #inicio-escudo-compacto {
-    display: block;
-    height: auto;
-}
-
-#inicio-escudo-compacto {
-    width: auto;
-    margin-right: 1;
-}
-
+#inicio-metricas,
 #inicio-accesos {
     height: auto;
-    grid-size: 2;
-    grid-rows: 3;
+    grid-size: 3;
+    grid-rows: auto;
     grid-gutter: 0 1;
 }
 
-#inicio-accesos Button {
-    width: 1fr;
-    min-width: 0;
-}
-
-.modulo-fila {
-    height: auto;
+#inicio-metricas {
     margin-bottom: 1;
 }
 
-.modulo-fila Button {
-    width: 20;
-    margin-right: 1;
-}
-
-.modulo-fila Static {
-    width: 1fr;
+.inicio-metrica {
     height: auto;
-    padding-top: 1;
+    min-height: 4;
+    padding: 0 1;
+    background: $ast-superficie;
+    border-top: solid $ast-linea;
+    color: $ast-texto;
 }
 
-.ast-panel {
-    background: $ast-panel;
-    border: solid $ast-borde;
-    padding: 1 2;
+PanelInicio.estrecho #inicio-accesos {
+    grid-size: 2;
+}
+
+#inicio-accesos Button,
+.modulo-ficha Button {
+    width: 1fr;
+    min-width: 0;
+    padding: 0;
+}
+
+.modulos-grupo {
+    height: auto;
+    grid-size: 2;
+    grid-rows: auto;
+    grid-gutter: 1 1;
+    margin: 1 0;
+}
+
+PanelModulos.compacto .modulos-grupo {
+    grid-size: 1;
+}
+
+.modulo-ficha {
+    height: auto;
+    padding: 0 1 1 1;
+    background: $ast-superficie;
+    border-top: solid $ast-linea;
+}
+
+.modulo-ficha > Static {
+    margin-top: 1;
 }
 
 .ast-caja {
     background: $ast-panel;
-    border: round $ast-borde;
-    padding: 1 2;
+    border: round $ast-linea;
+    padding: 0 1;
     margin-bottom: 1;
 }
 
@@ -228,18 +287,10 @@ PanelInicio.compacto #inicio-escudo-compacto {
 
 #barra-estado {
     height: 2;
-    background: $ast-panel;
+    background: $ast-superficie;
     color: $ast-texto-tenue;
-    border-top: solid $ast-borde;
+    border-top: solid $ast-linea;
     padding: 0 1;
-}
-
-#barra-estado.ok {
-    color: $ast-exito;
-}
-
-#barra-estado.error {
-    color: $ast-error;
 }
 
 PanelTerminalAST {
@@ -249,7 +300,7 @@ PanelTerminalAST {
 #historial-terminal {
     height: 1fr;
     background: $ast-fondo;
-    border: round $ast-borde;
+    border: round $ast-linea;
     padding: 0 1;
 }
 
@@ -257,12 +308,6 @@ PanelTerminalAST {
     dock: bottom;
     border: round $ast-acento;
     background: $ast-panel;
-}
-
-#banner-ast {
-    color: $ast-borde;
-    text-style: bold;
-    margin-bottom: 1;
 }
 
 DataTable {
@@ -277,22 +322,28 @@ DataTable > .datatable--header {
 
 Button {
     background: $ast-panel;
-    border: round $ast-borde;
+    border: round $ast-linea;
     color: $ast-texto;
 }
 
 Button:hover {
-    background: $ast-acento 30%;
+    background: $ast-seleccion;
 }
 
 Button.-primary {
-    border: round $ast-acento;
-    color: $ast-acento;
+    background: $ast-seleccion;
+    border: round $ast-borde 45%;
+    color: $ast-borde;
+}
+
+Button:focus,
+Input:focus {
+    border: round $ast-borde;
 }
 
 Input {
     background: $ast-panel;
-    border: round $ast-borde;
+    border: round $ast-linea;
     color: $ast-texto;
 }
 
@@ -446,4 +497,56 @@ PanelOSINT {
 #osint-fuentes {
     height: auto;
     max-height: 4;
+}
+
+/* Operaciones mantiene el caso y el último estado visibles al cambiar de pestaña. */
+PanelOperaciones,
+#ops-pestanas,
+#ops-pestanas TabPane {
+    height: 1fr;
+}
+
+.ops-contenido {
+    height: 1fr;
+    scrollbar-size-vertical: 1;
+}
+
+#ops-contexto,
+.ops-botones {
+    height: auto;
+}
+
+#ops-contexto > Static {
+    width: 1fr;
+    height: 1;
+    margin-right: 1;
+}
+
+#ops-caso {
+    max-width: 23;
+}
+
+#ops-contexto {
+    align-vertical: middle;
+}
+
+.ops-botones > Button {
+    min-width: 0;
+    width: 1fr;
+}
+
+PanelOperaciones.compacto .ops-botones {
+    layout: vertical;
+}
+
+#ops-mensaje {
+    height: auto;
+    max-height: 3;
+    overflow-y: auto;
+    color: $ast-texto-tenue;
+    border-top: solid $ast-linea;
+}
+
+.trafico-etiqueta {
+    color: $ast-texto-tenue;
 }

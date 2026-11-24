@@ -2,9 +2,10 @@
 
 from sqlite3 import Error as ErrorSQLite
 
-from textual import on, work
-from textual.containers import VerticalScroll
-from textual.widgets import Button, Input, Select, Static
+from textual import events, on, work
+from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.widgets import Button, Input, Select, Static, TabbedContent, TabPane
 from textual.worker import get_current_worker
 
 from eurabyte_security.commands.operaciones import contexto, exportar_caso
@@ -13,7 +14,7 @@ from eurabyte_security.modules.network.trafico import medir_equipo
 from eurabyte_security.storage.operaciones import ACCIONES
 
 
-class PanelOperaciones(VerticalScroll):
+class PanelOperaciones(Vertical):
     _proyecto = None
     _worker = None
 
@@ -21,6 +22,9 @@ class PanelOperaciones(VerticalScroll):
         if nombre == self._proyecto:
             return
         self._proyecto = nombre
+        self.query_one("#ops-proyecto", Static).update(
+            f"Proyecto activo: {nombre}" if nombre else "Sin proyecto activo"
+        )
         if self._worker is not None:
             self._worker.cancel()
         for campo in self.query(Input):
@@ -31,39 +35,73 @@ class PanelOperaciones(VerticalScroll):
         self.query_one("#ops-gravedad", Select).value = "media"
         self.query_one("#ops-accion", Select).value = "asignar"
 
-    def compose(self):
+    def compose(self) -> ComposeResult:
         yield Static("Operaciones Red / Blue Team", classes="titulo-panel")
-        yield Static("", id="ops-proyecto", markup=False)
-        yield Input(placeholder="Activo (también filtra el historial)", id="ops-activo")
-        yield Button("Consultar historial del activo", id="ops-listar")
-        yield Static("", id="ops-lista", markup=False)
-        yield Static("Red Team · Documentar hallazgo", classes="ast-subtitulo")
-        yield Input(placeholder="Título del hallazgo", id="ops-titulo")
-        yield Select([(n, n) for n in ("informativa", "baja", "media", "alta", "critica")],
-                     value="media", allow_blank=False, id="ops-gravedad")
-        yield Input(placeholder="Evidencia inicial e impacto", id="ops-evidencia")
-        yield Button("Abrir caso", id="ops-crear")
-        yield Static("Caso compartido", classes="ast-subtitulo")
-        yield Input(placeholder="Número del caso", id="ops-caso")
-        yield Input(placeholder="Resultado de origen, por ejemplo web:12", id="ops-origen")
-        yield Button("Vincular resultado", id="ops-vincular")
-        yield Static("Blue Team · Respuesta y validación", classes="ast-subtitulo")
-        yield Select([(v, k) for k, v in ACCIONES.items()],
-                     value="asignar", allow_blank=False, id="ops-accion")
-        yield Input(placeholder="Responsable, evidencia o referencia de la alerta", id="ops-nota")
-        yield Input(placeholder="Fecha ISO con zona horaria (por defecto ahora)", id="ops-fecha")
-        yield Input(placeholder="Evento de ejercicio asociado", id="ops-ejercicio")
-        yield Button("Guardar evento", id="ops-registrar")
-        yield Button("Ver cronología", id="ops-ver")
-        yield Button("Exportar informe JSON", id="ops-informe")
-        yield Static("", id="ops-detalle", markup=False)
-        yield Static("Blue Team · Monitoreo local", classes="ast-subtitulo")
-        yield Input(value="100", placeholder="Umbral por sentido en Mbps", id="ops-umbral")
-        yield Button("Iniciar monitoreo", id="ops-vigilar")
-        yield Button("Detener monitoreo", id="ops-detener", disabled=True)
-        yield Button("Ver mediciones", id="ops-mediciones")
-        yield Static("", id="ops-monitor", markup=False)
+        with Horizontal(id="ops-contexto"):
+            yield Static("Sin proyecto activo", id="ops-proyecto", markup=False)
+            yield Input(placeholder="Número del caso", id="ops-caso")
+
+        with TabbedContent(id="ops-pestanas"):
+            with TabPane("Casos", id="ops-tab-casos"):
+                with VerticalScroll(classes="ops-contenido"):
+                    yield Static("Abrir caso", classes="ast-subtitulo")
+                    yield Input(placeholder="Activo", id="ops-activo")
+                    yield Input(placeholder="Título del hallazgo", id="ops-titulo")
+                    yield Select(
+                        [(n, n) for n in ("informativa", "baja", "media", "alta", "critica")],
+                        value="media", allow_blank=False, id="ops-gravedad",
+                    )
+                    yield Input(placeholder="Evidencia inicial e impacto", id="ops-evidencia")
+                    yield Button("Abrir caso", id="ops-crear", variant="primary")
+                    yield Static("Historial de casos", classes="ast-subtitulo")
+                    yield Static(
+                        "Usa el campo Activo para filtrar. Déjalo vacío para ver todos.",
+                        classes="ast-tenue",
+                    )
+                    yield Button("Consultar historial", id="ops-listar")
+                    yield Static("", id="ops-lista", markup=False)
+
+            with TabPane("Cronología", id="ops-tab-cronologia"):
+                with VerticalScroll(classes="ops-contenido"):
+                    yield Static(
+                        "Consulta o registra eventos para el número de caso indicado arriba.",
+                        classes="ast-tenue",
+                    )
+                    with Horizontal(classes="ops-botones"):
+                        yield Button("Ver cronología", id="ops-ver")
+                        yield Button("Exportar JSON", id="ops-informe")
+                    yield Static("", id="ops-detalle", markup=False)
+                    yield Static("Vincular evidencia", classes="ast-subtitulo")
+                    with Horizontal(classes="ops-botones"):
+                        yield Input(placeholder="Resultado de origen, ej. web:12", id="ops-origen")
+                        yield Button("Vincular resultado", id="ops-vincular")
+                    yield Static("Registrar evento", classes="ast-subtitulo")
+                    yield Select([(v, k) for k, v in ACCIONES.items()],
+                                 value="asignar", allow_blank=False, id="ops-accion")
+                    yield Input(placeholder="Responsable, evidencia o referencia", id="ops-nota")
+                    yield Input(placeholder="Fecha ISO con zona horaria (opcional)", id="ops-fecha")
+                    yield Input(
+                        placeholder="ID del ejercicio asociado (opcional)", id="ops-ejercicio"
+                    )
+                    yield Button("Guardar evento", id="ops-registrar", variant="primary")
+
+            with TabPane("Monitoreo", id="ops-tab-monitoreo"):
+                with VerticalScroll(classes="ops-contenido"):
+                    yield Static(
+                        "Guarda mediciones de las interfaces locales.",
+                        classes="ast-tenue",
+                    )
+                    yield Static("Umbral por sentido en Mbps", classes="ast-tenue")
+                    yield Input(value="100", placeholder="Umbral en Mbps", id="ops-umbral")
+                    with Horizontal(classes="ops-botones"):
+                        yield Button("Iniciar", id="ops-vigilar", variant="primary")
+                        yield Button("Detener", id="ops-detener", disabled=True)
+                        yield Button("Mediciones", id="ops-mediciones")
+                    yield Static("", id="ops-monitor", markup=False)
         yield Static("", id="ops-mensaje", markup=False)
+
+    def on_resize(self, evento: events.Resize) -> None:
+        self.set_class(evento.size.width < 42, "compacto")
 
     def _valor(self, nombre):
         return self.query_one(f"#ops-{nombre}", Input).value.strip()
@@ -78,7 +116,6 @@ class PanelOperaciones(VerticalScroll):
             self.query_one("#ops-detalle", Static).update("")
             return
         self.cambiar_proyecto(p.nombre)
-        self.query_one("#ops-proyecto", Static).update(f"Proyecto activo: {p.nombre}")
         filas = db.listar(p.id, self._valor("activo") or None)
         self.query_one("#ops-lista", Static).update("\n".join(
             f"#{r['id']} · {r['activo']} · {r['titulo']} · {r['estado']} · "
@@ -91,7 +128,9 @@ class PanelOperaciones(VerticalScroll):
         msg = self.query_one("#ops-mensaje", Static)
         try:
             if boton == "ops-detener":
-                self._worker.cancel()
+                if self._worker is not None:
+                    self._worker.cancel()
+                    msg.update("Deteniendo el monitoreo…")
                 return
             db, p = contexto()
             if p.nombre != self._proyecto:
@@ -161,13 +200,15 @@ class PanelOperaciones(VerticalScroll):
             self.app.call_from_thread(self._error_monitor, proyecto.nombre, str(exc))
         finally:
             if self.is_mounted:
-                self.app.call_from_thread(self._detenido)
+                self.app.call_from_thread(self._detenido, proyecto.nombre, worker.is_cancelled)
 
     def _error_monitor(self, proyecto, mensaje):
         if proyecto == self._proyecto:
             self.query_one("#ops-mensaje", Static).update(mensaje)
 
-    def _detenido(self):
+    def _detenido(self, proyecto: str, cancelado: bool) -> None:
+        if cancelado and proyecto == self._proyecto:
+            self.query_one("#ops-mensaje", Static).update("Monitoreo detenido.")
         self._worker = None
         self.query_one("#ops-vigilar", Button).disabled = False
         self.query_one("#ops-detener", Button).disabled = True

@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.suggester import Suggester
 from textual.widgets import Input, RichLog, Static
 
 from eurabyte_security.commands.explicar import EXPLICACIONES
 from eurabyte_security.integrations.deteccion import HerramientaExterna
-from eurabyte_security.marca import BANNER_ASCII
 from eurabyte_security.ui.consola import texto_seguro
+from eurabyte_security.ui.tui.catalogo import Seccion
 from eurabyte_security.ui.tui.estado import EstadoAST
 from eurabyte_security.ui.tui.motor_comandos import MotorComandos, completar
 
@@ -78,17 +79,17 @@ class EntradaTerminal(Input):
 
 
 class PanelTerminalAST(Vertical):
-    """Terminal interactiva real de AST: banner, historial desplazable y entrada."""
+    """Terminal interactiva de AST con historial desplazable y entrada."""
 
     def __init__(self, motor: MotorComandos | None = None, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self.motor = motor or MotorComandos()
 
     def compose(self) -> ComposeResult:
-        yield Static(BANNER_ASCII, id="banner-ast")
+        yield Static("Tab Completar  ·  ↑ ↓ Historial  ·  Enter Ejecutar", classes="ast-tenue")
         yield RichLog(id="historial-terminal", wrap=True, markup=True, highlight=False)
         yield EntradaTerminal(
-            placeholder="Escribe un comando (ayuda, proyecto crear NOMBRE, escanear tcp ...)",
+            placeholder="est> Escribe «ayuda» para ver los comandos",
             id="entrada-terminal",
         )
 
@@ -142,41 +143,49 @@ class PanelTerminalAST(Vertical):
         self.app.call_from_thread(self.app.refrescar_estado)  # type: ignore[attr-defined]
 
 
-class PanelInfoComando(Vertical):
-    """Panel lateral derecho: ayuda contextual, proyecto actual y herramientas."""
+class PanelInfoComando(VerticalScroll):
+    """Ficha de la sección abierta, ayuda de la terminal y estado de herramientas."""
 
     def compose(self) -> ComposeResult:
-        yield Static("Informacion", classes="titulo-panel")
-        yield Static(self._texto_por_defecto(), id="info-comando-cuerpo")
-        yield Static("", id="info-proyecto", classes="ast-caja")
-        yield Static("", id="info-herramientas", classes="ast-caja")
+        yield Static("Inicio", id="info-titulo", classes="titulo-panel", markup=False)
+        yield Static(id="info-seccion", markup=False)
+        yield Static(id="info-comando-cuerpo", classes="info-comando oculto")
+        yield Static(id="info-proyecto", classes="ast-caja", markup=False)
+        yield Static("Comprobando herramientas externas…", id="info-herramientas",
+                     classes="ast-caja", markup=False)
 
-    @staticmethod
-    def _texto_por_defecto() -> str:
-        temas = ", ".join(sorted(EXPLICACIONES))
-        return f"Escribe un comando en la Terminal AST para ver su ayuda aqui.\n\nTemas: {temas}"
+    def mostrar_seccion(self, seccion: Seccion) -> None:
+        self.query_one("#info-titulo", Static).update(seccion.titulo)
+        ficha = Text(seccion.descripcion + "\n\n")
+        ficha.append("Requisitos\n", style="bold #66e3cd")
+        ficha.append(seccion.requisitos)
+        self.query_one("#info-seccion", Static).update(ficha)
+        self.query_one("#info-comando-cuerpo").set_class(
+            seccion.panel != "panel-terminal", "oculto"
+        )
+        self.scroll_home(animate=False)
 
     def mostrar_tema(self, token: str | None) -> None:
-        cuerpo = self.query_one("#info-comando-cuerpo", Static)
         texto = EXPLICACIONES.get(token.lower()) if token else None
-        cuerpo.update(texto if texto else self._texto_por_defecto())
+        self.query_one("#info-comando-cuerpo", Static).update(texto or "")
 
     def actualizar_estado(self, estado: EstadoAST) -> None:
-        proyecto = estado.proyecto_activo or "(ninguno)"
-        self.query_one("#info-proyecto", Static).update(
-            f"Proyecto actual: {proyecto}\n"
-            f"Objetivos autorizados: {estado.total_alcances}\n"
-            f"Resultados guardados: {estado.total_resultados}"
-        )
+        proyecto = estado.proyecto_activo or "Sin proyecto activo"
+        texto = Text()
+        texto.append("Proyecto activo\n", style="bold #e6edf6")
+        texto.append(f"{proyecto}\n")
+        texto.append(f"Objetivos: {estado.total_alcances}\nResultados: {estado.total_resultados}")
+        self.query_one("#info-proyecto", Static).update(texto)
 
     def actualizar_herramientas(self, herramientas: list[HerramientaExterna]) -> None:
-        lineas = []
-        for h in herramientas:
-            if h.instalada:
-                detalle = f"instalada ({texto_seguro(h.version)})" if h.version else "instalada"
+        texto = Text()
+        texto.append("Herramientas externas", style="bold #e6edf6")
+        for herramienta in herramientas:
+            texto.append(f"\n{herramienta.nombre}  ")
+            if herramienta.instalada:
+                texto.append("Disponible", style="#66e3cd")
+                if herramienta.version:
+                    texto.append(f" ({herramienta.version})")
             else:
-                detalle = "no instalada"
-            lineas.append(f"- {h.nombre}: {detalle}")
-        self.query_one("#info-herramientas", Static).update(
-            "Herramientas externas (Fase 3):\n" + "\n".join(lineas)
-        )
+                texto.append("No disponible", style="#a2b1c8")
+        self.query_one("#info-herramientas", Static).update(texto)

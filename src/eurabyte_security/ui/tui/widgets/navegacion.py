@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Button, OptionList, Static
@@ -9,29 +10,8 @@ from textual.widgets.option_list import Option
 
 from eurabyte_security import __version__
 from eurabyte_security.marca import ABREVIATURA, ESCUDO_COMPACTO, NOMBRE_PRODUCTO
+from eurabyte_security.ui.tui.catalogo import GRUPOS, SECCIONES_POR_PANEL, Seccion
 from eurabyte_security.ui.tui.estado import EstadoAST
-
-# (etiqueta visible, id del panel asociado en el ContentSwitcher)
-SECCIONES: tuple[tuple[str, str], ...] = (
-    ("Inicio", "panel-inicio"),
-    ("Terminal", "panel-terminal"),
-    ("Proyectos", "panel-proyectos"),
-    ("Alcance", "panel-alcance"),
-    ("Módulos", "panel-modulos"),
-    ("Reconocimiento", "panel-reconocimiento"),
-    ("Análisis web", "panel-web"),
-    ("Vulnerabilidades", "panel-vulnerabilidades"),
-    ("OWASP ZAP", "panel-zap"),
-    ("OSINT", "panel-osint"),
-    ("Redes", "panel-redes"),
-    ("Tráfico de red", "panel-trafico"),
-    ("Herramientas", "panel-herramientas"),
-    ("Resultados", "panel-resultados"),
-    ("Operaciones", "panel-operaciones"),
-    ("Reportes", "panel-reportes"),
-    ("Aprendizaje", "panel-aprendizaje"),
-    ("Configuración", "panel-configuracion"),
-)
 
 
 class Encabezado(Horizontal):
@@ -43,39 +23,55 @@ class Encabezado(Horizontal):
         yield Static(f"v{__version__}", id="encabezado-version", classes="dato")
         yield Static("", id="encabezado-proyecto", classes="dato", markup=False)
         yield Static("", id="encabezado-so", classes="dato", markup=False)
-        yield Button(
-            "Info >>",
-            id="encabezado-info-toggle",
-            classes="boton-info",
-        )
+        with Horizontal(id="encabezado-acciones"):
+            yield Button("F3 Menú", id="encabezado-menu", classes="boton-info")
+            yield Button("F2 Info", id="encabezado-info-toggle", classes="boton-info")
 
     def actualizar(self, estado: EstadoAST) -> None:
-        proyecto = estado.proyecto_activo or "(sin proyecto activo)"
-        self.query_one("#encabezado-proyecto", Static).update(f" | Proyecto: {proyecto} ")
-        self.query_one("#encabezado-so", Static).update(f" | {estado.sistema_operativo} ")
+        proyecto = estado.proyecto_activo or "Sin proyecto"
+        self.query_one("#encabezado-proyecto", Static).update(f"  /  {proyecto} ")
+        self.query_one("#encabezado-so", Static).update(f"  ·  {estado.sistema_operativo} ")
 
     def actualizar_boton_info(self, visible: bool) -> None:
         """Refleja en el boton si el panel derecho esta visible o plegado."""
         boton = self.query_one("#encabezado-info-toggle", Button)
-        boton.label = "Info <<" if visible else "Info >>"
+        boton.set_class(visible, "visible")
+        boton.tooltip = "Ocultar información (F2)" if visible else "Mostrar información (F2)"
 
 
 class BarraLateral(OptionList):
     """Navegacion principal entre secciones de AST."""
 
+    _actual = "panel-inicio"
+
     def on_mount(self) -> None:
-        for etiqueta, id_panel in SECCIONES:
-            self.add_option(Option(etiqueta, id=id_panel))
+        for titulo, secciones in GRUPOS:
+            self.add_option(Option(Text(titulo.upper(), style="bold #8493ac"), disabled=True))
+            for seccion in secciones:
+                self.add_option(Option(self._etiqueta(seccion), id=seccion.panel))
+        self.highlighted = self.get_option_index(self._actual)
+
+    def actualizar(self, panel: str) -> None:
+        anterior = self._actual
+        self._actual = panel
+        self.highlighted = self.get_option_index(panel)
+        if anterior != panel:
+            for destino in (anterior, panel):
+                self.replace_option_prompt(destino, self._etiqueta(SECCIONES_POR_PANEL[destino]))
+
+    def _etiqueta(self, seccion: Seccion) -> Text:
+        if seccion.panel == self._actual:
+            return Text(f"▸ {seccion.titulo}", style="bold #66e3cd")
+        return Text(f"  {seccion.titulo}")
 
 
 class BarraEstado(Static):
-    """Barra inferior: estado del sistema, proyecto, alcance, resultados y BD."""
+    """Barra inferior: alcance, resultados y disponibilidad de SQLite."""
 
     def actualizar(self, estado: EstadoAST) -> None:
-        proyecto = estado.proyecto_activo or "(ninguno)"
-        estado_bd = "BD ok" if estado.base_datos_ok else "BD con errores"
-        self.update(
-            f"{estado.total_alcances} objetivos  ·  {estado.total_resultados} resultados  ·  "
-            f"{estado_bd}  |  Proyecto: {proyecto}"
-        )
-        self.set_classes("ok" if estado.base_datos_ok else "error")
+        estado_bd = "SQLite disponible" if estado.base_datos_ok else "Error de SQLite"
+        texto = Text(f"Objetivos: {estado.total_alcances}  ·  "
+                     f"Resultados: {estado.total_resultados}  ·  ")
+        texto.append(estado_bd, style="#66e3cd" if estado.base_datos_ok else "#ff8d9a")
+        texto.append("  ·  Ctrl+Q Salir")
+        self.update(texto)

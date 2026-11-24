@@ -11,53 +11,49 @@ est interfaz
 Es una aplicacion real: usa la misma base de datos, el mismo alcance autorizado y la misma
 logica de validacion que la CLI. No es una maqueta ni una demostracion visual.
 
-![Panel de inicio](capturas/01-inicio.svg)
+## Distribución de la pantalla
 
-## Distribucion de la pantalla
+- **Encabezado**. Muestra la marca, el proyecto y los accesos a **Menú** e **Info**. La
+  versión y el sistema operativo se muestran cuando hay espacio.
+- **Menú**. Agrupa las 18 secciones en **Espacio de trabajo**, **Análisis**, **Defensa**,
+  **Evidencia** y **Sistema**. Usa las flechas para desplazarte y `Enter` para abrir.
+- **Área central**. En Inicio muestra el proyecto activo, el conteo de objetivos y resultados,
+  el estado de SQLite y los accesos a las tareas habituales. **Módulos** muestra la función
+  y los requisitos de cada módulo técnico.
+- **Info**. Muestra la ficha de la sección abierta, el proyecto y la disponibilidad de
+  herramientas. En la Terminal también ofrece ayuda sobre el comando que estás escribiendo.
+  A partir de 100 columnas se muestra a la derecha por defecto. Debajo de ese ancho,
+  `F2` abre la ficha en el área central y `F2` devuelve los controles de la sección.
 
-- **Barra superior**: logo, nombre del producto, version, proyecto activo y sistema operativo.
-  El logo es un escudo azul/cian con un simbolo de terminal (`>_`) dentro, sin mascotas ni
-  robots. Mientras no exista el recurso grafico oficial, se muestra como texto ASCII (ver
-  `eurabyte_security/marca.py`), compatible con cualquier terminal de Windows o Linux. En
-  terminales angostas (menos de 90 columnas) se oculta primero la version y el sistema
-  operativo, conservando siempre visible el nombre y el proyecto activo.
-- **Barra lateral izquierda**: navegacion entre las 14 secciones (ver tabla abajo). Se compacta
-  (ancho reducido) por debajo de 90 columnas para dejar mas espacio a la zona central.
-- **Zona central**: el contenido de la seccion seleccionada.
-- **Panel derecho**: ayuda contextual del comando que estes escribiendo en la Terminal, datos
-  del proyecto actual y el estado de las herramientas externas detectadas. Es plegable a
-  demanda (boton "Info" en la barra superior, o la tecla `F2`), no solo una columna obligatoria:
-  se oculta automaticamente por debajo de 100 columnas, pero puede plegarse o desplegarse en
-  cualquier momento sin importar el ancho.
-- **Barra inferior**: proyecto activo, objetivos autorizados, resultados guardados y estado de
-  la base de datos.
+## Secciones y requisitos
 
-![Encabezado adaptado a una terminal angosta](capturas/07-encabezado-responsivo.svg)
+Todos los módulos parten de la misma instalación de AST con Python 3.11 o superior.
+Para persistir datos, el usuario necesita acceso de escritura al directorio de AST
+(`EST_HOME`, si está configurado). Consulta la [instalación en Windows y Linux](INSTALACION.md).
 
-## Secciones de la barra lateral
+| Área | Sección | Qué puedes hacer | Qué requiere |
+|---|---|---|---|
+| Espacio de trabajo | Inicio | Ver el resumen y abrir las secciones más usadas. | Instalación de AST. Para ver datos, selecciona un proyecto. |
+| Espacio de trabajo | Terminal | Ejecutar comandos de AST con autocompletado, historial y ayuda. | Depende del comando. Escribe `ayuda` para consultar el listado. |
+| Espacio de trabajo | Proyectos | Crear, listar y activar proyectos. | Un nombre único para cada proyecto. |
+| Espacio de trabajo | Alcance | Registrar y consultar IP o redes CIDR autorizadas. | Un proyecto activo e IP o redes autorizadas. |
+| Espacio de trabajo | Módulos | Consultar funciones y requisitos y abrir cada módulo. | Instalación de AST. |
+| Análisis | Análisis web | Revisar cabeceras, TLS, cookies y redirecciones. | Proyecto y URL HTTP(S) con IPv4 autorizada. |
+| Análisis | Redes | Comprobar conectividad TCP y guardar el resultado por puerto. | Proyecto activo, IP autorizada y puertos a comprobar. |
+| Análisis | Reconocimiento | Consultar el inventario de Nmap y el historial de sesiones. | Para una comprobación nueva, proyecto, objetivo autorizado y Nmap en `PATH`. Nuclei y ZAP son opcionales. |
+| Análisis | Vulnerabilidades | Revisar y validar hallazgos de Nuclei. | Para un análisis nuevo, Nuclei en `PATH`, proyecto y objetivo autorizado. |
+| Análisis | OWASP ZAP | Revisar alertas de análisis pasivo y registrar su estado. | Para un análisis nuevo, API de ZAP activa en loopback, proyecto, URL autorizada y clave si la API la exige. |
+| Análisis | OSINT | Consultar fuentes públicas y recuperar investigaciones guardadas. | Proyecto, Internet para fuentes remotas y autorización para revisar datos personales. Algunos proveedores requieren credenciales opcionales. [Fuentes y requisitos](OSINT.md). |
+| Defensa | Tráfico de red | Medir carga y descarga locales y analizar registros de la LAN. | `psutil` viene con AST. Para la LAN, `conn.log` de Zeek en JSON y subredes CIDR. `dns.log`, `http.log` y `ssl.log` aportan dominios observados. |
+| Defensa | Operaciones | Documentar casos, vincular evidencia, registrar correcciones y monitorear interfaces locales. | Proyecto activo. Para monitorear, un umbral en Mbps. |
+| Evidencia | Resultados | Consultar evidencia y filtrar resultados técnicos por fuente o sesión. | Proyecto activo. La vista se llena con resultados guardados. |
+| Evidencia | Reportes | Exportar un informe técnico global en HTML o JSON. | Proyecto activo y acceso de escritura al directorio de reportes. |
+| Sistema | Herramientas | Comprobar la disponibilidad de Nmap, Nuclei, ZAP y tshark. | Los binarios deben estar en `PATH`. Para ZAP se comprueba su API local. |
+| Sistema | Aprendizaje | Leer las explicaciones integradas en español. | Instalación de AST. |
+| Sistema | Configuración | Consultar rutas de datos y cambiar de proyecto. | Para activarlo, el nombre de un proyecto existente. |
 
-| Seccion | Estado | Que hace |
-|---|---|---|
-| Inicio | Implementada | Resumen del proyecto activo y accesos a Proyectos, Alcance, Resultados y Reportes. |
-| Terminal | Implementada | Terminal AST (ver abajo), mas las pestanas Resultados y Ayuda. |
-| Proyectos | Implementada | Crear proyectos, listarlos y marcar uno como activo. |
-| Alcance | Implementada | Registrar y consultar el alcance autorizado (IP/CIDR). |
-| Módulos | Implementada | Accesos a Redes, Reconocimiento, Análisis web, Vulnerabilidades, OWASP ZAP y OSINT. |
-| Reconocimiento | Implementada | Pantalla principal de auditoria: un objetivo, reconocimiento automatico (Nmap, web, Nuclei, ZAP); el formulario manual de Nmap sigue disponible en una seccion avanzada. |
-| Analisis web | Implementada | Auditoria de cabeceras HTTP, TLS, cookies y redirecciones, con boton de cancelar. |
-| Vulnerabilidades | Implementada | Nuclei: plantillas HTTP aprobadas de bajo impacto, con confirmacion y boton de cancelar. |
-| OWASP ZAP | Implementada | Analisis pasivo unicamente, con confirmacion y boton de cancelar. |
-| OSINT | Implementada | Investigacion de fuentes publicas (dominio, correo, telefono, usuario), con formulario fijo y resultados con scroll propio, pestanas de Resumen/Infraestructura/Perfiles publicos/Exposicion/Fuentes/Informe, recuperacion de investigaciones guardadas desde el propio panel, y boton de cancelar. Ver [docs/OSINT.md](OSINT.md). |
-| Redes | Implementada | Formulario de comprobacion TCP, con boton de cancelar. |
-| Tráfico de red | Implementada | Carga, descarga y apps locales. Importa registros Zeek para obtener un resumen de equipos, servicios y DNS de la LAN. |
-| Herramientas | Implementada | Detecta si Nmap/Nuclei/tshark estan instalados y si la API de OWASP ZAP responde, con sus versiones (no los ejecuta). |
-| Resultados | Implementada | Resultados y hallazgos guardados del proyecto activo, de las cinco herramientas (TCP, Nmap, Web, Nuclei, OWASP ZAP), filtrables por herramienta. |
-| Reportes | Implementada | Genera el informe global (HTML o JSON) del proyecto activo, combinando las cinco herramientas. |
-| Aprendizaje | Implementada | Guía integrada en español sobre herramientas y comandos de AST. |
-| Configuracion | Implementada | Muestra las rutas de datos y permite cambiar el proyecto activo. |
-
-El contador de Inicio y de la barra inferior suma las cinco fuentes de Resultados del proyecto
-activo. Las investigaciones OSINT tienen su historial en el panel OSINT.
+Resultados y Reportes reúnen TCP, Nmap, Web, Nuclei y OWASP ZAP. OSINT conserva su
+historial e informes en su propio módulo. Operaciones puede exportar el JSON de un caso.
 
 ## La Terminal AST
 
@@ -86,7 +82,10 @@ Dentro de la seccion "Terminal" hay tres pestanas:
 |---|---|
 | `Tab` / `Shift+Tab` | Mover el foco entre campos (fuera de la Terminal). |
 | `↑` `↓` `Enter` | Navegar y seleccionar en la barra lateral y en las tablas. |
-| `F2` | Plegar o desplegar el panel contextual derecho (tambien disponible como boton "Info" en la barra superior). |
+| `F1` | Abrir el catálogo de módulos. |
+| `F2` | Mostrar u ocultar la ficha de la sección actual. |
+| `F3` | Llevar el foco al menú lateral. |
+| `F4` | Abrir la Terminal y enfocar la entrada de comandos. |
 | `Ctrl+Q` | Salir de la interfaz visual. |
 
 El raton funciona en toda la interfaz: clic en la barra lateral para navegar, clic en botones,
@@ -254,6 +253,19 @@ Los resultados de ambas vistas se muestran en pantalla. El panel no guarda autom
 los archivos ni su contenido en el historial de proyectos. Consulta los formatos y detalles en
 [Comandos de tráfico](COMANDOS.md#est-trafico).
 
+### Operaciones
+
+- **Casos** permite abrir un caso con activo, título, gravedad y evidencia inicial. También
+  puedes consultar el historial por activo.
+- **Cronología** lee el número de caso del encabezado. Permite consultar los eventos,
+  vincular resultados del proyecto, registrar acciones y exportar el caso en JSON.
+- **Monitoreo** guarda lecturas de las interfaces del equipo en el proyecto activo y señala
+  las muestras que superan el umbral de carga o descarga. Puedes iniciar y detener la
+  observación y consultar las últimas mediciones.
+
+El número de caso se conserva al cambiar de pestaña. Al cambiar de proyecto, se limpia el
+formulario del anterior y se solicita detener su monitoreo.
+
 ### Herramientas
 
 Muestra si Nmap, Nuclei y tshark estan instalados en el sistema (`PATH`) y si la API de OWASP
@@ -292,16 +304,10 @@ proyecto activo sin volver a la Terminal.
 
 ## Interfaz adaptable
 
-Si reduces el tamano de la terminal, AST se adapta automaticamente:
+Por debajo de 100 columnas, el área de trabajo ocupa el espacio del panel derecho por
+defecto. Puedes volver a abrir la ficha con `F2`. Por debajo de 90 columnas, se compacta
+el menú lateral. Las secciones largas se desplazan con el teclado o el ratón.
 
-- Por debajo de ~100 columnas, el panel de informacion (derecha) se oculta.
-- Por debajo de ~70 columnas, la barra lateral se compacta.
-
-En ningun caso se pierde acceso a una funcionalidad: lo que deja de verse en un panel lateral
-siempre sigue disponible desde la Terminal AST (por ejemplo, `explicar tcp` cumple el mismo
-papel que el panel de informacion).
-
-![Interfaz adaptada a una terminal estrecha](capturas/06-responsivo-compacto.svg)
 
 ## Solucion de problemas comunes
 
