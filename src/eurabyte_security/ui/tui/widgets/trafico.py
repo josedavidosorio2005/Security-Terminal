@@ -34,7 +34,7 @@ class PanelTrafico(Widget):
                 with VerticalScroll():
                     yield Static(
                         "Carga, descarga y velocidad por interfaz. Las aplicaciones se "
-                        "identifican por sus conexiones abiertas.",
+                        "identifican por sus conexiones abiertas si el sistema da permiso.",
                         classes="ast-tenue",
                     )
                     yield Button("Medir 1 segundo", id="trafico-medir", variant="primary")
@@ -42,14 +42,18 @@ class PanelTrafico(Widget):
             with TabPane("Registros LAN", id="trafico-lan"):
                 with VerticalScroll():
                     yield Static(
-                        "Registros Zeek en JSON, un objeto por línea.",
+                        "Carga registros Zeek en JSON, un objeto por línea.",
                         classes="ast-tenue",
                     )
-                    yield Input(placeholder="Subredes LAN (CIDR)", id="trafico-cidr")
+                    yield Static("Subredes LAN en CIDR", classes="trafico-etiqueta")
+                    yield Input(placeholder="Ej. 192.168.1.0/24", id="trafico-cidr")
+                    yield Static("Registro de conexiones", classes="trafico-etiqueta")
                     yield Input(placeholder="Ruta a conn.log", id="trafico-conn")
                     yield Button("Analizar registros", id="trafico-analizar", variant="primary")
                     with Collapsible(title="Fuentes de dominios (opcional)", id="trafico-fuentes"):
+                        yield Static("Consultas DNS", classes="trafico-etiqueta")
                         yield Input(placeholder="Ruta a dns.log", id="trafico-dns")
+                        yield Static("Dominios web observados", classes="trafico-etiqueta")
                         yield Input(placeholder="Ruta a http.log o ssl.log", id="trafico-web")
                     yield Static(id="trafico-resumen")
 

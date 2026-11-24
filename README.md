@@ -18,8 +18,6 @@ Gestiono el alcance y los resultados de cada auditoría desde una interfaz en es
 
 [Ver la instalación](#instalacion) · [Abrir el manual de la interfaz](docs/INTERFAZ.md) · [Ver un informe HTML de ejemplo](docs/capturas/informe-ast.webp)
 
-![Inicio de Aurabyte Security Terminal con resumen del proyecto y accesos directos](docs/capturas/01-inicio.svg)
-
 <details>
 <summary>Vista previa de un informe con datos ficticios</summary>
 
@@ -50,22 +48,19 @@ ejecuta comandos a traves de un shell del sistema.
 - Persistencia de resultados en SQLite. Generacion de informes en HTML y JSON.
 - Explicaciones interactivas de cada comando (`est explicar <tema>`).
 
-### Fase 2 (interfaz visual)
+### Interfaz visual
 
-- `est interfaz`: aplicacion Textual real, no una maqueta. Conectada a la misma base de datos y
-  a la misma logica que la CLI.
-- Barra superior (logo, version, proyecto activo, sistema operativo), barra lateral con las 15
-  secciones del roadmap, terminal interactiva integrada con autocompletado contextual y
-  sugerencias, paneles dedicados para Proyectos, Alcance, Redes (escaneo TCP con cancelacion),
-  Reconocimiento (Nmap), Analisis web, Vulnerabilidades (Nuclei), OWASP ZAP, Resultados,
-  Reportes, Herramientas (deteccion de Nmap/Nuclei/ZAP/tshark sin ejecutarlos) y Configuracion.
-- Las secciones todavia no implementadas (Modulos, Aprendizaje) se muestran explicitamente
-  como "Proximamente": nunca simulan datos falsos.
-- Interfaz adaptable: en terminales estrechas oculta el panel de informacion y compacta la
-  barra lateral, sin perder acceso a ninguna funcionalidad (sigue disponible desde la Terminal).
+- `est interfaz` abre el espacio de trabajo con navegación por **Espacio de trabajo**,
+  **Análisis**, **Defensa**, **Evidencia** y **Sistema**.
+- **Inicio** resume el proyecto activo. **Módulos** muestra qué hace cada herramienta y qué
+  necesita. Usa `F2` para consultar la ficha de la sección abierta y `F4` para abrir la
+  Terminal integrada.
+- **Tráfico de red** mide las interfaces del equipo o analiza registros Zeek existentes.
+  **Operaciones** organiza los casos, su cronología y el monitoreo local en tres pestañas.
+- **Resultados** filtra la evidencia del proyecto y **Reportes** exporta el informe técnico
+  en HTML o JSON.
 
-Manual de usuario completo (atajos, paneles, solucion de problemas) en
-[docs/INTERFAZ.md](docs/INTERFAZ.md).
+[Manual de la interfaz y requisitos de cada módulo](docs/INTERFAZ.md#secciones-y-requisitos).
 
 ### Fase 3 (integraciones de pentesting, en curso)
 

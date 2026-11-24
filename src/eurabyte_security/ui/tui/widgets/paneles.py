@@ -51,68 +51,79 @@ from eurabyte_security.core.objetivo import interpretar_entrada, resolver_y_auto
 from eurabyte_security.core.osint.validacion import (
     requiere_autorizacion_datos_personales,
 )
-from eurabyte_security.integrations.deteccion import detectar_herramientas
+from eurabyte_security.integrations.deteccion import HerramientaExterna, detectar_herramientas
 from eurabyte_security.integrations.nuclei import PLANTILLAS_APROBADAS, AdaptadorNuclei
 from eurabyte_security.integrations.osint.registro import FUENTES_OSINT, fuentes_para_tipo
 from eurabyte_security.integrations.zap import AdaptadorZAP
-from eurabyte_security.marca import BANNER_ASCII, ESCUDO_ASCII, ESCUDO_COMPACTO, NOMBRE_PRODUCTO
+from eurabyte_security.marca import ESCUDO_ASCII, ESCUDO_COMPACTO, NOMBRE_PRODUCTO
 from eurabyte_security.modules.osint.exposicion import construir_resumen_exposicion
 from eurabyte_security.modules.osint.modelos import EtapaFuenteOSINT
 from eurabyte_security.modules.osint.motor import ejecutar_investigacion_osint
 from eurabyte_security.modules.web.modelos import Hallazgo
 from eurabyte_security.ui.consola import texto_seguro
+from eurabyte_security.ui.tui.catalogo import GRUPOS_MODULOS
 from eurabyte_security.ui.tui.estado import EstadoAST
 
 
 class PanelInicio(VerticalScroll):
-    """Panel de bienvenida: escudo, banner, resumen y atajos de navegacion."""
+    """Resumen del proyecto activo y accesos directos."""
 
     def compose(self):
         with Horizontal(id="inicio-marca"):
             yield Static(ESCUDO_ASCII, id="inicio-escudo", classes="logo", markup=False)
-            yield Static(BANNER_ASCII, id="inicio-banner", classes="ast-acento", markup=False)
-            yield Static(
-                ESCUDO_COMPACTO, id="inicio-escudo-compacto", classes="logo", markup=False
-            )
-            yield Static(NOMBRE_PRODUCTO, id="inicio-marca-compacta", classes="ast-acento")
-        yield Static("", id="inicio-resumen", classes="ast-caja", markup=False)
+            with Vertical():
+                yield Static(NOMBRE_PRODUCTO, id="inicio-nombre", markup=False)
+                yield Static(id="inicio-resumen", classes="ast-tenue", markup=False)
+        with Grid(id="inicio-metricas"):
+            yield Static(id="inicio-alcances", classes="inicio-metrica", markup=False)
+            yield Static(id="inicio-resultados", classes="inicio-metrica", markup=False)
+            yield Static(id="inicio-bd", classes="inicio-metrica", markup=False)
+        yield Static("Accesos del proyecto", classes="titulo-panel")
         with Grid(id="inicio-accesos"):
-            yield Button("Proyectos", name="panel-proyectos", classes="acceso-panel")
+            yield Button("Proyectos", name="panel-proyectos", classes="acceso-panel",
+                         variant="primary")
             yield Button("Alcance", name="panel-alcance", classes="acceso-panel")
             yield Button("Resultados", name="panel-resultados", classes="acceso-panel")
+            yield Button("Operaciones", name="panel-operaciones", classes="acceso-panel")
+            yield Button("Tráfico", name="panel-trafico", classes="acceso-panel")
             yield Button("Reportes", name="panel-reportes", classes="acceso-panel")
 
     def on_resize(self, evento: events.Resize) -> None:
-        self.set_class(evento.size.width < 80, "compacto")
+        self.set_class(evento.size.width < 66, "compacto")
+        self.set_class(evento.size.width < 48, "estrecho")
 
     def actualizar_estado(self, estado: EstadoAST) -> None:
-        proyecto = estado.proyecto_activo or "Sin proyecto activo"
-        self.query_one("#inicio-resumen", Static).update(
-            f"{proyecto}\n"
-            f"{estado.total_alcances} objetivos autorizados  ·  "
-            f"{estado.total_resultados} resultados guardados"
+        proyecto = f"Proyecto activo / {estado.proyecto_activo}" if estado.proyecto_activo else (
+            "Sin proyecto activo. Crea uno en Proyectos."
         )
+        self.query_one("#inicio-resumen", Static).update(proyecto)
+        self.query_one("#inicio-alcances", Static).update(f"{estado.total_alcances}\nObjetivos")
+        self.query_one("#inicio-resultados", Static).update(
+            f"{estado.total_resultados}\nResultados"
+        )
+        base = self.query_one("#inicio-bd", Static)
+        base.update("Disponible\nSQLite" if estado.base_datos_ok else "Error\nSQLite")
+        base.set_class(not estado.base_datos_ok, "ast-error")
 
 
 class PanelModulos(VerticalScroll):
-    """Accesos a las herramientas y a las vistas de revisión de AST."""
-
-    _MODULOS = (
-        ("Redes", "panel-redes", "Comprobación de conectividad TCP."),
-        ("Tráfico de red", "panel-trafico", "Consumo del equipo y registros de la LAN."),
-        ("Reconocimiento", "panel-reconocimiento", "Consulta y seguimiento de sesiones."),
-        ("Análisis web", "panel-web", "Comprobaciones de cabeceras, TLS y cookies."),
-        ("Vulnerabilidades", "panel-vulnerabilidades", "Consulta de hallazgos de Nuclei."),
-        ("OWASP ZAP", "panel-zap", "Consulta de hallazgos del análisis pasivo."),
-        ("OSINT", "panel-osint", "Investigaciones guardadas y fuentes públicas."),
-    )
+    """Catálogo de módulos técnicos, defensa y evidencia."""
 
     def compose(self):
         yield Static("Módulos", classes="titulo-panel")
-        for etiqueta, destino, descripcion in self._MODULOS:
-            with Horizontal(classes="modulo-fila"):
-                yield Button(etiqueta, name=destino, classes="acceso-panel")
-                yield Static(descripcion, classes="ast-tenue")
+        for titulo, secciones in GRUPOS_MODULOS:
+            yield Static(titulo, classes="ast-subtitulo")
+            with Grid(classes="modulos-grupo"):
+                for seccion in secciones:
+                    with Vertical(classes="modulo-ficha"):
+                        yield Button(seccion.titulo, name=seccion.panel, classes="acceso-panel")
+                        yield Static(seccion.descripcion, markup=False)
+                        yield Static(
+                            f"Requiere: {seccion.requisitos}", classes="ast-tenue", markup=False
+                        )
+
+    def on_resize(self, evento: events.Resize) -> None:
+        self.set_class(evento.size.width < 64, "compacto")
 
 
 class PanelProyectos(Vertical):
@@ -1741,6 +1752,7 @@ _ESTADOS_INVESTIGACION_OSINT = {
 # el ancho a partes iguales sigue siendo legible sin apilar innecesariamente (lo que
 # apilar de mas sí hace es robar altura a la zona de resultados, ver estilos.tcss).
 ANCHO_COMPACTO_OSINT = 52
+ANCHO_ENCABEZADO_OSINT = 72
 
 
 class PanelOSINT(Vertical):
@@ -1917,7 +1929,7 @@ class PanelOSINT(Vertical):
                 pass
         try:
             self.query_one("#osint-encabezado").set_classes(
-                "compacto" if ancho < ANCHO_COMPACTO_OSINT else ""
+                "compacto" if ancho < ANCHO_ENCABEZADO_OSINT else ""
             )
         except Exception:  # noqa: BLE001 - puede no estar montado aun
             pass
@@ -2466,11 +2478,12 @@ class PanelHerramientas(Vertical):
         herramientas = detectar_herramientas()
         self.app.call_from_thread(self._mostrar_herramientas, herramientas)
 
-    def _mostrar_herramientas(self, herramientas: list) -> None:
+    def _mostrar_herramientas(self, herramientas: list[HerramientaExterna]) -> None:
+        self.app.actualizar_herramientas_info(herramientas)  # type: ignore[attr-defined]
         tabla = self.query_one("#herr-tabla", DataTable)
         tabla.clear()
         for herramienta in herramientas:
-            estado = "Instalada" if herramienta.instalada else "No instalada"
+            estado = "Disponible" if herramienta.instalada else "No disponible"
             tabla.add_row(
                 herramienta.nombre,
                 herramienta.comando,

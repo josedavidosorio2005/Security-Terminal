@@ -295,5 +295,6 @@ async def test_osint_aparece_en_la_barra_lateral():
     app = AuraByteApp()
     async with app.run_test(size=TAMANO) as pilot:
         await pilot.pause()
-        opciones = [str(o.prompt) for o in app.query_one(BarraLateral).options]
-        assert "OSINT" in opciones
+        opcion = app.query_one(BarraLateral).get_option("panel-osint")
+        assert str(opcion.prompt).strip() == "OSINT"
+        assert not opcion.disabled

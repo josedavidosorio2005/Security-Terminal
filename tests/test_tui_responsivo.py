@@ -38,6 +38,11 @@ async def test_encabezado_nombre_siempre_visible(ancho, alto):
         assert _dentro_de_pantalla(nombre.region, ancho, alto), (
             f"'.nombre' fuera de pantalla en {ancho}x{alto}: {nombre.region}"
         )
+        menu = app.query_one("#encabezado-menu")
+        info = app.query_one("#encabezado-info-toggle")
+        assert nombre.region.right <= menu.region.x
+        assert menu.region.right <= info.region.x
+        assert _dentro_de_pantalla(info.region, ancho, alto)
 
 
 @pytest.mark.parametrize("ancho,alto", TAMANOS)
